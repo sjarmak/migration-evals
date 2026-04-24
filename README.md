@@ -1,7 +1,7 @@
 # migration-evals
 
 A **tiered-oracle funnel** for evaluating automated code migrations end to
-end — defending claims like *"this migration works on 85% of in-scope
+end - defending claims like *"this migration works on 85% of in-scope
 repos"* with a published funnel, contamination split, and pre-registered
 spec stamps instead of a single hand-wavy success rate.
 
@@ -10,11 +10,10 @@ implementation targets Java 8→17 (Maven) and ships with a working Python
 2→3 falsification probe; the design generalizes to JS/TS, pinned-dep
 bumps, Spring Boot upgrades, and CVE fan-out without schema changes.
 
-The whole pipeline is **automated** — no reviewer-day step, no
-human-in-the-loop labeling. The gold-anchor ground-truth set is harvested
-from public OSS migration PRs that were merged *and* survived ≥30 days
-without a revert; the result is a calibration signal that costs API
-quota, not engineering time.
+The whole pipeline is **automated**. The gold-anchor ground-truth set is
+harvested from public OSS migration PRs that were merged *and* survived
+30+ days without a revert; the result is a calibration signal that costs
+API quota, not engineering time.
 
 ---
 
@@ -22,17 +21,17 @@ quota, not engineering time.
 
 | Path | Purpose |
 | --- | --- |
-| [`docs/PRD.md`](docs/PRD.md) | Risk-annotated v0.3 PRD — goals, non-goals, MVP/M1–M9, Should/Nice tiers, metrics, capacity plan. |
-| [`docs/premortem.md`](docs/premortem.md) | Top-15 failure modes (R1–R15) — reviewer-disagreement, contamination, harness-synth, ecosystem generalization, infra blast-radius. Drives the M-list. |
+| [`docs/PRD.md`](docs/PRD.md) | Risk-annotated v0.3 PRD - goals, non-goals, MVP/M1–M9, Should/Nice tiers, metrics, capacity plan. |
+| [`docs/premortem.md`](docs/premortem.md) | Top-15 failure modes (R1–R15) - reviewer-disagreement, contamination, harness-synth, ecosystem generalization, infra blast-radius. Drives the M-list. |
 | [`docs/README.md`](docs/README.md) | Per-component design notes (oracle funnel, harness synth, gold-anchor, publication gate, python23 probe). |
 | [`docs/usage.md`](docs/usage.md) | CLI quickstart for `run`/`report`/`iterator-report`/`regression`/`harness`/`probe`. |
-| [`src/migration_evals/`](src/migration_evals/) | Python package — CLI, funnel (Tier 0–4), oracles, gold anchor, iterator-batch report, ledger, contamination split, pre-registration / publication gate, Python 2→3 probe. |
+| [`src/migration_evals/`](src/migration_evals/) | Python package - CLI, funnel (Tier 0–4), oracles, gold anchor, iterator-batch report, ledger, contamination split, pre-registration / publication gate, Python 2→3 probe. |
 | [`schemas/`](schemas/) | JSON Schemas for `result.json` and gold-anchor entries. |
-| [`configs/java8_17_smoke.yaml`](configs/java8_17_smoke.yaml) | End-to-end smoke config: 3 fixture repos, all non-network tiers, replay cassettes — no API keys required. |
-| [`scripts/mine_gold_anchor.py`](scripts/mine_gold_anchor.py) | Automated gold-anchor harvester — builds `data/gold_anchor.json` from merged-PR survival via the `gh` CLI. Two sources: OSS search (default) or a CSV of agent-generated changeset URLs. |
+| [`configs/java8_17_smoke.yaml`](configs/java8_17_smoke.yaml) | End-to-end smoke config: 3 fixture repos, all non-network tiers, replay cassettes - no API keys required. |
+| [`scripts/mine_gold_anchor.py`](scripts/mine_gold_anchor.py) | Automated gold-anchor harvester - builds `data/gold_anchor.json` from merged-PR survival via the `gh` CLI. Two sources: OSS search (default) or a CSV of agent-generated changeset URLs. |
 | [`tests/`](tests/) | 229 pytest cases: schema validation, funnel cascade, AST oracle, gold-anchor correlation + bootstrap CI, ledger diff, contamination split, publication gate, iterator-batch report, mine_gold_anchor (both sources), Tier-0 diff validity. |
 | [`examples/runs/`](examples/runs/) | Committed example outputs from the smoke config and the Python 2→3 probe. |
-| [`data/gold_anchor_template.json`](data/gold_anchor_template.json) | Empty seed — populated by `scripts/mine_gold_anchor.py`. |
+| [`data/gold_anchor_template.json`](data/gold_anchor_template.json) | Empty seed - populated by `scripts/mine_gold_anchor.py`. |
 
 ---
 
@@ -46,7 +45,7 @@ cd migration-evals
 python3 -m venv .venv && source .venv/bin/activate
 pip install -e '.[dev]'
 
-# 1. Run the full test suite (no API keys required — all tiers replay from cassettes)
+# 1. Run the full test suite (no API keys required - all tiers replay from cassettes)
 pytest -q
 
 # 2. Run the smoke eval end-to-end against 3 fixture repos
@@ -74,7 +73,7 @@ python scripts/mine_gold_anchor.py \
 
 # 6. (Optional) Aggregate trials by iterator_id into a per-batch report
 #    with completion rate, p50/p95 latency, total cost, failure-class
-#    breakdown — the natural unit when a single fan-out workflow runs
+#    breakdown - the natural unit when a single fan-out workflow runs
 #    across hundreds-to-thousands of repos.
 python -m migration_evals.cli iterator-report \
     --run runs/analysis/mig_java8_17/claude-sonnet-4-6/smoke \
@@ -157,7 +156,7 @@ Seven non-negotiable design properties:
    (`prompt_sha`) so the prompt is auditable end-to-end
    (`python -m migration_evals.publication_gate --check-run`).
 6. **Runner is separate from model.** The schema carries `agent_runner`
-   (e.g. `claude_code`, `amp`, `cursor`, `aider`) alongside `agent_model`
+   (e.g. `claude_code`, `cursor`, `aider`) alongside `agent_model`
    (e.g. `claude-sonnet-4-6`) so cost / reliability metrics can be sliced
    by harness independently of the underlying LLM.
 7. **CI feedback loop is a documented integration point.** When the
@@ -177,7 +176,7 @@ and no Maven install.
 
 **Production-ready (replay-tested end to end):**
 
-- Tiered oracle funnel (`migration_evals.funnel`) — cascade T0 → T1 → T2 →
+- Tiered oracle funnel (`migration_evals.funnel`) - cascade T0 → T1 → T2 →
   T2b → T3 → T4 with stage-level reporting and short-circuit on first
   failure. T0 (`oracles.tier0_diff`) catches malformed patches before
   paying for a sandbox.
@@ -193,16 +192,15 @@ and no Maven install.
 - Gold-anchor correlation with bootstrap 95% CI + `eval_broken` gate
   (`migration_evals.gold_anchor`).
 - Automated gold-anchor harvester via merged-PR survival
-  (`scripts/mine_gold_anchor.py`) — two sources: OSS search (default) or a
-  CSV of agent-generated changeset URLs. Replaces the original "schedule
-  reviewer days" step entirely.
-- Iterator-batch report (`migration_evals.iterator_report`) — groups
+  (`scripts/mine_gold_anchor.py`). Two sources: OSS search (default) or a
+  CSV of agent-generated changeset URLs.
+- Iterator-batch report (`migration_evals.iterator_report`) - groups
   trials by `iterator_id` and emits per-batch completion rate, p50/p95
   latency, total cost, and failure-class breakdown. CLI:
   `iterator-report --run <dir> --out <md>`.
 - Contamination split (`migration_evals.contamination`).
 - Pre-registration / publication gate (3 required stamps + optional
-  `prompt_sha` for prompt-defined migrations) — `migration_evals.pre_reg`
+  `prompt_sha` for prompt-defined migrations) - `migration_evals.pre_reg`
   + `migration_evals.publication_gate`.
 - Python 2→3 falsification probe with synthetic generator + findings JSON
   (`migration_evals.python23_probe`).
@@ -235,7 +233,7 @@ per module.
 ## Recommended next steps
 
 The highest-leverage path from MVP scaffold to a regular reporting cadence,
-in order. Every step below is fully automatable — none of them require
+in order. Every step below is fully automatable - none of them require
 recurring reviewer time.
 
 1. **Wire production adapters.** Implement `AnthropicAdapter` against the
@@ -263,7 +261,7 @@ recurring reviewer time.
    probe machinery is already wired; just run it on a real Python 2→3 repo
    set.
 6. **Mine candidate repos via the GitHub Search API.** The
-   `CodeSearchAdapter` Protocol abstracts away the backend — point it at
+   `CodeSearchAdapter` Protocol abstracts away the backend - point it at
    `gh search code` for the OSS lane and at any internal code-search
    backend (OpenGrok, Hound, Zoekt, etc.) for an internal lane.
 7. **Ship S1–S4** (process-telemetry classifier, IRT difficulty, monthly
@@ -271,7 +269,7 @@ recurring reviewer time.
    the v1 funnel has been running for ~1 quarter.
 8. **Open external publication.** Once gold-anchor ≥0.7 with CI bound ≥0.5,
    publication gate green, contamination split <5pp, and ≥2 migrations
-   evaluated under the same schema — file an external technical report.
+   evaluated under the same schema - file an external technical report.
 
 ---
 
@@ -354,4 +352,4 @@ engineering effort. Each links to the section of the PRD that justifies it.
 
 ## License
 
-Apache 2.0 — see [`LICENSE`](LICENSE).
+Apache 2.0 - see [`LICENSE`](LICENSE).

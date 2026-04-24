@@ -1,10 +1,10 @@
-"""Tier 1 — compile / typecheck only (PRD M1).
+"""Tier 1 - compile / typecheck only (PRD M1).
 
 The cheapest oracle in the funnel: run the recipe's ``build_cmd`` in a
 sandbox and emit a pass verdict iff the command exits zero. Tests and
 semantic checks are deferred to later tiers.
 
-The tier is deliberately agnostic to the sandbox provider — it consumes a
+The tier is deliberately agnostic to the sandbox provider - it consumes a
 :class:`~migration_evals.adapters.SandboxAdapter`-shaped object,
 which can be a real sandbox wrapper, a Docker-backed substitute, or a
 replay cassette. The only contract is ``exec(...)`` returning a dict with
@@ -31,7 +31,7 @@ def _coerce_exit_code(envelope: Mapping[str, Any]) -> int:
     if value is None:
         value = envelope.get("exitCode")
     if value is None:
-        # Missing exit codes are treated as failure — we will not silently
+        # Missing exit codes are treated as failure - we will not silently
         # pass a tier that cannot prove success.
         return -1
     try:

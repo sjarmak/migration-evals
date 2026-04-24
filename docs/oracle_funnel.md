@@ -14,7 +14,7 @@ tier whose verdict is `passed=False` short-circuits the cascade.
 | 0     | `diff_valid`      | $0.001 (local)     | `src/migration_evals/oracles/tier0_diff.py`                | Patch parses, applies cleanly, and migrated source files have balanced braces / parens. Catches the worst hallucinations before paying for a sandbox. |
 | 1     | `compile_only`    | $0.01              | `src/migration_evals/oracles/tier1_compile.py`             | Run the recipe's `build_cmd`. Non-zero exit fails the trial.            |
 | 2     | `tests`           | $0.03              | `src/migration_evals/oracles/tier2_tests.py`               | Run the recipe's `test_cmd` against the migrated repo.                   |
-| 2b    | `ast_conformance` | $0.00 (local)      | `src/migration_evals/synthetic/ast_oracle.py` (wrapped)    | Synthetic-only — regex AST-spec conformance against a known migration.   |
+| 2b    | `ast_conformance` | $0.00 (local)      | `src/migration_evals/synthetic/ast_oracle.py` (wrapped)    | Synthetic-only - regex AST-spec conformance against a known migration.   |
 | 3     | `judge`           | $0.08              | `src/migration_evals/oracles/tier3_judge.py`               | Single-pass Claude judge with prompt caching on the rubric block.        |
 | 4     | `daikon`          | $0.10 (target)     | `src/migration_evals/oracles/tier4_daikon.py`              | Stub today; will run Daikon invariant inference once integrated.         |
 
@@ -29,7 +29,7 @@ harness or the oracle.
 Tier 2b (`ast_conformance`) is interleaved between Tier 2 and Tier 3 only
 when the trial is for a synthetic repo (`is_synthetic=True`). Tier 4 is
 gated behind `adapters["enable_daikon"]`. A tier that raises
-`NotImplementedError` is skipped without breaking the cascade — this is
+`NotImplementedError` is skipped without breaking the cascade - this is
 how the Daikon stub stays out of the way until the real implementation
 ships.
 
@@ -48,7 +48,7 @@ The natural shape of that hook is:
    `tier`, `passed`, and a `details` dict.
 3. The orchestrator persists `final_verdict` as a workflow variable
    (e.g. `last_oracle_verdict`) keyed by iteration number.
-4. The agent prompt for the next iteration includes the prior verdict —
+4. The agent prompt for the next iteration includes the prior verdict -
    the agent now knows whether the patch compiled, which test failed,
    what the judge complained about, etc.
 
@@ -56,7 +56,7 @@ This is the integration point for any "CI feedback loop" experiment in a
 production code-migration workflow system. The funnel is deliberately designed
 to be invoked inside a loop (it is stateless, deterministic on a fixed
 repo + recipe, and short-circuits on the first failure to keep iteration
-latency low). Wiring is the orchestrator's responsibility — the eval
+latency low). Wiring is the orchestrator's responsibility - the eval
 framework only owns the verdict shape and the per-tier cost accounting.
 
 A reference invocation:
@@ -92,10 +92,10 @@ result = run_funnel(
 
 `run_funnel` returns a `FunnelResult` with:
 
-- `per_tier_verdict: tuple[(tier_name, OracleVerdict), ...]` — one entry per executed tier, in execution order.
-- `final_verdict: OracleVerdict` — the verdict that terminated the cascade (first failure, or last pass).
-- `total_cost_usd: float` — sum of `cost_usd` across executed tiers.
-- `failure_class: Optional[str]` — `None` on success; `"harness_error"` if T1 failed; `"agent_error"` for any other tier failure.
+- `per_tier_verdict: tuple[(tier_name, OracleVerdict), ...]` - one entry per executed tier, in execution order.
+- `final_verdict: OracleVerdict` - the verdict that terminated the cascade (first failure, or last pass).
+- `total_cost_usd: float` - sum of `cost_usd` across executed tiers.
+- `failure_class: Optional[str]` - `None` on success; `"harness_error"` if T1 failed; `"agent_error"` for any other tier failure.
 
 ## Per-tier cost targets
 
@@ -117,7 +117,7 @@ is end-to-end traceable.
 
 Without funnel cascading (every tier runs on every repo), the per-repo
 worst case is `$0.01 + $0.03 + $0.00 + $0.08 + $0.10 = $0.22`. For 1,000
-repos × 3 models that is $660 — over the budget.
+repos × 3 models that is $660 - over the budget.
 
 With cascading the funnel falls off fast. Using PRD-default failure
 distributions:
@@ -143,7 +143,7 @@ For 1,000 repos × 3 models:
 That leaves a comfortable margin under the $300 ceiling, even with a
 1.5x cushion for retry/judge re-asks. Enabling Daikon (T4) adds at most
 `0.42 × 0.10 = $0.042` per repo, pushing the total to ~$310 / 3-model
-sweep — at the edge, which is why Daikon stays opt-in.
+sweep - at the edge, which is why Daikon stays opt-in.
 
 ## Prompt caching for the judge tier
 
@@ -187,8 +187,8 @@ conforming to `schemas/mig_result.schema.json`.
 
 The CLI also reads two env vars used in tests / replay runs:
 
-- `MIGRATION_EVAL_FAKE_SANDBOX_CASSETTE_DIR` — directory of cassette
+- `MIGRATION_EVAL_FAKE_SANDBOX_CASSETTE_DIR` - directory of cassette
   files keyed by repo name; missing files default to a successful exit
   envelope.
-- `MIGRATION_EVAL_FAKE_JUDGE_CASSETTE_DIR` — directory of judge response
+- `MIGRATION_EVAL_FAKE_JUDGE_CASSETTE_DIR` - directory of judge response
   envelopes keyed by repo name.

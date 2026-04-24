@@ -207,13 +207,13 @@ def build_iterator_reports(results: Sequence[Mapping]) -> list[IteratorReport]:
 
 def _fmt_optional(value: Optional[float], fmt: str = "{:.4f}") -> str:
     if value is None:
-        return "—"
+        return "-"
     return fmt.format(value)
 
 
 def _format_breakdown(breakdown: Mapping[str, int]) -> str:
     if not breakdown:
-        return "—"
+        return "-"
     return ", ".join(f"{k}={v}" for k, v in breakdown.items())
 
 
@@ -243,8 +243,8 @@ def format_report(reports: Sequence[IteratorReport]) -> str:
             f"{_fmt_optional(r.p95_duration_s, '{:.2f}')} | "
             f"{_fmt_optional(r.total_cost_usd)} | "
             f"{_fmt_optional(r.p95_cost_usd)} | "
-            f"{r.agent_model or '—'} | "
-            f"{r.agent_runner or '—'} |"
+            f"{r.agent_model or '-'} | "
+            f"{r.agent_runner or '-'} |"
         )
     lines.append("")
     lines.append("## Per-batch breakdowns")

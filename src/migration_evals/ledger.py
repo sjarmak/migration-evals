@@ -10,7 +10,7 @@ The ledger layout is:
 
 `content_hash` is sha256 of the JSON-serialized result payload with sorted
 keys. Identical payloads collapse into a single file; any change to any field
-produces a new entry — this gives us path-independent dedup and an audit trail
+produces a new entry - this gives us path-independent dedup and an audit trail
 of every distinct trial outcome observed for a task.
 """
 
@@ -62,7 +62,7 @@ def write_ledger_entry(trial_dir: Path, ledger_root: Path) -> Path:
 
     Returns the path of the written ledger file. If the content hash already
     exists, the file is still written (idempotent overwrite) but no new entry
-    is created — the file count for the task stays the same.
+    is created - the file count for the task stays the same.
     """
     trial_dir = Path(trial_dir)
     ledger_root = Path(ledger_root)
@@ -119,7 +119,7 @@ def iter_trial_results(root: Path) -> Iterator[tuple[Path, dict]]:
             with result_path.open("r", encoding="utf-8") as f:
                 payload = json.loads(f.read())
         except (OSError, json.JSONDecodeError):
-            # Corrupt files are skipped — do NOT mask the situation;
+            # Corrupt files are skipped - do NOT mask the situation;
             # surface via a deterministic marker so the caller can audit.
             continue
         yield trial_dir, payload
@@ -187,7 +187,7 @@ def render_regression_markdown(
         if out_path is None:
             return str(p)
         # Use os.path.relpath so the report works regardless of whether the
-        # out_path and trial_dir share a common parent — it will produce
+        # out_path and trial_dir share a common parent - it will produce
         # '../../foo' style relative paths when needed.
         return os.path.relpath(
             str(Path(p).resolve()),

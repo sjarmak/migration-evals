@@ -57,7 +57,7 @@ def content_hash(repo_path: Path) -> str:
     moving identical bytes between filenames changes the hash. Files that do
     not exist are silently skipped.
 
-    Raises :class:`ValueError` if no manifest files are found — an empty
+    Raises :class:`ValueError` if no manifest files are found - an empty
     repo cannot be cached because there is nothing to key on.
     """
     h = hashlib.sha256()

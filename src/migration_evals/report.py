@@ -3,17 +3,17 @@
 Aggregates a directory of per-trial ``result.json`` files into a single
 markdown report. Sections (in order):
 
-1. Funnel table — per-tier n_entered/n_passed/n_failed/cumulative_pass_rate.
-2. Contamination split — score_pre_cutoff, score_post_cutoff, gap_pp, warning.
-3. Gold-anchor correlation — point + 95% CI + eval_broken (optional).
-4. Spec stamps — oracle_spec_sha / recipe_spec_sha / pre_reg_sha.
-5. Failure-class breakdown — count per class across failed trials.
+1. Funnel table - per-tier n_entered/n_passed/n_failed/cumulative_pass_rate.
+2. Contamination split - score_pre_cutoff, score_post_cutoff, gap_pp, warning.
+3. Gold-anchor correlation - point + 95% CI + eval_broken (optional).
+4. Spec stamps - oracle_spec_sha / recipe_spec_sha / pre_reg_sha.
+5. Failure-class breakdown - count per class across failed trials.
 
 Rendering strategy
 ------------------
 The rendering path is a hand-rolled :func:`format_report` that uses
 f-strings. Jinja2 is listed as available at dev time but we deliberately
-avoid depending on it at runtime — see docs/migration_eval/usage.md. The
+avoid depending on it at runtime - see docs/migration_eval/usage.md. The
 companion ``templates/report.md.j2`` file is a reference-only artifact
 that documents the target structure.
 """
@@ -93,7 +93,7 @@ def _funnel_counts(results: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]
     * ``n_passed`` = number of trials whose verdict for that tier was
       ``passed=True``.
     * ``n_failed`` = n_entered - n_passed.
-    * ``cumulative_pass_rate`` = n_passed / total_trials — gives the
+    * ``cumulative_pass_rate`` = n_passed / total_trials - gives the
       fraction of trials that made it past the tier.
     """
     total = len(results)

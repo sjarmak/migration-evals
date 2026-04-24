@@ -27,7 +27,7 @@ FIXTURE_ROOT = Path(__file__).parent / "fixtures" / "ast_pairs"
 def test_oracle_is_disjoint_from_generator_per_d5() -> None:
     """PRD D5: oracle check-set must be a documented subset of ≤ 50% of
     the generator's primitive set. Enforced as a guardrail because a
-    fully-overlapping oracle would make the eval tautological — the oracle
+    fully-overlapping oracle would make the eval tautological - the oracle
     would accept whatever the generator produced by construction.
     """
     oracle_set = ast_oracle.ORACLE_CHECKED_PRIMITIVES
@@ -64,7 +64,7 @@ def test_oracle_median_under_2_seconds(tmp_path: Path) -> None:
     # Use each generated repo as its own orig. We produce a cheap "migrated"
     # copy by applying simple textual rewrites so detectors see non-skip paths
     # where possible. The timing measurement is primarily about the oracle's
-    # scan speed — whether detectors pass or skip doesn't change the bound.
+    # scan speed - whether detectors pass or skip doesn't change the bound.
     timings = []
     for repo in sorted(out.glob("repo_*")):
         migrated = tmp_path / f"migrated_{repo.name}"
@@ -104,7 +104,7 @@ def test_oracle_cli_emits_json(tmp_path: Path) -> None:
 def _copy_and_migrate(src: Path, dst: Path) -> None:
     """Copy a synthetic repo tree and apply naive textual migrations.
 
-    This is deliberately simple — its only job is to exercise oracle detectors
+    This is deliberately simple - its only job is to exercise oracle detectors
     during timing tests. It is not a real migrator.
     """
     import re

@@ -285,7 +285,7 @@ def test_no_direct_anthropic_import_in_harness() -> None:
         capture_output=True,
         text=True,
     )
-    # grep exits 1 when no matches — that is the pass condition.
+    # grep exits 1 when no matches - that is the pass condition.
     assert result.returncode == 1, (
         f"expected zero 'import anthropic' matches in harness/. "
         f"stdout={result.stdout!r} stderr={result.stderr!r}"

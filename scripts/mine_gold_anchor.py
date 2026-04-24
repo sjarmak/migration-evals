@@ -1,21 +1,20 @@
 #!/usr/bin/env python3
 """Automated gold-anchor harvester for migration-evals (PRD M4-lite).
 
-Replaces the original "schedule reviewer days to label 50 repos" step with
-a fully automated pipeline that derives accept/reject labels from the
-implicit maintainer verdict on a set of pull requests:
+Derives accept/reject labels from the implicit maintainer verdict on a set
+of pull requests:
 
     accept = PR was merged and survived >=30 days without a revert
     reject = PR was closed-unmerged or merged-then-reverted
 
 Two sources of candidate PRs are supported:
 
-    --source oss          (default) — query GitHub Search for OSS PRs
+    --source oss          (default) - query GitHub Search for OSS PRs
                           matching a recipe's search queries. Useful when
                           you do not yet have agent-generated changesets
                           to evaluate.
 
-    --source changesets   — read a list of PR URLs (one per line, or
+    --source changesets   - read a list of PR URLs (one per line, or
                           CSV with `pr_url,...` rows) from --changesets.
                           This is the stronger signal once the agent under
                           test has been shipping real changesets: every
@@ -25,7 +24,7 @@ Two sources of candidate PRs are supported:
 
 The script uses the `gh` CLI for both repo search and PR metadata; it
 requires `gh auth login` to be already done. No additional Python
-dependencies — stdlib + subprocess.
+dependencies - stdlib + subprocess.
 
 Usage
 -----
@@ -585,7 +584,7 @@ def main(argv: list[str] | None = None) -> int:
         help=(
             "Where to source candidate PRs. 'oss' (default) runs the recipe's "
             "GitHub Search queries. 'changesets' classifies a list of PR URLs "
-            "from --changesets — use this once your agent is producing real "
+            "from --changesets - use this once your agent is producing real "
             "PRs and you want to measure their merge-survival."
         ),
     )

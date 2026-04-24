@@ -27,12 +27,12 @@ Every cached recipe is a JSON document with two top-level keys:
 }
 ```
 
-- `recipe.dockerfile` / `build_cmd` / `test_cmd` — strings consumed by the
+- `recipe.dockerfile` / `build_cmd` / `test_cmd` - strings consumed by the
   container runtime.
-- `recipe.harness_provenance` — append-only metadata. The three keys
+- `recipe.harness_provenance` - append-only metadata. The three keys
   `model`, `prompt_version`, and `timestamp` (ISO-8601 UTC, `Z`-suffixed)
   are required; extra keys are allowed and forwarded verbatim.
-- `cached_at` — written by the cache layer, separate from provenance so
+- `cached_at` - written by the cache layer, separate from provenance so
   drift-detector TTL decisions never alter the synthesis record.
 
 ## Content-hash keying
@@ -56,7 +56,7 @@ on.
 `AnthropicAdapter` Protocol from `migration_evals.adapters`. Tests
 inject a `FakeAnthropicCassette` that returns pre-recorded JSON envelopes
 keyed on the repo's content hash. The cassette also tracks a `call_count`
-attribute so tests can assert **zero adapter calls** after a cache hit —
+attribute so tests can assert **zero adapter calls** after a cache hit -
 this is the guarantee that makes cost-bounded re-runs safe.
 
 ## Failure handling and auto-quarantine
@@ -75,7 +75,7 @@ is to **auto-quarantine** the repo: move it from the active task manifest
 into `runs/analysis/_quarantine/<repo>/` with a `reason.txt` that includes
 the raised message, and emit a `harness_synthesis_failed` failure class on
 the next ledger write. No recipe is persisted and no audit-log entry is
-written — failed syntheses leave the cache untouched so the next pipeline
+written - failed syntheses leave the cache untouched so the next pipeline
 run can retry cleanly once the underlying cause (e.g. a malformed
 `pom.xml`) is fixed.
 

@@ -1,4 +1,4 @@
-# java8_17 smoke config — 3-repo fixture run.
+# java8_17 smoke config - 3-repo fixture run.
 #
 # This config drives `python -m migration_evals.cli run --config ...`
 # end-to-end against the committed fixture repos so the smoke path never

@@ -4,7 +4,7 @@ This module is deliberately thin: it collects a repo's manifest + CI + README
 context, asks a Haiku-class model (via the :class:`AnthropicAdapter`
 Protocol) to emit a Dockerfile + build/test recipe, and persists the result
 under the content-hashed cache. All provider calls flow through the
-adapter — the ``harness/`` package never imports the vendor SDK directly,
+adapter - the ``harness/`` package never imports the vendor SDK directly,
 which is verified by a dedicated test.
 
 Replay determinism is delegated to the adapter: tests wire up a

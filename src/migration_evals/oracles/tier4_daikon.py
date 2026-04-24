@@ -1,4 +1,4 @@
-"""Tier 4 — Daikon invariants (stub; PRD M1).
+"""Tier 4 - Daikon invariants (stub; PRD M1).
 
 Daikon integration is out of scope for the initial funnel landing.
 The module is intentionally importable so the funnel can feature-flag
@@ -26,7 +26,7 @@ def run(
     cassette: Optional[Any] = None,
     cost_usd: float = DEFAULT_COST_USD,
 ) -> OracleVerdict:
-    """Raise :class:`NotImplementedError` — the funnel skips this tier.
+    """Raise :class:`NotImplementedError` - the funnel skips this tier.
 
     When the Daikon integration lands, this function will produce a real
     :class:`OracleVerdict`. Until then, it signals its unavailability by

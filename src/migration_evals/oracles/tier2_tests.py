@@ -1,4 +1,4 @@
-"""Tier 2 — run the migrated repo's existing test suite (PRD M1).
+"""Tier 2 - run the migrated repo's existing test suite (PRD M1).
 
 Same sandbox contract as :mod:`tier1_compile`, but invokes
 ``harness_recipe.test_cmd``. A non-zero exit code fails the tier; tests

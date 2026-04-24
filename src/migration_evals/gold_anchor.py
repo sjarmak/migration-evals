@@ -5,7 +5,7 @@ correlation analysis that compares the oracle funnel's pass/fail signal to
 those external verdicts. The correlation coefficient is Phi (equivalent to
 Pearson correlation on two binary variables).
 
-Labels are sourced automatically — see ``scripts/mine_gold_anchor.py`` —
+Labels are sourced automatically - see ``scripts/mine_gold_anchor.py`` -
 from public OSS migration PRs that were merged and survived ≥30 days
 without a revert. The ``human_verdict`` field name is preserved for
 backward compatibility with the JSON schema and existing fixtures, but
@@ -14,9 +14,9 @@ not a fresh per-trial human review.
 
 Key outputs:
 
-- ``load_gold_set(path)`` -> ``list[GoldEntry]`` — deserialise a frozen gold
+- ``load_gold_set(path)`` -> ``list[GoldEntry]`` - deserialise a frozen gold
   set from JSON.
-- ``correlate(funnel_results, gold)`` -> ``CorrelationReport`` — compute Phi
+- ``correlate(funnel_results, gold)`` -> ``CorrelationReport`` - compute Phi
   with a 95% bootstrap CI (n_bootstrap=10000, seeded) and an ``eval_broken``
   flag that trips when ``point < 0.7`` or ``ci_low < 0.5``.
 
@@ -51,7 +51,7 @@ class GoldEntry:
         human_verdict: ``"accept"`` (merged + survived ≥30 days without revert)
             or ``"reject"`` (closed-unmerged or merged-then-reverted).
             Field name retained for schema backward compatibility.
-        reviewer_notes: Provenance string — typically the source PR URL
+        reviewer_notes: Provenance string - typically the source PR URL
             and the survival check that produced the verdict.
         labeled_at: ISO-8601 timestamp when the label was harvested.
     """
@@ -237,14 +237,14 @@ def correlate(
 ) -> CorrelationReport:
     """Compute Phi + 95% bootstrap CI for a funnel / gold pair set.
 
-    ``eval_broken`` is True iff ``point < 0.7`` or ``ci_low < 0.5`` — either
+    ``eval_broken`` is True iff ``point < 0.7`` or ``ci_low < 0.5`` - either
     branch marks the oracle signal as insufficiently aligned with human
     verdicts to publish.
     """
     x, y, details = _join_pairs(funnel_results, gold)
 
     if not x:
-        # No overlap — cannot compute Phi. Treat as broken so the gate trips.
+        # No overlap - cannot compute Phi. Treat as broken so the gate trips.
         return CorrelationReport(
             point=0.0,
             ci_low=0.0,

@@ -1,4 +1,4 @@
-# Migration Eval CLI — Quickstart
+# Migration Eval CLI - Quickstart
 
 All subcommands live under `python -m migration_evals.cli`:
 
@@ -60,19 +60,19 @@ python -m migration_evals.cli report \
 Aggregates all `result.json` files under `--run` into a single markdown
 report. Sections, in order:
 
-1. **Funnel table** — one row per tier (compile, tests, ast, judge,
+1. **Funnel table** - one row per tier (compile, tests, ast, judge,
    daikon) with columns `tier_name`, `n_entered`, `n_passed`, `n_failed`,
    `cumulative_pass_rate`.
-2. **Contamination split** — `score_pre_cutoff`, `score_post_cutoff`,
+2. **Contamination split** - `score_pre_cutoff`, `score_post_cutoff`,
    `gap_pp`, `warning_flag`, bucketed against `--cutoff` (defaults to the
    value from `summary.json`, or `2025-01-01` if absent).
-3. **Gold-anchor correlation** *(optional)* — Phi coefficient + 95%
+3. **Gold-anchor correlation** *(optional)* - Phi coefficient + 95%
    bootstrap CI + `eval_broken` flag. Rendered only when `--gold` points
    at a gold-anchor JSON file.
-4. **Spec stamps** — `oracle_spec_sha`, `recipe_spec_sha`, `pre_reg_sha`
+4. **Spec stamps** - `oracle_spec_sha`, `recipe_spec_sha`, `pre_reg_sha`
    read from `summary.json` (or the first trial's `result.json` as a
    fallback).
-5. **Failure class breakdown** — count per failure class across failed
+5. **Failure class breakdown** - count per failure class across failed
    trials.
 
 ### Rendering strategy
@@ -84,7 +84,7 @@ footprint.
 
 The companion reference template at
 `src/migration_evals/templates/report.md.j2` is a **documentation
-artifact only** — it describes the target structure and is not loaded by
+artifact only** - it describes the target structure and is not loaded by
 the CLI. If you need Jinja2 rendering in your own tooling, import the
 template manually and pass the dict returned by
 `migration_evals.report.build_report_data`.
@@ -106,7 +106,7 @@ scanned recursively for `result.json` files. See
 `src/migration_evals/ledger.py::run_regression` for the implementation.
 
 The `--from` / `--to` arguments can point at ledger directories or
-plain run directories — any layout that contains `result.json` under
+plain run directories - any layout that contains `result.json` under
 `<root>/**/` works.
 
 ---

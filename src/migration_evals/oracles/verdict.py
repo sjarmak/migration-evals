@@ -4,7 +4,7 @@ Every tier in the oracle funnel returns an :class:`OracleVerdict`. The
 funnel orchestrator aggregates them into a :class:`FunnelResult`.
 
 Both are ``frozen=True`` so that the cascade cannot accidentally mutate a
-verdict after the fact — verdicts cross module boundaries (tier module →
+verdict after the fact - verdicts cross module boundaries (tier module →
 funnel → CLI → result.json writer) and must be safe to share.
 """
 
@@ -51,7 +51,7 @@ class FunnelResult:
 
     ``per_tier_verdict`` is a tuple of ``(tier_name, OracleVerdict)`` pairs
     in the order the tiers executed. ``final_verdict`` is the verdict that
-    terminated the cascade — either the first ``passed=False`` verdict
+    terminated the cascade - either the first ``passed=False`` verdict
     (short-circuit) or the last verdict on the path if everything passed.
     """
 

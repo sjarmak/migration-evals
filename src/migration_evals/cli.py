@@ -280,7 +280,7 @@ class _CassetteSandboxAdapter:
         record = self._records.get(command)
         if record is None:
             # Default: pretend the command succeeded. This keeps fixture
-            # scaffolding minimal — only failing cases need cassette
+            # scaffolding minimal - only failing cases need cassette
             # entries.
             return {"exit_code": 0, "stdout": "", "stderr": ""}
         return dict(record)
@@ -403,10 +403,10 @@ def _handle_run(args: argparse.Namespace) -> int:
 
     Two invocation modes:
 
-    * ``--config path.yaml`` (or positional ``config``) — load a YAML
+    * ``--config path.yaml`` (or positional ``config``) - load a YAML
       configuration and execute the full funnel via
       :func:`migration_evals.runner.run_from_config`.
-    * ``--repos dir --out dir`` — legacy fixture-driven path used by
+    * ``--repos dir --out dir`` - legacy fixture-driven path used by
       ``tests/migration_eval/test_funnel.py``. Kept intact so the funnel
       integration test continues to pass.
     """
@@ -518,7 +518,7 @@ def _handle_report(args: argparse.Namespace) -> int:
 def _handle_harness(args: argparse.Namespace) -> int:
     """Thin wrapper over :func:`migration_evals.harness.synth.synthesize_recipe`.
 
-    This is deliberately minimal — the canonical harness synthesis code path
+    This is deliberately minimal - the canonical harness synthesis code path
     lives in ``scripts/migration_eval/harness/synth.py`` and is exercised by
     the dedicated harness tests. The CLI surface exists so operators can
     inspect what a recipe looks like for a given repo without writing a
@@ -571,7 +571,7 @@ def _handle_probe(args: argparse.Namespace) -> int:
     For ``--ecosystem python23`` (the M9 mode) delegates to
     :func:`migration_evals.python23_probe.run` which writes a
     ``findings.json`` enumerating M2/M3/M5 schema inadequacies. The probe
-    succeeds even when it finds revision-required cases — surfacing the
+    succeeds even when it finds revision-required cases - surfacing the
     gap is the point.
 
     For any other ecosystem identifier, falls back to the legacy stub

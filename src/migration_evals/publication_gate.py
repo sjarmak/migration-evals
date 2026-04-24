@@ -98,7 +98,7 @@ def _check_gold_anchor(
     if not summary_path.is_file():
         if require:
             return _fail(
-                f"summary.json missing under {run_dir} — required by "
+                f"summary.json missing under {run_dir} - required by "
                 "--require-gold-anchor"
             )
         return None
@@ -208,7 +208,7 @@ def check_run(run_dir: Path, *, require_gold_anchor: bool = False) -> int:
         return gold_failure
 
     print(
-        f"publication_gate: OK — {len(result_paths)} result.json file(s) "
+        f"publication_gate: OK - {len(result_paths)} result.json file(s) "
         f"verified under {run_dir}"
     )
     return 0

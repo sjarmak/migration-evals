@@ -43,7 +43,7 @@ def _smoke_config(tmp_path: Path, output_root: Path) -> Path:
 
 
 # ---------------------------------------------------------------------------
-# format_report — direct rendering
+# format_report - direct rendering
 # ---------------------------------------------------------------------------
 
 
@@ -126,7 +126,7 @@ def test_format_report_emits_all_required_sections() -> None:
 
 
 # ---------------------------------------------------------------------------
-# End-to-end — run smoke, then generate report
+# End-to-end - run smoke, then generate report
 # ---------------------------------------------------------------------------
 
 
@@ -184,7 +184,7 @@ def test_build_report_data_respects_cutoff_override(tmp_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# CLI invocation — AC#3
+# CLI invocation - AC#3
 # ---------------------------------------------------------------------------
 
 

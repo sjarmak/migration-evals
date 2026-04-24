@@ -1,22 +1,22 @@
-"""Tier 0 — diff validity (PRD M1 extension).
+"""Tier 0 - diff validity (PRD M1 extension).
 
 The cheapest oracle in the funnel. Catches the worst class of agent
-hallucination — *the patch isn't even a patch* — before paying for a
+hallucination - *the patch isn't even a patch* - before paying for a
 Tier-1 sandbox compile.
 
 Three checks, in order. The first check that has any signal wins:
 
-1. **Patch artifact path** — if the trial directory contains a unified-diff
+1. **Patch artifact path** - if the trial directory contains a unified-diff
    artifact (``patch.diff`` / ``agent_diff.patch`` / ``changeset.diff``),
    verify it parses as a unified diff *and* (when ``orig/`` exists) applies
    cleanly with ``git apply --check``.
 
-2. **orig/ vs migrated/ subtrees** — when the trial uses the synthetic
+2. **orig/ vs migrated/ subtrees** - when the trial uses the synthetic
    fixture layout, verify that the diff between them is a well-formed
    unified diff (every changed file has matching ``---``/``+++``/``@@``
    headers and the line counts in the hunks match the actual hunk bodies).
 
-3. **Repo-only fallback** — when neither of the above is present, do a
+3. **Repo-only fallback** - when neither of the above is present, do a
    light structural check on the migrated tree: at least one source file
    exists, files are non-empty, and curly-brace / parenthesis counts
    balance for ``.java`` / ``.py`` / ``.ts`` / ``.js`` / ``.go``.
@@ -43,7 +43,7 @@ DEFAULT_COST_USD = 0.001
 PATCH_ARTIFACT_NAMES = ("patch.diff", "agent_diff.patch", "changeset.diff")
 
 # File extensions whose brace / paren balance we sanity-check in the
-# repo-only fallback. The list is intentionally short — a missing extension
+# repo-only fallback. The list is intentionally short - a missing extension
 # means the fallback skips the brace check (it does not fail).
 _BRACE_LANG_EXTENSIONS = {".java", ".js", ".jsx", ".ts", ".tsx", ".go", ".c", ".cpp", ".h", ".rs"}
 _PAREN_LANG_EXTENSIONS = _BRACE_LANG_EXTENSIONS | {".py"}
@@ -62,7 +62,7 @@ def run(
     """Return a Tier-0 diff-validity verdict for ``repo_path``.
 
     ``sandbox_adapter`` and ``harness_recipe`` are accepted for signature
-    consistency with the other tiers but unused — Tier-0 is local-only.
+    consistency with the other tiers but unused - Tier-0 is local-only.
     """
     repo_path = Path(repo_path)
 
@@ -121,7 +121,7 @@ def _check_patch_artifact(
         return False, {"reason": "patch_malformed", **parse_details}
     if shutil.which("git") is None or not (repo_path / ".git").is_dir():
         # Cannot run git apply without git + a repo. Still pass on parse
-        # success — the structural check did its job.
+        # success - the structural check did its job.
         return True, {
             "patch_path": str(patch_path),
             "patch_apply": "skipped",
@@ -228,7 +228,7 @@ def _check_orig_vs_migrated(orig: Path, migrated: Path) -> tuple[bool, dict[str,
         return False, {"reason": "migrated_subtree_empty"}
 
     # Check that every migrated file is non-empty and parses for known
-    # bracket languages. We do not require file-name parity with orig/ —
+    # bracket languages. We do not require file-name parity with orig/ -
     # migrations can rename files.
     failures: list[str] = []
     n_files = 0

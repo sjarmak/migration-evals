@@ -12,8 +12,8 @@ Design notes
 * Each emitted payload is stamped via :func:`pre_reg.stamp_result` so the
   three SHA fields (oracle / recipe / pre-reg) are always present.
 * When the funnel already assigned a ``failure_class`` (because a tier
-  short-circuited), we propagate it. Otherwise — and only when
-  ``success=False`` — we fall back to ``failure_class.classify`` against
+  short-circuited), we propagate it. Otherwise - and only when
+  ``success=False`` - we fall back to ``failure_class.classify`` against
   the newly-written trial directory. Success cases always get ``null``.
 * Every payload validates against ``schemas/mig_result.schema.json`` by
   construction; the CLI smoke test enforces this at runtime too.

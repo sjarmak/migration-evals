@@ -1,7 +1,7 @@
 """Pre/post-cutoff score split for contamination detection (PRD M7).
 
 Each trial result records when the underlying repository was created. A
-"contaminated" model — one whose training corpus included the repo —
+"contaminated" model - one whose training corpus included the repo -
 tends to score much higher on pre-cutoff repos than on post-cutoff ones,
 because it has effectively memorized the answer.
 
@@ -73,7 +73,7 @@ def split_scores(
     """Bucket results by ``repo_created_at`` vs ``model_cutoff_date``.
 
     A repo is *pre-cutoff* iff its ``repo_created_at`` is strictly before
-    ``model_cutoff_date`` — those repos were likely in the training data.
+    ``model_cutoff_date`` - those repos were likely in the training data.
     Results missing or with an unparseable ``repo_created_at`` are skipped
     (they are counted in neither bucket), which is the conservative
     choice: unknown provenance cannot contribute to a contamination

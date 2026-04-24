@@ -4,12 +4,12 @@ Every trial whose `success=False` is assigned exactly one of four
 `FailureClass` values. The four classes partition failures by the *layer* that
 caused them, which is the lens that matters most for triage:
 
-1. **infra_error** — sandbox/container/VM never got out of the way.
-2. **harness_error** — the migration recipe / test harness collapsed before
+1. **infra_error** - sandbox/container/VM never got out of the way.
+2. **harness_error** - the migration recipe / test harness collapsed before
    the agent could do real work.
-3. **oracle_error** — the agent believed it succeeded but the oracle
+3. **oracle_error** - the agent believed it succeeded but the oracle
    subsystem threw.
-4. **agent_error** — everything else (the agent itself failed the task).
+4. **agent_error** - everything else (the agent itself failed the task).
 
 The classes are disjoint and mutually exclusive. The classifier in
 `src/migration_evals/failure_class.py::classify` checks them in the order
@@ -24,7 +24,7 @@ listed above; the first match wins.
 | 3        | `oracle_error` | `result.json.oracle_error_marker` truthy, **or** `result.json.agent_reported_success=true` while `success=false`, **or** a file matching `ast_oracle_trace*` / `judge_error*` / `oracle_trace*` exists in the trial dir. |
 | 4        | `agent_error`  | Default when `success=false` and no higher-priority signal fires. Also used when `result.json` is missing or unreadable. |
 
-When `success=true`, `classify()` returns `None` — there is no failure to
+When `success=true`, `classify()` returns `None` - there is no failure to
 classify.
 
 ## Example Signatures
@@ -55,7 +55,7 @@ classify.
 
 ### agent_error
 
-- `result.json`: `{"success": false, "failure_class": null, ...}` — vanilla
+- `result.json`: `{"success": false, "failure_class": null, ...}` - vanilla
   agent-failed-the-task trial with no side-channel signals.
 - Missing or corrupt `result.json` (cannot prove any other layer failed).
 - `result.json`: `{"success": false, "score_post_cutoff": 0.12, ...}`
@@ -68,7 +68,7 @@ classify.
 
 - `FailureClass` is imported from `migration_evals.types`. Callers and
   tests MUST use that enum; do not redefine.
-- Adding a new failure class is a PRD-level change — downstream tools
+- Adding a new failure class is a PRD-level change - downstream tools
   (reporting, alerting, IRT calibration) assume the four-way partition.
 - Adding new detection *rules* within an existing class is allowed but should
   be reflected here and in `tests/fixtures/failure_class_cases/`.

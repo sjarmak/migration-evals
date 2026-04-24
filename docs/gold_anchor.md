@@ -6,14 +6,14 @@ correlates strongly with these external verdicts, we trust it to gate
 publication. If it does not, we mark the evaluation as broken and block
 publication.
 
-## Where the labels come from (no reviewer time required)
+## Where the labels come from
 
 Labels are harvested automatically by
 [`scripts/mine_gold_anchor.py`](../scripts/mine_gold_anchor.py) from public
 OSS migration PRs. The procedure:
 
 1. Use the GitHub Search API (`gh search prs`) to find PRs that
-   demonstrably executed the target migration — for Java 8→17, PRs that
+   demonstrably executed the target migration - for Java 8→17, PRs that
    touched lambda rewrites, `var` introductions, Optional chains, text
    blocks, records, sealed classes, pattern matching, enhanced switches,
    or deprecated-API swaps as identified by file diff content.
@@ -30,9 +30,7 @@ observed via merge-survival, not a fresh per-trial human review. The
 correlation analysis treats `accept` / `reject` as binary outcomes
 regardless of how the label was sourced.
 
-This automation removes the original "schedule reviewer days" step from
-the operational loop entirely — the gold anchor refresh becomes a
-scheduled CI job, not a planning meeting.
+The gold-anchor refresh is a scheduled CI job, not a planning meeting.
 
 ## Scope: 50 repos
 
@@ -58,7 +56,7 @@ Why 50 specifically:
 Re-anchor (re-run the harvester, regenerate the gold set) on these
 triggers:
 
-- **Quarterly** as a default cadence — the harvester is a scheduled job.
+- **Quarterly** as a default cadence - the harvester is a scheduled job.
 - **Oracle spec change**: any non-trivial edit to `oracle_spec.yaml` (new
   tier, threshold change, failure-class reclassification) invalidates the
   existing gold set; re-anchor before resuming publication.
@@ -82,10 +80,10 @@ mechanism.
 
 ## What's checked in
 
-- [`data/gold_anchor_template.json`](../data/gold_anchor_template.json) — an
+- [`data/gold_anchor_template.json`](../data/gold_anchor_template.json) - an
   empty array `[]`, the seed for `mine_gold_anchor.py`.
 - [`schemas/gold_anchor_entry.schema.json`](../schemas/gold_anchor_entry.schema.json)
-  — the validation schema.
+  - the validation schema.
 - This document.
 
 The harvested `data/gold_anchor.json` is **not checked in by default**. It
@@ -100,14 +98,14 @@ computes the Phi coefficient (equivalent to Pearson on two binary
 variables) between funnel `success` and `human_verdict=="accept"`, and
 returns a `CorrelationReport`:
 
-- `point` — Phi coefficient on the full matched pair set.
-- `ci_low`, `ci_high` — 95% bootstrap CI bounds (10,000 iterations,
+- `point` - Phi coefficient on the full matched pair set.
+- `ci_low`, `ci_high` - 95% bootstrap CI bounds (10,000 iterations,
   seeded; same seed + same input → identical CI).
-- `eval_broken` — True iff `point < 0.7` **or** `ci_low < 0.5`. The OR is
+- `eval_broken` - True iff `point < 0.7` **or** `ci_low < 0.5`. The OR is
   deliberate: a low point estimate alone is disqualifying, and a wide CI
   whose lower bound dips below 0.5 indicates we cannot rule out a broken
   funnel even if the point estimate looks acceptable.
-- `details` — diagnostic dict (n_pairs, dropped_funnel, dropped_gold,
+- `details` - diagnostic dict (n_pairs, dropped_funnel, dropped_gold,
   n_bootstrap, seed).
 
 ## Publication gate integration

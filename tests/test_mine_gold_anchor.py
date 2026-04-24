@@ -91,7 +91,7 @@ def test_classify_returns_none_for_recent_merge(mga, now):
         url="https://github.com/org/repo/pull/3",
     )
     verdict = mga.classify(pr, min_days_survived=30, revert_keywords=["revert"], now=now)
-    assert verdict is None  # too recent — defer until next harvest
+    assert verdict is None  # too recent - defer until next harvest
 
 
 def test_classify_returns_reject_when_revert_observed(mga, now, monkeypatch):

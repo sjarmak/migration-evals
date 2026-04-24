@@ -11,7 +11,7 @@ CLI:
 Design notes:
 
 - ``GENERATOR_PRIMITIVES`` is the full set of primitives exercised by the
-  generator. The AST oracle deliberately covers a subset — see ``ast_oracle``
+  generator. The AST oracle deliberately covers a subset - see ``ast_oracle``
   and PRD D5.
 - Determinism: a top-level seed produces a stable sequence of per-repo child
   seeds. Primitive selection uses ``rng.sample`` over the sorted primitive list
@@ -29,7 +29,7 @@ from typing import Any
 
 try:
     from .primitives import ALL_MODULES
-except ImportError:  # pragma: no cover — script-style invocation
+except ImportError:  # pragma: no cover - script-style invocation
     import sys as _sys
     from pathlib import Path as _Path
 

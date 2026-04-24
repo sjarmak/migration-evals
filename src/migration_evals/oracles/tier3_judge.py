@@ -1,9 +1,9 @@
-"""Tier 3 — LLM-judge single-pass verdict with prompt caching (PRD M1).
+"""Tier 3 - LLM-judge single-pass verdict with prompt caching (PRD M1).
 
 This tier asks a Claude judge to read the recipe, the repo's manifest
 excerpt, and a static rubric and return a PASS / FAIL verdict. The rubric
 is the same across every trial, so it lives in the ``system`` prompt with
-a ``cache_control: ephemeral`` block — which on a cached provider cuts
+a ``cache_control: ephemeral`` block - which on a cached provider cuts
 per-call cost by the rubric's share of the prompt.
 
 The adapter contract is ``messages_create(*, model, messages, system,

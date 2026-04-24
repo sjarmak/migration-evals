@@ -42,7 +42,7 @@ def test_generator_emits_three_distinct_case_types(tmp_path: Path) -> None:
     assert {"str_bytes", "setup_py_div", "two_to_three"}.issubset(observed), (
         f"expected all three case types, got {observed}"
     )
-    # Each emitted repo carries a setup.py (no pyproject.toml — that absence
+    # Each emitted repo carries a setup.py (no pyproject.toml - that absence
     # is part of the falsification surface for the harness module).
     for repo_dir in repos:
         assert (repo_dir / "setup.py").is_file()
@@ -83,7 +83,7 @@ def test_schema_revision_required_true_branch_real_probe_run(
 ) -> None:
     """Acceptance (c): real probe run against fixtures flips the gate to True.
 
-    This is the EXPECTED v1 finding — see docs/migration_eval/python23_probe.md.
+    This is the EXPECTED v1 finding - see docs/migration_eval/python23_probe.md.
     All three of harness/synthetic/ledger naturally trip on the Java-shaped
     interfaces, so ``schema_revision_required`` is True.
     """
@@ -109,7 +109,7 @@ def test_schema_revision_required_true_branch_real_probe_run(
 def test_schema_revision_required_false_branch_synthetic_injection() -> None:
     """Acceptance (d): threshold helper returns False when only 1 module trips.
 
-    This validates the threshold logic, not real probe behavior — we inject
+    This validates the threshold logic, not real probe behavior - we inject
     a synthetic findings dict with mismatches in exactly one module.
     """
     one_module_mismatch = {

@@ -1,4 +1,4 @@
-# Publication Gate — Migration Eval (PRD D2)
+# Publication Gate - Migration Eval (PRD D2)
 
 The publication gate is a mechanical CI check that prevents publishing any
 migration-eval run whose per-trial `result.json` files are not fully
@@ -63,7 +63,7 @@ jobs:
           done
 ```
 
-## CODEOWNERS pattern (governance — not applied here)
+## CODEOWNERS pattern (governance - not applied here)
 
 The pre-registered hypotheses file must be owned by the migration-eval-owners
 leadership group so that post-hoc edits require explicit review. The
@@ -94,4 +94,4 @@ docs/ @framework-owners
 4. If the spec change was accidental: revert the spec and rerun the gate.
 
 The gate is mechanical by design. It does not reason about *why* a stamp
-went stale — only *that* it did.
+went stale - only *that* it did.

@@ -2,7 +2,7 @@
 
 prompt_sha is the 4th stamp (alongside oracle_spec_sha / recipe_spec_sha /
 pre_reg_sha). It is enforced by the publication gate ONLY when manifest.json
-declares a 'prompt_spec' key — keeping all existing recipe-driven runs
+declares a 'prompt_spec' key - keeping all existing recipe-driven runs
 backward-compatible.
 """
 

@@ -123,7 +123,7 @@ def test_run_from_config_missing_required_key(tmp_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# CLI smoke — AC#1 + AC#2 (emits 3 schema-valid result.json in < 2 minutes)
+# CLI smoke - AC#1 + AC#2 (emits 3 schema-valid result.json in < 2 minutes)
 # ---------------------------------------------------------------------------
 
 
@@ -167,7 +167,7 @@ def test_cli_run_config_smoke_under_two_minutes(tmp_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Harness + probe subcommand wiring (AC#8 — all subcommands exist)
+# Harness + probe subcommand wiring (AC#8 - all subcommands exist)
 # ---------------------------------------------------------------------------
 
 

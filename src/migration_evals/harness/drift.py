@@ -7,7 +7,7 @@ path writes a JSON line to ``_audit.log`` so a historical record survives
 the directory removal.
 
 A full version of this unit will additionally run the recipe's Dockerfile
-build to catch silent drift (e.g. base-image tags that stop pulling) — that
+build to catch silent drift (e.g. base-image tags that stop pulling) - that
 rebuild step is represented here by :func:`_rebuild_ok`, which returns
 ``True`` for now. Callers depending on the rebuild signal should override
 ``rebuild_ok`` via the ``rebuild_check`` parameter.
@@ -33,7 +33,7 @@ class DriftReport:
     timestamp: str = ""
 
 
-def _rebuild_ok(recipe: Recipe) -> bool:  # noqa: ARG001 — stub for future work
+def _rebuild_ok(recipe: Recipe) -> bool:  # noqa: ARG001 - stub for future work
     """Placeholder: a future unit will actually rebuild the image here."""
     return True
 
@@ -77,7 +77,7 @@ def revalidate(
     for entry_hash in _iter_cache_entries(harness_root):
         stamp = cache_mod.cached_at(entry_hash, harness_root)
         if stamp is None:
-            # Corrupt entry — evict defensively.
+            # Corrupt entry - evict defensively.
             cache_mod.evict(entry_hash, harness_root, reason="missing_timestamp")
             stale.append(entry_hash)
             evicted.append(entry_hash)

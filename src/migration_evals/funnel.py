@@ -35,7 +35,7 @@ from migration_evals.types import FailureClass
 AST_TIER_NAME = "ast_conformance"
 AST_DEFAULT_COST_USD = 0.0
 
-# Stage alias table — maps CLI --stage values to the set of tiers to run.
+# Stage alias table - maps CLI --stage values to the set of tiers to run.
 STAGE_ALIASES: dict[str, tuple[str, ...]] = {
     "diff": (tier0_diff.TIER_NAME,),
     "compile": (tier1_compile.TIER_NAME,),
@@ -180,7 +180,7 @@ def run_funnel(
             )
 
     if not verdicts:
-        # No tier ran — treat as harness error so the trial is visibly broken
+        # No tier ran - treat as harness error so the trial is visibly broken
         # rather than silently marked successful.
         empty = OracleVerdict(
             tier="none",

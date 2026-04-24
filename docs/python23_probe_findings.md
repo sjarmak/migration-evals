@@ -1,4 +1,4 @@
-# Python 2→3 Probe Findings — TEMPLATE
+# Python 2→3 Probe Findings - TEMPLATE
 
 > This is a TEMPLATE. Each probe run produces a fresh `findings.json` under
 > `runs/analysis/python23_probe/`. Use this template to author the
@@ -71,15 +71,15 @@ separately for traceability.
 Concrete, minimal edits required to clear the gate. Each item should map to
 a single mismatch above.
 
-1. **`Recipe` (M2)** — add an `ecosystem: Literal["java", "python"]` (or
+1. **`Recipe` (M2)** - add an `ecosystem: Literal["java", "python"]` (or
    broader) discriminator field; default Dockerfile + build/test commands
    keyed off ecosystem. Include `ecosystem` in `harness_provenance` for
    audit.
-2. **`GENERATOR_PRIMITIVES` (M3)** — split into per-ecosystem registries
+2. **`GENERATOR_PRIMITIVES` (M3)** - split into per-ecosystem registries
    (e.g. `JAVA_GENERATOR_PRIMITIVES`, `PYTHON_GENERATOR_PRIMITIVES`); the
    public API exposes a union plus an ecosystem accessor. Update D5
    (oracle-vs-generator disjointness) accounting accordingly.
-3. **`mig_result.schema.json:oracle_tier` (M5)** — extend the enum to
+3. **`mig_result.schema.json:oracle_tier` (M5)** - extend the enum to
    include `python_2to3_runtime` and any other ecosystem-specific runtime
    tiers. Consider promoting `oracle_tier` to a structured object with
    `ecosystem` + `tier` so future ecosystems do not require new enum

@@ -1,4 +1,4 @@
-# Hypotheses and Thresholds — Migration Eval (v1)
+# Hypotheses and Thresholds - Migration Eval (v1)
 
 This file is the **pre-registration** artifact for the migration eval
 framework. Every hypothesis and threshold listed here is declared **BEFORE**
@@ -37,7 +37,7 @@ in-place edits to this file. Any revision requires a new file (for example,
 `hypotheses_and_thresholds_v2.md`) with its own `pre_reg_date`, and results
 must be re-stamped against it. In-place edits invalidate the pre-registration
 record for every trial that already carries the old `pre_reg_sha` and will
-be caught by `scripts/maintenance/publication_gate.py` as stale stamps.
+be caught by `migration_evals.publication_gate` as stale stamps.
 
 ## Ownership
 

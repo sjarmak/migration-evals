@@ -13,16 +13,16 @@ Probe contract
 For each repo (either generated via ``python2_generator`` or supplied as a
 fixture root), the probe attempts:
 
-1. Harness — does the existing :class:`Recipe` schema carry an ecosystem /
+1. Harness - does the existing :class:`Recipe` schema carry an ecosystem /
    language discriminator? (Spoiler: it does not. Maven assumptions bake in.)
-2. Synthetic — is the repo's case_type a member of the Java
+2. Synthetic - is the repo's case_type a member of the Java
    ``GENERATOR_PRIMITIVES`` set? (Spoiler: no, by construction.)
-3. Ledger — does ``schemas/mig_result.schema.json`` permit a
+3. Ledger - does ``schemas/mig_result.schema.json`` permit a
    ``python_2to3_runtime`` oracle tier? (Spoiler: the enum is Java-shaped.)
 
 Each module attempt records either ``"ok"`` or a structured mismatch entry.
 The aggregate ``schema_revision_required`` flag flips to ``True`` when ≥2
-distinct modules report a mismatch — that is the hard gate referenced from
+distinct modules report a mismatch - that is the hard gate referenced from
 the PRD M9 publication checklist.
 """
 
@@ -100,7 +100,7 @@ def _check_harness_recipe_for_python(repo_dir: Path) -> list[dict[str, str]]:
     """Inspect the harness Recipe schema's adequacy for a Python repo.
 
     The :class:`Recipe` dataclass exposes ``dockerfile``, ``build_cmd``,
-    ``test_cmd``, ``harness_provenance`` — all build-tool agnostic at the
+    ``test_cmd``, ``harness_provenance`` - all build-tool agnostic at the
     field level, but with no ``ecosystem``/``language`` discriminator. The
     upshot: anything written by the Java-targeted synth flow defaults to
     Maven assumptions, and a Python repo cannot self-declare ecosystem.
@@ -128,7 +128,7 @@ def _check_synthetic_primitives_for_python(repo_dir: Path) -> list[dict[str, str
     """Verify the repo's case_type is representable in the Java primitive set."""
     case_type = _load_repo_case_type(repo_dir)
     if case_type is None:
-        # No marker — record as a mismatch because the Java synthetic schema
+        # No marker - record as a mismatch because the Java synthetic schema
         # has no equivalent of ``python2_meta.json`` either.
         return [
             {
@@ -228,7 +228,7 @@ def run(
     }
 
     # Harness + synthetic checks are per-repo. We dedupe identical entries
-    # so the findings file does not balloon — the probe records the schema
+    # so the findings file does not balloon - the probe records the schema
     # gap once per (module, issue, field) tuple regardless of how many
     # repos trip it.
     seen_keys: dict[str, set[tuple[str, str, str]]] = {m: set() for m in MODULES}

@@ -1,17 +1,17 @@
 """Thin Python 2→3 synthetic-repo generator (PRD M9 falsification probe).
 
 This generator is **deliberately minimal**. It exists solely to feed the
-``python23_probe`` so we can stress-test the M2/M3/M5 interfaces — the output
+``python23_probe`` so we can stress-test the M2/M3/M5 interfaces - the output
 is NOT a credible Python eval corpus.
 
 Coverage: each emitted repo carries exactly one Python-idiosyncratic case
 drawn from :data:`PYTHON2_CASE_TYPES`:
 
-- ``str_bytes``     — Python 2 ``str``-is-``bytes``; py3 requires explicit
+- ``str_bytes``     - Python 2 ``str``-is-``bytes``; py3 requires explicit
                       bytes/str disambiguation.
-- ``setup_py_div``  — Python 2 packaging via ``setup.py``; py3 ecosystem
+- ``setup_py_div``  - Python 2 packaging via ``setup.py``; py3 ecosystem
                       prefers ``pyproject.toml``.
-- ``two_to_three``  — runtime semantic shifts that 2to3 catches imperfectly:
+- ``two_to_three``  - runtime semantic shifts that 2to3 catches imperfectly:
                       ``5 / 2``, ``map()``, ``dict.items()``.
 
 Determinism: a top-level seed produces a stable per-repo child seed, and
@@ -33,7 +33,7 @@ from pathlib import Path
 from typing import Any
 
 # Python-idiosyncratic case identifiers. These are intentionally NOT members
-# of ``java8_generator.GENERATOR_PRIMITIVES`` — that mismatch is the falsification
+# of ``java8_generator.GENERATOR_PRIMITIVES`` - that mismatch is the falsification
 # finding the probe is designed to surface.
 PYTHON2_CASE_TYPES: tuple[str, ...] = (
     "str_bytes",
@@ -50,7 +50,7 @@ def _select_case_type(rng: random.Random, index: int) -> str:
     """Round-robin for the first len(PYTHON2_CASE_TYPES) indices, then RNG.
 
     Guarantees that ``count >= len(PYTHON2_CASE_TYPES)`` always covers every
-    case type — required by the probe's coverage classifier and by the test
+    case type - required by the probe's coverage classifier and by the test
     that asserts ≥3 distinct case-type repos.
     """
     if index < len(PYTHON2_CASE_TYPES):
@@ -102,7 +102,7 @@ def _emit_setup_py_div_case(rng: random.Random, repo_dir: Path) -> dict[str, Any
         "    return \"hello \" + person\n"
     )
     (repo_dir / "legacy_module.py").write_text(src, encoding="utf-8")
-    # Deliberately NO pyproject.toml — that absence IS the case.
+    # Deliberately NO pyproject.toml - that absence IS the case.
     return {
         "case_type": "setup_py_div",
         "files": ["setup.py", "legacy_module.py"],

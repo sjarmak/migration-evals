@@ -28,7 +28,7 @@
     },
     "agent_runner": {
       "type": ["string", "null"],
-      "description": "Optional agent runner / harness identifier, distinct from the underlying model. Examples: 'claude_code', 'amp', 'cursor', 'aider', 'custom'. Null or missing means the runner is unspecified — slice metrics by agent_model only."
+      "description": "Optional agent runner / harness identifier, distinct from the underlying model. Examples: 'claude_code', 'cursor', 'aider', 'custom'. Null or missing means the runner is unspecified - slice metrics by agent_model only."
     },
     "iterator_id": {
       "type": ["string", "null"],

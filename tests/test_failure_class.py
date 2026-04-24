@@ -72,7 +72,7 @@ def test_classifier_precision_meets_threshold() -> None:
 
 @pytest.mark.parametrize("case_dir,expected", _iter_cases(), ids=lambda v: str(v))
 def test_each_case(case_dir: Path, expected: FailureClass) -> None:
-    """Per-case smoke test — surface exactly which fixtures break."""
+    """Per-case smoke test - surface exactly which fixtures break."""
     actual = classify(case_dir)
     assert isinstance(actual, FailureClass), (
         f"classify() returned {actual!r} for {case_dir}"

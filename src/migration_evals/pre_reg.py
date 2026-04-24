@@ -1,8 +1,8 @@
 """Spec-SHA stamping helpers for the migration eval framework (PRD M8-lite).
 
 Every migration-eval trial result.json carries SHA fields that bind the
-result to the specific specs that governed it. Three are always present —
-oracle_spec, recipe_spec, and the pre-registered hypotheses document — and
+result to the specific specs that governed it. Three are always present -
+oracle_spec, recipe_spec, and the pre-registered hypotheses document - and
 a fourth (``prompt_sha``) is added when the migration is prompt-defined
 (rather than recipe-defined), so the agent prompt itself is auditable.
 
@@ -13,7 +13,7 @@ compute_spec_sha(path)
 stamp_result(result, oracle_spec, recipe_spec, hypotheses, prompt_spec=None)
     Return a NEW dict carrying the three (or four) SHA fields. The input
     ``result`` is never mutated (deep-copied before the SHAs are attached).
-    Pass ``prompt_spec`` when the run is driven by an agent prompt — the
+    Pass ``prompt_spec`` when the run is driven by an agent prompt - the
     file's sha256 lands as ``prompt_sha`` in the result.
 
 Rationale

@@ -8,12 +8,12 @@ the D5 anti-tautology constraint explicitly encoded.
 
 ## Components
 
-- `src/migration_evals/synthetic/java8_generator.py` — CLI generator.
-- `src/migration_evals/synthetic/ast_oracle.py` — CLI oracle.
-- `src/migration_evals/synthetic/primitives/*.py` — one module per
+- `src/migration_evals/synthetic/java8_generator.py` - CLI generator.
+- `src/migration_evals/synthetic/ast_oracle.py` - CLI oracle.
+- `src/migration_evals/synthetic/primitives/*.py` - one module per
   migration primitive. Independently importable.
 - `tests/fixtures/ast_pairs/<primitive>/{positive,negative}/{orig,migrated}/`
-  — oracle fixture pairs.
+  - oracle fixture pairs.
 
 ## Primitive taxonomy (10 primitives)
 
@@ -32,11 +32,11 @@ the D5 anti-tautology constraint explicitly encoded.
 
 Each module exports:
 
-- `NAME: str` — stable identifier.
-- `generate(rng: random.Random, out_dir: pathlib.Path) -> dict` — writes files
+- `NAME: str` - stable identifier.
+- `generate(rng: random.Random, out_dir: pathlib.Path) -> dict` - writes files
   under `out_dir`, returns an emission descriptor.
 
-## PRD D5 — disjoint recipe sets (anti-tautology)
+## PRD D5 - disjoint recipe sets (anti-tautology)
 
 > *From PRD D5:* "M3 generator and AST-conformance authored from disjoint
 > recipe sets (intersection ≤ 50% of primitives)."
@@ -64,12 +64,12 @@ the oracle would accept whatever the generator produced, by construction.
 
 These still appear in the generator output and are expected to be exercised by
 other tiers of the funnel (compile, tests, LLM judge). The oracle simply does
-not rubber-stamp them — which is the point.
+not rubber-stamp them - which is the point.
 
 Enforcement:
 
-- `java8_generator.GENERATOR_PRIMITIVES: set[str]` — the full primitive set.
-- `ast_oracle.ORACLE_CHECKED_PRIMITIVES: set[str]` — the check-set.
+- `java8_generator.GENERATOR_PRIMITIVES: set[str]` - the full primitive set.
+- `ast_oracle.ORACLE_CHECKED_PRIMITIVES: set[str]` - the check-set.
 - `tests/test_ast_oracle.py::test_oracle_is_disjoint_from_generator_per_d5`
   asserts `len(oracle_set & generator_set) / len(generator_set) <= 0.5`.
 

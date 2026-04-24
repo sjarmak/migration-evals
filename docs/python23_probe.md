@@ -10,7 +10,7 @@ number ships.
 
 If you are reading this expecting a "Python migration eval result", stop.
 The output is a probe finding about interface adequacy. It is intentionally
-shallow — a thin Python 2→3 generator covering three idiomatic cases plus
+shallow - a thin Python 2→3 generator covering three idiomatic cases plus
 re-runs of the Java-derived recipe-spec + oracle-spec.
 
 ## Hard Gate (PRD M9)
@@ -41,7 +41,7 @@ on a healthy run:
 | ledger    | `mig_result.schema.json:oracle_tier` enum is Java-shaped; `python_2to3_runtime` is rejected | `oracle_tier` (enum)     |
 
 These are the falsification findings. They are **not** bugs to patch in
-isolation — they are the evidence motivating the schema revisions enumerated
+isolation - they are the evidence motivating the schema revisions enumerated
 in `python23_probe_findings.md`.
 
 ## Coverage
@@ -49,12 +49,12 @@ in `python23_probe_findings.md`.
 The synthetic generator (`src/migration_evals/synthetic/python2_generator.py`)
 covers three Python-idiosyncratic cases:
 
-- `str_bytes` — Python 2 `str`-is-`bytes` semantics; Python 3 requires
+- `str_bytes` - Python 2 `str`-is-`bytes` semantics; Python 3 requires
   explicit `bytes` / `str` disambiguation. Uses `"foo".encode()` and bytes/str
   concatenation.
-- `setup_py_div` — Python 2 packaging via `setup.py` / `distutils`; Python 3
+- `setup_py_div` - Python 2 packaging via `setup.py` / `distutils`; Python 3
   ecosystem prefers `pyproject.toml`. Repos in this case carry only `setup.py`.
-- `two_to_three` — runtime semantic shifts that 2to3 catches imperfectly:
+- `two_to_three` - runtime semantic shifts that 2to3 catches imperfectly:
   integer division (`5 / 2`), `map()` returning iterator vs. list,
   `dict.items()` view vs. list.
 
@@ -106,10 +106,10 @@ file does not balloon when many repos trip the same structural gap.
 
 ## Related Docs
 
-- `docs/python23_probe_findings.md` — TEMPLATE for the
+- `docs/python23_probe_findings.md` - TEMPLATE for the
   human-authored findings narrative once a probe run completes.
-- `docs/synthetic_generator.md` — Java synthetic generator;
+- `docs/synthetic_generator.md` - Java synthetic generator;
   contrast its `GENERATOR_PRIMITIVES` set with the Python case types.
-- `docs/harness_synthesis.md` — `Recipe` schema; note the
+- `docs/harness_synthesis.md` - `Recipe` schema; note the
   absence of an ecosystem discriminator.
-- `docs/PRD.md` — § M9 (falsification probe).
+- `docs/PRD.md` - § M9 (falsification probe).

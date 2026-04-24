@@ -5,7 +5,7 @@ It compares the pre- and post-migration source trees with regex-level
 detectors for a *subset* of the migration primitives emitted by the
 generator. That subset is declared by ``ORACLE_CHECKED_PRIMITIVES``.
 
-PRD D5 — disjoint recipe sets
+PRD D5 - disjoint recipe sets
 -----------------------------
 
 The generator (``java8_generator.GENERATOR_PRIMITIVES``) covers ten

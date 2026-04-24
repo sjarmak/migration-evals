@@ -5,10 +5,10 @@ four `FailureClass` values based on the artifacts in the trial directory.
 
 Decision order (checked top to bottom; first match wins):
 
-    1. infra_error   — sandbox / container failures; harness never reached the agent
-    2. harness_error — recipe / harness failures BEFORE the agent started
-    3. oracle_error  — agent said pass but oracle subsystem threw
-    4. agent_error   — everything else (the agent failed the task itself)
+    1. infra_error   - sandbox / container failures; harness never reached the agent
+    2. harness_error - recipe / harness failures BEFORE the agent started
+    3. oracle_error  - agent said pass but oracle subsystem threw
+    4. agent_error   - everything else (the agent failed the task itself)
 
 See `docs/migration_eval/failure_classification.md` for the full rule table
 and example signatures.
@@ -128,7 +128,7 @@ def _has_oracle_signal(trial_dir: Path, payload: dict) -> bool:
 def classify(trial_dir: Path) -> Optional[FailureClass]:
     """Return the failure class for a failed trial.
 
-    Returns `None` when `result.json` exists and `success=True` — success
+    Returns `None` when `result.json` exists and `success=True` - success
     trials do not have a failure class. Returns `FailureClass.AGENT_ERROR`
     when result.json is missing or unreadable (no evidence of infra /
     harness / oracle failure, so the agent layer is the default).

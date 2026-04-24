@@ -18,7 +18,7 @@
     },
     "commit_sha": {
       "type": "string",
-      "description": "Commit SHA evaluated — typically the merge commit of the source PR."
+      "description": "Commit SHA evaluated - typically the merge commit of the source PR."
     },
     "human_verdict": {
       "type": "string",
@@ -27,7 +27,7 @@
     },
     "reviewer_notes": {
       "type": "string",
-      "description": "Provenance string — typically the source PR URL and the survival-check method that produced the verdict."
+      "description": "Provenance string - typically the source PR URL and the survival-check method that produced the verdict."
     },
     "labeled_at": {
       "type": "string",

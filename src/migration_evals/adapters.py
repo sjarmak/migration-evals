@@ -18,7 +18,7 @@ The adapter layer exists to:
 3. Give D3's "vendor-in-at-pinned-SHA" posture a single chokepoint so
    security/version audits only have to look in one module.
 
-Any concrete class need only satisfy the Protocol structurally — explicit
+Any concrete class need only satisfy the Protocol structurally - explicit
 subclassing is not required.
 """
 
@@ -51,7 +51,7 @@ class AnthropicAdapter(Protocol):
 
     Concrete implementations wrap the official `anthropic` SDK; a replay
     implementation reads from a `Cassette`. The adapter is responsible for
-    prompt caching headers, retry policy, and cost accounting — none of
+    prompt caching headers, retry policy, and cost accounting - none of
     which are specified by this Protocol.
     """
 
@@ -73,7 +73,7 @@ class AnthropicAdapter(Protocol):
 class SandboxAdapter(Protocol):
     """Minimum sandbox surface used by the tiered-oracle funnel.
 
-    Implementations can wrap any container runtime — Docker, a Kubernetes
+    Implementations can wrap any container runtime - Docker, a Kubernetes
     job runner, Modal-like serverless containers, a remote sandbox SaaS,
     or a local-only stand-in. The funnel only sees the three methods
     below.
