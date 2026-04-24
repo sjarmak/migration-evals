@@ -3,10 +3,25 @@
 
 Replaces the original "schedule reviewer days to label 50 repos" step with
 a fully automated pipeline that derives accept/reject labels from the
-implicit maintainer verdict on public OSS PRs:
+implicit maintainer verdict on a set of pull requests:
 
     accept = PR was merged and survived >=30 days without a revert
     reject = PR was closed-unmerged or merged-then-reverted
+
+Two sources of candidate PRs are supported:
+
+    --source oss          (default) — query GitHub Search for OSS PRs
+                          matching a recipe's search queries. Useful when
+                          you do not yet have agent-generated changesets
+                          to evaluate.
+
+    --source changesets   — read a list of PR URLs (one per line, or
+                          CSV with `pr_url,...` rows) from --changesets.
+                          This is the stronger signal once the agent under
+                          test has been shipping real changesets: every
+                          URL is a PR the agent created, and survival
+                          tells you whether human reviewers ultimately
+                          accepted what it produced.
 
 The script uses the `gh` CLI for both repo search and PR metadata; it
 requires `gh auth login` to be already done. No additional Python
@@ -14,11 +29,17 @@ dependencies — stdlib + subprocess.
 
 Usage
 -----
-    # Mine 50 Java 8->17 PRs and write data/gold_anchor.json
+    # Mine 50 Java 8->17 OSS PRs and write data/gold_anchor.json
     python scripts/mine_gold_anchor.py \\
         --migration java8_17 \\
         --target-count 50 \\
         --out data/gold_anchor.json
+
+    # Classify agent-generated changesets from a CSV of PR URLs
+    python scripts/mine_gold_anchor.py \\
+        --source changesets \\
+        --changesets data/agent_changesets.csv \\
+        --out data/gold_anchor_agent.json
 
     # Dry-run: print the search queries and exit without calling gh
     python scripts/mine_gold_anchor.py --migration java8_17 --dry-run
@@ -333,6 +354,137 @@ def load_recipe(args: argparse.Namespace) -> dict[str, Any]:
     return recipe
 
 
+# ---------------------------------------------------------------------------
+# Changeset-source helpers (--source changesets)
+# ---------------------------------------------------------------------------
+
+import re as _re
+
+_PR_URL_RE = _re.compile(
+    r"^https?://github\.com/(?P<owner>[^/]+)/(?P<repo>[^/]+)/pull/(?P<number>\d+)/?$"
+)
+
+
+def parse_pr_url(url: str) -> tuple[str, int]:
+    """Parse a GitHub PR URL into (repo_full_name, pr_number).
+
+    Raises ValueError on a non-matching URL. Strips trailing whitespace and
+    fragment / query strings.
+    """
+    if not isinstance(url, str):
+        raise ValueError(f"PR URL must be a string; got {type(url).__name__}")
+    cleaned = url.strip().split("#", 1)[0].split("?", 1)[0]
+    match = _PR_URL_RE.match(cleaned)
+    if not match:
+        raise ValueError(f"not a recognised GitHub PR URL: {url!r}")
+    return f"{match.group('owner')}/{match.group('repo')}", int(match.group("number"))
+
+
+def load_changeset_urls(path: Path) -> list[str]:
+    """Read PR URLs from a CSV / newline-delimited file.
+
+    Lines that are blank or start with ``#`` are ignored. For CSV rows,
+    only the first column is used (so ``pr_url,extra_metadata,...`` works).
+    """
+    text = Path(path).read_text(encoding="utf-8")
+    urls: list[str] = []
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        first_col = line.split(",", 1)[0].strip()
+        if not first_col or first_col.lower() in {"pr_url", "url"}:
+            continue
+        urls.append(first_col)
+    return urls
+
+
+def harvest_from_changesets(
+    changeset_urls: Iterable[str],
+    *,
+    target_count: int,
+    min_days_survived: int,
+    revert_keywords: Iterable[str],
+    now: datetime,
+) -> tuple[list[dict[str, Any]], dict[str, int]]:
+    """Classify a list of PR URLs by merge-survival.
+
+    Same verdict semantics as :func:`harvest`: accept = merged + survived
+    ≥min_days, reject = closed-unmerged or reverted. Skips URLs that fail
+    to parse, hydrate, or are too recent to classify.
+    """
+    seen: set[tuple[str, int]] = set()
+    entries: list[dict[str, Any]] = []
+    revert_keywords = list(revert_keywords)
+    stats = {
+        "queried": 0,
+        "skipped_too_recent": 0,
+        "errors": 0,
+        "unparseable_urls": 0,
+    }
+    for raw_url in changeset_urls:
+        try:
+            repo_full, number = parse_pr_url(raw_url)
+        except ValueError:
+            print(f"warn: cannot parse PR URL: {raw_url!r}", file=sys.stderr)
+            stats["unparseable_urls"] += 1
+            continue
+        key = (repo_full, number)
+        if key in seen:
+            continue
+        seen.add(key)
+        stats["queried"] += 1
+        try:
+            hydrated = _hydrate_pr(repo_full, number)
+        except RuntimeError as exc:
+            print(f"warn: hydrate {raw_url} failed: {exc}", file=sys.stderr)
+            stats["errors"] += 1
+            continue
+        url = hydrated.get("url") or raw_url
+        merged = bool(hydrated.get("merged"))
+        merge_commit = (hydrated.get("mergeCommit") or {}).get("oid")
+        closed_at = hydrated.get("closedAt")
+        # State is implicit: if not merged AND closedAt is present, treat
+        # as closed-unmerged. Otherwise rely on merged flag + timestamps.
+        state = "closed" if closed_at else "open"
+        pr = CandidatePR(
+            repo_full_name=repo_full,
+            pr_number=number,
+            state=state,
+            merged=merged,
+            merge_commit_sha=merge_commit,
+            closed_at=closed_at,
+            url=url,
+        )
+        verdict = classify(
+            pr,
+            min_days_survived=min_days_survived,
+            revert_keywords=revert_keywords,
+            now=now,
+        )
+        if verdict is None:
+            stats["skipped_too_recent"] += 1
+            continue
+        label, note = verdict
+        entries.append(
+            {
+                "repo_url": f"https://github.com/{repo_full}",
+                "commit_sha": merge_commit or "",
+                "human_verdict": label,
+                "reviewer_notes": note,
+                "labeled_at": now.isoformat(),
+            }
+        )
+        if len(entries) >= target_count:
+            break
+    return entries, stats
+
+
+# ---------------------------------------------------------------------------
+# OSS-search source (--source oss, default)
+# ---------------------------------------------------------------------------
+
+
 def harvest(
     recipe: dict[str, Any],
     *,
@@ -427,21 +579,49 @@ def main(argv: list[str] | None = None) -> int:
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument(
+        "--source",
+        choices=("oss", "changesets"),
+        default="oss",
+        help=(
+            "Where to source candidate PRs. 'oss' (default) runs the recipe's "
+            "GitHub Search queries. 'changesets' classifies a list of PR URLs "
+            "from --changesets — use this once your agent is producing real "
+            "PRs and you want to measure their merge-survival."
+        ),
+    )
+    parser.add_argument(
+        "--changesets",
+        default=None,
+        help=(
+            "Path to a CSV / newline-delimited file of PR URLs (one per line, "
+            "or `pr_url,...` rows). Required when --source changesets."
+        ),
+    )
+    parser.add_argument(
         "--migration",
         choices=sorted(BUILT_IN_RECIPES),
         default="java8_17",
-        help="Built-in recipe to use. Default: java8_17.",
+        help="Built-in recipe to use (--source oss only). Default: java8_17.",
     )
     parser.add_argument(
         "--recipe",
         default=None,
-        help="Path to a custom recipe JSON. Overrides --migration.",
+        help="Path to a custom recipe JSON. Overrides --migration. (--source oss only)",
     )
     parser.add_argument(
         "--target-count",
         type=int,
         default=50,
         help="Stop once this many labels accumulated. Default: 50.",
+    )
+    parser.add_argument(
+        "--min-days-survived",
+        type=int,
+        default=DEFAULT_MIN_DAYS_SURVIVED,
+        help=(
+            f"Minimum days a merged PR must survive before counting as accept. "
+            f"Default: {DEFAULT_MIN_DAYS_SURVIVED}."
+        ),
     )
     parser.add_argument(
         "--out",
@@ -451,13 +631,19 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--dry-run",
         action="store_true",
-        help="Print the search queries and exit without calling gh.",
+        help="Print the planned harvest and exit without calling gh.",
     )
     args = parser.parse_args(argv)
 
-    recipe = load_recipe(args)
+    if args.source == "changesets":
+        return _main_changesets(args)
+    return _main_oss(args)
 
+
+def _main_oss(args: argparse.Namespace) -> int:
+    recipe = load_recipe(args)
     if args.dry_run:
+        print(f"source: oss")
         print(f"migration_id: {recipe['migration_id']}")
         print(f"target_count: {args.target_count}")
         print(f"out: {args.out}")
@@ -465,10 +651,51 @@ def main(argv: list[str] | None = None) -> int:
         for q in recipe["search_queries"]:
             print(f"  - q={q['q']!r} limit={q.get('limit', 100)}")
         return 0
-
     _check_gh_available()
     now = datetime.now(tz=timezone.utc)
     entries, stats = harvest(recipe, target_count=args.target_count, now=now)
+    return _finalize(entries, stats, args)
+
+
+def _main_changesets(args: argparse.Namespace) -> int:
+    if not args.changesets:
+        print(
+            "error: --source changesets requires --changesets <path>",
+            file=sys.stderr,
+        )
+        return 1
+    changeset_path = Path(args.changesets)
+    if not changeset_path.is_file():
+        print(f"error: changeset file not found: {changeset_path}", file=sys.stderr)
+        return 1
+    urls = load_changeset_urls(changeset_path)
+    if args.dry_run:
+        print(f"source: changesets")
+        print(f"changesets: {changeset_path} ({len(urls)} urls)")
+        print(f"target_count: {args.target_count}")
+        print(f"min_days_survived: {args.min_days_survived}")
+        print(f"out: {args.out}")
+        print("first 5 urls:")
+        for url in urls[:5]:
+            print(f"  - {url}")
+        return 0
+    _check_gh_available()
+    now = datetime.now(tz=timezone.utc)
+    entries, stats = harvest_from_changesets(
+        urls,
+        target_count=args.target_count,
+        min_days_survived=args.min_days_survived,
+        revert_keywords=DEFAULT_REVERT_KEYWORDS,
+        now=now,
+    )
+    return _finalize(entries, stats, args)
+
+
+def _finalize(
+    entries: list[dict[str, Any]],
+    stats: dict[str, int],
+    args: argparse.Namespace,
+) -> int:
     out_path = Path(args.out)
     write_output(entries, out_path)
     n_accept = sum(1 for e in entries if e["human_verdict"] == "accept")
@@ -477,15 +704,12 @@ def main(argv: list[str] | None = None) -> int:
         f"wrote {len(entries)} entries ({n_accept} accept / {n_reject} reject) "
         f"to {out_path}"
     )
-    print(
-        f"stats: queried={stats['queried']} "
-        f"skipped_too_recent={stats['skipped_too_recent']} "
-        f"errors={stats['errors']}"
-    )
+    stats_line = " ".join(f"{k}={v}" for k, v in sorted(stats.items()))
+    print(f"stats: {stats_line}")
     if len(entries) < args.target_count:
         print(
             f"warn: harvested {len(entries)} < target {args.target_count}. "
-            "Consider broadening search queries or lowering min_days_survived.",
+            "Consider broadening sources or lowering --min-days-survived.",
             file=sys.stderr,
         )
         return 2

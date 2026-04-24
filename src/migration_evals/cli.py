@@ -200,20 +200,45 @@ def _add_probe(subparsers: argparse._SubParsersAction) -> None:
     )
 
 
+def _add_iterator_report(subparsers: argparse._SubParsersAction) -> None:
+    p = subparsers.add_parser(
+        "iterator-report",
+        help="Per-batch aggregate of trials grouped by iterator_id.",
+        description=(
+            "Walk a run directory, group result.json files by iterator_id, "
+            "and emit a markdown report with per-batch completion rate, "
+            "failure-class breakdown, p50/p95 latency, and total cost."
+        ),
+    )
+    p.add_argument(
+        "--run",
+        dest="run_dir",
+        required=True,
+        help="Run directory containing per-trial result.json files.",
+    )
+    p.add_argument(
+        "--out",
+        dest="out",
+        required=True,
+        help="Output markdown path.",
+    )
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="python -m migration_evals.cli",
         description=(
-            " migration eval framework CLI. "
-            "Subcommands: run, report, regression, harness, probe."
+            "Migration eval framework CLI. Subcommands: run, report, "
+            "iterator-report, regression, harness, probe."
         ),
     )
     subparsers = parser.add_subparsers(
         dest="command",
-        metavar="{run,report,regression,harness,probe}",
+        metavar="{run,report,iterator-report,regression,harness,probe}",
     )
     _add_run(subparsers)
     _add_report(subparsers)
+    _add_iterator_report(subparsers)
     _add_regression(subparsers)
     _add_harness(subparsers)
     _add_probe(subparsers)
@@ -618,6 +643,13 @@ def _handle_regression(args: argparse.Namespace) -> int:
     )
 
 
+def _handle_iterator_report(args: argparse.Namespace) -> int:
+    """iterator-report handler; delegates to migration_evals.iterator_report."""
+    from migration_evals.iterator_report import generate_report
+
+    return generate_report(Path(args.run_dir), Path(args.out))
+
+
 def main(argv: Optional[Sequence[str]] = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
@@ -630,6 +662,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         return _handle_run(args)
     if args.command == "report":
         return _handle_report(args)
+    if args.command == "iterator-report":
+        return _handle_iterator_report(args)
     if args.command == "harness":
         return _handle_harness(args)
     if args.command == "probe":

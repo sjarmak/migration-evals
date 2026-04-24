@@ -25,7 +25,7 @@ import json
 import logging
 import sys
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable, Mapping, Optional, Sequence
 
@@ -105,6 +105,9 @@ def _build_payload(
     migration_id: str,
     agent_model: str,
     agent_runner: Optional[str],
+    iterator_id: Optional[str],
+    started_at: Optional[str],
+    finished_at: Optional[str],
     variant: str,
     model_cutoff_date: Optional[date],
 ) -> dict[str, Any]:
@@ -135,11 +138,14 @@ def _build_payload(
         "task_id": task_id,
         "agent_model": agent_model,
         "agent_runner": agent_runner,
+        "iterator_id": iterator_id,
         "migration_id": migration_id,
         "variant": variant,
         "seed": repo_entry.seed,
         "repo_path": str(repo_entry.path),
         "repo_created_at": repo_created_at,
+        "started_at": started_at,
+        "finished_at": finished_at,
         "success": success,
         "failure_class": funnel_result.failure_class,
         "oracle_tier": funnel_result.final_verdict.tier,
@@ -229,6 +235,10 @@ def run_from_config(config_path: Path) -> int:
     agent_runner: Optional[str] = (
         str(agent_runner_raw) if agent_runner_raw else None
     )
+    iterator_id_raw = raw_cfg.get("iterator_id")
+    iterator_id: Optional[str] = (
+        str(iterator_id_raw) if iterator_id_raw else None
+    )
 
     if not isinstance(repos_raw, Sequence) or not repos_raw:
         print("error: config 'repos' must be a non-empty list", file=sys.stderr)
@@ -271,6 +281,7 @@ def run_from_config(config_path: Path) -> int:
             "anthropic": _CassetteAnthropicAdapter(repo_entry.path.name, anthropic_cassette_dir),
             "enable_daikon": False,
         }
+        trial_started_at = datetime.now(tz=timezone.utc).isoformat()
         funnel_result = run_funnel(
             repo_entry.path,
             recipe,
@@ -278,6 +289,7 @@ def run_from_config(config_path: Path) -> int:
             is_synthetic=bool(meta.get("is_synthetic", False)),
             stages=stages,
         )
+        trial_finished_at = datetime.now(tz=timezone.utc).isoformat()
         base_payload = _build_payload(
             repo_entry=repo_entry,
             repo_meta=meta,
@@ -285,6 +297,9 @@ def run_from_config(config_path: Path) -> int:
             migration_id=migration_id,
             agent_model=agent_model,
             agent_runner=agent_runner,
+            iterator_id=iterator_id,
+            started_at=trial_started_at,
+            finished_at=trial_finished_at,
             variant=variant,
             model_cutoff_date=cutoff,
         )
@@ -318,6 +333,7 @@ def run_from_config(config_path: Path) -> int:
         "migration_id": migration_id,
         "agent_model": agent_model,
         "agent_runner": agent_runner,
+        "iterator_id": iterator_id,
         "variant": variant,
         "output_root": str(output_root),
         "n_trials": written,

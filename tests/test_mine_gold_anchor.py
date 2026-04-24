@@ -206,3 +206,162 @@ def test_balance_returns_all_when_under_target(mga):
     rejects = [{"id": "r1"}]
     out = mga._balance(accepts, rejects, target_count=10)
     assert len(out) == 2
+
+
+# -- parse_pr_url -----------------------------------------------------------
+
+
+def test_parse_pr_url_basic(mga):
+    repo, num = mga.parse_pr_url("https://github.com/foo/bar/pull/42")
+    assert repo == "foo/bar"
+    assert num == 42
+
+
+def test_parse_pr_url_handles_trailing_slash_and_query(mga):
+    repo, num = mga.parse_pr_url("https://github.com/foo/bar/pull/42/?ref=x#diff")
+    assert repo == "foo/bar"
+    assert num == 42
+
+
+def test_parse_pr_url_rejects_non_pr_url(mga):
+    with pytest.raises(ValueError):
+        mga.parse_pr_url("https://github.com/foo/bar/issues/42")
+
+
+def test_parse_pr_url_rejects_non_url(mga):
+    with pytest.raises(ValueError):
+        mga.parse_pr_url("not a url at all")
+
+
+# -- load_changeset_urls ----------------------------------------------------
+
+
+def test_load_changeset_urls_skips_blanks_comments_header(mga, tmp_path):
+    csv = tmp_path / "urls.csv"
+    csv.write_text(
+        "pr_url\n"
+        "# this is a comment\n"
+        "\n"
+        "https://github.com/a/b/pull/1\n"
+        "https://github.com/c/d/pull/2,extra,metadata,fields\n"
+    )
+    urls = mga.load_changeset_urls(csv)
+    assert urls == [
+        "https://github.com/a/b/pull/1",
+        "https://github.com/c/d/pull/2",
+    ]
+
+
+def test_load_changeset_urls_returns_empty_for_empty_file(mga, tmp_path):
+    csv = tmp_path / "empty.csv"
+    csv.write_text("")
+    assert mga.load_changeset_urls(csv) == []
+
+
+# -- harvest_from_changesets ------------------------------------------------
+
+
+def test_harvest_from_changesets_classifies_via_hydrate(mga, monkeypatch, now):
+    """End-to-end harvest with mocked gh hydrate + revert check."""
+    closed_old = (now - timedelta(days=60)).isoformat()
+    closed_recent = (now - timedelta(days=5)).isoformat()
+
+    hydrate_responses = {
+        ("orgA/repo", 1): {
+            "merged": True,
+            "mergeCommit": {"oid": "abc1234"},
+            "closedAt": closed_old,
+            "url": "https://github.com/orgA/repo/pull/1",
+        },
+        ("orgA/repo", 2): {
+            "merged": False,
+            "mergeCommit": None,
+            "closedAt": closed_old,
+            "url": "https://github.com/orgA/repo/pull/2",
+        },
+        ("orgB/repo", 3): {
+            "merged": True,
+            "mergeCommit": {"oid": "def5678"},
+            "closedAt": closed_recent,
+            "url": "https://github.com/orgB/repo/pull/3",
+        },
+    }
+
+    def fake_hydrate(repo, number):
+        return hydrate_responses[(repo, number)]
+
+    monkeypatch.setattr(mga, "_hydrate_pr", fake_hydrate)
+    monkeypatch.setattr(mga, "_find_revert_after", lambda *a, **k: False)
+
+    urls = [
+        "https://github.com/orgA/repo/pull/1",  # accept (merged old, no revert)
+        "https://github.com/orgA/repo/pull/2",  # reject (closed unmerged)
+        "https://github.com/orgB/repo/pull/3",  # skip (merged but too recent)
+    ]
+    entries, stats = mga.harvest_from_changesets(
+        urls,
+        target_count=50,
+        min_days_survived=30,
+        revert_keywords=["revert"],
+        now=now,
+    )
+    verdicts = [e["human_verdict"] for e in entries]
+    assert verdicts == ["accept", "reject"]
+    assert stats["queried"] == 3
+    assert stats["skipped_too_recent"] == 1
+    assert stats["unparseable_urls"] == 0
+
+
+def test_harvest_from_changesets_dedupes_and_skips_unparseable(mga, monkeypatch, now):
+    monkeypatch.setattr(
+        mga,
+        "_hydrate_pr",
+        lambda repo, number: {
+            "merged": True,
+            "mergeCommit": {"oid": "abc1234"},
+            "closedAt": (now - timedelta(days=60)).isoformat(),
+            "url": f"https://github.com/{repo}/pull/{number}",
+        },
+    )
+    monkeypatch.setattr(mga, "_find_revert_after", lambda *a, **k: False)
+
+    urls = [
+        "https://github.com/foo/bar/pull/1",
+        "https://github.com/foo/bar/pull/1",  # duplicate
+        "not a url",
+        "https://github.com/foo/bar/issues/2",  # not a PR url
+    ]
+    entries, stats = mga.harvest_from_changesets(
+        urls,
+        target_count=50,
+        min_days_survived=30,
+        revert_keywords=["revert"],
+        now=now,
+    )
+    assert len(entries) == 1
+    assert stats["queried"] == 1
+    assert stats["unparseable_urls"] == 2
+
+
+def test_harvest_from_changesets_stops_at_target_count(mga, monkeypatch, now):
+    monkeypatch.setattr(
+        mga,
+        "_hydrate_pr",
+        lambda repo, number: {
+            "merged": True,
+            "mergeCommit": {"oid": f"sha{number:04x}"},
+            "closedAt": (now - timedelta(days=60)).isoformat(),
+            "url": f"https://github.com/{repo}/pull/{number}",
+        },
+    )
+    monkeypatch.setattr(mga, "_find_revert_after", lambda *a, **k: False)
+
+    urls = [f"https://github.com/foo/bar/pull/{i}" for i in range(1, 21)]
+    entries, _stats = mga.harvest_from_changesets(
+        urls,
+        target_count=5,
+        min_days_survived=30,
+        revert_keywords=["revert"],
+        now=now,
+    )
+    assert len(entries) == 5

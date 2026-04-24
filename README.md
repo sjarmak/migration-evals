@@ -25,12 +25,12 @@ quota, not engineering time.
 | [`docs/PRD.md`](docs/PRD.md) | Risk-annotated v0.3 PRD — goals, non-goals, MVP/M1–M9, Should/Nice tiers, metrics, capacity plan. |
 | [`docs/premortem.md`](docs/premortem.md) | Top-15 failure modes (R1–R15) — reviewer-disagreement, contamination, harness-synth, ecosystem generalization, infra blast-radius. Drives the M-list. |
 | [`docs/README.md`](docs/README.md) | Per-component design notes (oracle funnel, harness synth, gold-anchor, publication gate, python23 probe). |
-| [`docs/usage.md`](docs/usage.md) | CLI quickstart for `run`/`report`/`regression`/`harness`/`probe`. |
-| [`src/migration_evals/`](src/migration_evals/) | Python package — CLI, funnel, oracles (compile/tests/AST/judge/daikon), gold anchor, ledger, contamination split, pre-registration / publication gate, Python 2→3 probe. |
+| [`docs/usage.md`](docs/usage.md) | CLI quickstart for `run`/`report`/`iterator-report`/`regression`/`harness`/`probe`. |
+| [`src/migration_evals/`](src/migration_evals/) | Python package — CLI, funnel (Tier 0–4), oracles, gold anchor, iterator-batch report, ledger, contamination split, pre-registration / publication gate, Python 2→3 probe. |
 | [`schemas/`](schemas/) | JSON Schemas for `result.json` and gold-anchor entries. |
 | [`configs/java8_17_smoke.yaml`](configs/java8_17_smoke.yaml) | End-to-end smoke config: 3 fixture repos, all non-network tiers, replay cassettes — no API keys required. |
-| [`scripts/mine_gold_anchor.py`](scripts/mine_gold_anchor.py) | Automated gold-anchor harvester — builds `data/gold_anchor.json` from merged-PR survival via the `gh` CLI. |
-| [`tests/`](tests/) | 174 pytest cases: schema validation, funnel cascade, AST oracle, gold-anchor correlation + bootstrap CI, ledger diff, contamination split, publication gate, Python 2→3 probe. |
+| [`scripts/mine_gold_anchor.py`](scripts/mine_gold_anchor.py) | Automated gold-anchor harvester — builds `data/gold_anchor.json` from merged-PR survival via the `gh` CLI. Two sources: OSS search (default) or a CSV of agent-generated changeset URLs. |
+| [`tests/`](tests/) | 229 pytest cases: schema validation, funnel cascade, AST oracle, gold-anchor correlation + bootstrap CI, ledger diff, contamination split, publication gate, iterator-batch report, mine_gold_anchor (both sources), Tier-0 diff validity. |
 | [`examples/runs/`](examples/runs/) | Committed example outputs from the smoke config and the Python 2→3 probe. |
 | [`data/gold_anchor_template.json`](data/gold_anchor_template.json) | Empty seed — populated by `scripts/mine_gold_anchor.py`. |
 
@@ -63,6 +63,22 @@ python scripts/mine_gold_anchor.py \
     --migration java8_17 \
     --target-count 50 \
     --out data/gold_anchor.json
+
+# 5. (Optional) Once your agent has been shipping real PRs, classify those
+#    directly by merge-survival instead of arbitrary OSS PRs. The CSV is
+#    one PR URL per line (or `pr_url,...` rows).
+python scripts/mine_gold_anchor.py \
+    --source changesets \
+    --changesets data/agent_changesets.csv \
+    --out data/gold_anchor_agent.json
+
+# 6. (Optional) Aggregate trials by iterator_id into a per-batch report
+#    with completion rate, p50/p95 latency, total cost, failure-class
+#    breakdown — the natural unit when a single fan-out workflow runs
+#    across hundreds-to-thousands of repos.
+python -m migration_evals.cli iterator-report \
+    --run runs/analysis/mig_java8_17/claude-sonnet-4-6/smoke \
+    --out /tmp/iterator_report.md
 ```
 
 After step 2: `runs/analysis/mig_java8_17/claude-sonnet-4-6/smoke/` contains
@@ -155,14 +171,16 @@ Seven non-negotiable design properties:
 ## What's implemented vs. scaffolded
 
 This codebase lands the **MVP scaffolding (M1–M9)** specified in the PRD.
-Modules are pure Python, schema-validated, and exercised by 207 tests via
+Modules are pure Python, schema-validated, and exercised by 229 tests via
 cassette-based replay so the suite needs no API keys, no Daytona sandbox,
 and no Maven install.
 
 **Production-ready (replay-tested end to end):**
 
-- Tiered oracle funnel (`migration_evals.funnel`) — cascade T1 → T2 → T2b →
-  T3 → T4 with stage-level reporting and short-circuit on first failure.
+- Tiered oracle funnel (`migration_evals.funnel`) — cascade T0 → T1 → T2 →
+  T2b → T3 → T4 with stage-level reporting and short-circuit on first
+  failure. T0 (`oracles.tier0_diff`) catches malformed patches before
+  paying for a sandbox.
 - LLM-inferred build harness synthesis + content-hash cache + drift detector
   (`migration_evals.harness.{synth,cache,drift,recipe}`).
 - Procedural Java 8 repo generator across 10 migration primitives + AST-
@@ -175,11 +193,17 @@ and no Maven install.
 - Gold-anchor correlation with bootstrap 95% CI + `eval_broken` gate
   (`migration_evals.gold_anchor`).
 - Automated gold-anchor harvester via merged-PR survival
-  (`scripts/mine_gold_anchor.py`) — replaces the original "schedule reviewer
-  days" step entirely.
+  (`scripts/mine_gold_anchor.py`) — two sources: OSS search (default) or a
+  CSV of agent-generated changeset URLs. Replaces the original "schedule
+  reviewer days" step entirely.
+- Iterator-batch report (`migration_evals.iterator_report`) — groups
+  trials by `iterator_id` and emits per-batch completion rate, p50/p95
+  latency, total cost, and failure-class breakdown. CLI:
+  `iterator-report --run <dir> --out <md>`.
 - Contamination split (`migration_evals.contamination`).
-- Pre-registration / publication gate
-  (`migration_evals.pre_reg` + `migration_evals.publication_gate`).
+- Pre-registration / publication gate (3 required stamps + optional
+  `prompt_sha` for prompt-defined migrations) — `migration_evals.pre_reg`
+  + `migration_evals.publication_gate`.
 - Python 2→3 falsification probe with synthetic generator + findings JSON
   (`migration_evals.python23_probe`).
 - End-to-end CLI runner and funnel report
