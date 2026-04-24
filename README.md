@@ -1,19 +1,29 @@
 # migration-evals
 
 A **tiered-oracle funnel** for evaluating automated code migrations end to
-end - defending claims like *"this migration works on 85% of in-scope
-repos"* with a published funnel, contamination split, and pre-registered
-spec stamps instead of a single hand-wavy success rate.
+end - built so an agent-driven migration team can produce **fast,
+defensible proofpoints** (e.g., *"this migration works on 85% of in-scope
+repos with a 0.78 gold-anchor correlation"*) for prospects, customer
+decks, and internal go/no-go reviews. The headline is a published
+funnel, contamination split, and pre-registered spec stamps instead of
+a single hand-wavy success rate.
 
-The framework is deliberately **modular and ecosystem-pluggable**. The v1
-implementation targets Java 8→17 (Maven) and ships with a working Python
-2→3 falsification probe; the design generalizes to JS/TS, pinned-dep
-bumps, Spring Boot upgrades, and CVE fan-out without schema changes.
+The framework is deliberately **vendor-neutral and modular**. It plugs
+into any agent-driven changeset pipeline via three small adapter
+Protocols (sandbox, Anthropic, GitHub) - cassette-replay stand-ins ship
+in the box, and a Docker-backed sandbox + the Anthropic SDK adapter ship
+as drop-in implementations. The v1 implementation targets Java 8→17
+(Maven) and ships with a working Python 2→3 falsification probe; the
+design generalizes to JS/TS, pinned-dep bumps, Spring Boot upgrades,
+and CVE fan-out without schema changes.
 
 The whole pipeline is **automated**. The gold-anchor ground-truth set is
 harvested from public OSS migration PRs that were merged *and* survived
 30+ days without a revert; the result is a calibration signal that costs
-API quota, not engineering time.
+API quota, not engineering time. End-to-end smoke runs from a fresh
+clone with no API keys, no Docker, and no integration with any specific
+agent platform - so a prospect can reproduce the funnel before any
+deeper integration.
 
 ---
 
@@ -25,11 +35,15 @@ API quota, not engineering time.
 | [`docs/premortem.md`](docs/premortem.md) | Top-15 failure modes (R1–R15) - reviewer-disagreement, contamination, harness-synth, ecosystem generalization, infra blast-radius. Drives the M-list. |
 | [`docs/README.md`](docs/README.md) | Per-component design notes (oracle funnel, harness synth, gold-anchor, publication gate, python23 probe). |
 | [`docs/usage.md`](docs/usage.md) | CLI quickstart for `run`/`report`/`iterator-report`/`regression`/`harness`/`probe`. |
+| [`docs/oracle_funnel.md`](docs/oracle_funnel.md) | Funnel design + sandbox/Anthropic backend selection. |
+| [`docs/tier0_skip.md`](docs/tier0_skip.md) | Why tier 0 is skipped today and the three conditions that re-open it. |
 | [`src/migration_evals/`](src/migration_evals/) | Python package - CLI, funnel (Tier 0–4), oracles, gold anchor, iterator-batch report, ledger, contamination split, pre-registration / publication gate, Python 2→3 probe. |
+| [`src/migration_evals/adapters_docker.py`](src/migration_evals/adapters_docker.py) | Docker-backed `SandboxAdapter` for tiers 1+2 (compile + tests inside a real container). |
+| [`src/migration_evals/adapters_anthropic.py`](src/migration_evals/adapters_anthropic.py) | SDK-backed `AnthropicAdapter` for tier 3 (LLM judge) with prompt-cache passthrough and pre-call budget guard. |
 | [`schemas/`](schemas/) | JSON Schemas for `result.json` and gold-anchor entries. |
 | [`configs/java8_17_smoke.yaml`](configs/java8_17_smoke.yaml) | End-to-end smoke config: 3 fixture repos, all non-network tiers, replay cassettes - no API keys required. |
 | [`scripts/mine_gold_anchor.py`](scripts/mine_gold_anchor.py) | Automated gold-anchor harvester - builds `data/gold_anchor.json` from merged-PR survival via the `gh` CLI. Two sources: OSS search (default) or a CSV of agent-generated changeset URLs. |
-| [`tests/`](tests/) | 229 pytest cases: schema validation, funnel cascade, AST oracle, gold-anchor correlation + bootstrap CI, ledger diff, contamination split, publication gate, iterator-batch report, mine_gold_anchor (both sources), Tier-0 diff validity. |
+| [`tests/`](tests/) | 246 pytest cases (2 opt-in live-integration skips): schema validation, funnel cascade, AST oracle, gold-anchor correlation + bootstrap CI, ledger diff, contamination split, publication gate, iterator-batch report, mine_gold_anchor, Tier-0 diff validity, Docker / Anthropic adapter unit tests. |
 | [`examples/runs/`](examples/runs/) | Committed example outputs from the smoke config and the Python 2→3 probe. |
 | [`data/gold_anchor_template.json`](data/gold_anchor_template.json) | Empty seed - populated by `scripts/mine_gold_anchor.py`. |
 
@@ -87,6 +101,39 @@ a `summary.json` plus one `result.json` per repo, each validating against
 `data/gold_anchor.json` validated against
 `schemas/gold_anchor_entry.schema.json` ready to feed into
 `migration_evals.cli report --gold ...`.
+
+---
+
+## Proofpoint workflow (for prospect / customer conversations)
+
+The fastest path from a clean clone to a defensible number a prospect
+can interrogate:
+
+1. **Smoke run from cassettes** (no spend, no Docker) - establishes
+   that the funnel mechanics are real:
+   `python -m migration_evals.cli run --config configs/java8_17_smoke.yaml`
+2. **Gold-anchor calibration from public OSS** (no spend beyond GitHub
+   API quota) - establishes that the oracle correlates with
+   maintainer-accepted reality:
+   `python scripts/mine_gold_anchor.py --migration java8_17 --target-count 50`
+3. **Live tier 1 + 2 against your agent's diffs** - flip
+   `adapters.sandbox_provider: docker` in a config, point at a
+   directory of real repo+`patch.diff` pairs, and watch
+   compile/test verdicts land per repo. See
+   [`docs/oracle_funnel.md` §Sandbox backends](docs/oracle_funnel.md).
+4. **Live tier 3 LLM judge** - flip
+   `adapters.anthropic_provider: sdk` with
+   `anthropic_per_call_budget_usd` set so the budget guard refuses any
+   call that would exceed the cap.
+5. **Publication gate** stamps every result with the four SHAs
+   (`oracle_spec`, `recipe_spec`, `hypotheses`, optional `prompt_spec`).
+   The headline number cannot be cherry-picked after the fact - the
+   stamps are computed pre-run and embedded in the JSON.
+
+The point is: every claim the prospect sees is either (a) reproducible
+on their machine in <2 minutes (smoke), or (b) tied to a stamped,
+published artifact whose inputs are inspectable. There is no "trust me,
+the number is 85%" step.
 
 ---
 

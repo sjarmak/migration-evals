@@ -1,0 +1,5 @@
+pr_url
+# Header-only stub. Tier 0 is skipped until the agent-orchestration
+# system under evaluation has shipped >=50 merged agent-created PRs
+# that have aged 30 days without a revert. See docs/tier0_skip.md
+# for the three conditions that re-open tier 0.
