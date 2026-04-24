@@ -1,0 +1,5 @@
+{
+  "oracle_spec": "oracle_spec.yaml",
+  "recipe_spec": "recipe_spec.yaml",
+  "hypotheses": "../../../docs/hypotheses_and_thresholds.md"
+}

@@ -1,0 +1,6 @@
+{
+  "case_type": "two_to_three",
+  "repo_index": 5,
+  "seed": 46,
+  "note": "Variant: integer division + dict iterator semantics."
+}

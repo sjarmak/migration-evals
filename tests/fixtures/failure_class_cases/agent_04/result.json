@@ -1,0 +1,13 @@
+{
+  "task_id": "agent_case_04",
+  "agent_model": "claude-haiku-4-5",
+  "migration_id": "python2_3",
+  "success": false,
+  "failure_class": null,
+  "oracle_tier": "tests",
+  "oracle_spec_sha": "a",
+  "recipe_spec_sha": "b",
+  "pre_reg_sha": "c",
+  "score_pre_cutoff": 0.41,
+  "score_post_cutoff": 0.38
+}

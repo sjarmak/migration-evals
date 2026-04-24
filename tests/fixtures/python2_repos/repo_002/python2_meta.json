@@ -1,0 +1,6 @@
+{
+  "case_type": "setup_py_div",
+  "repo_index": 2,
+  "seed": 43,
+  "note": "Python 2 packaging via setup.py (no pyproject.toml). Python 3 ecosystem prefers pyproject.toml + poetry.lock."
+}

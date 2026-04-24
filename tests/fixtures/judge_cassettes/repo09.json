@@ -1,0 +1,10 @@
+{
+  "content": [
+    {
+      "text": "PASS judge approves repo09.",
+      "type": "text"
+    }
+  ],
+  "id": "msg_repo09",
+  "model": "claude-haiku-4-5"
+}

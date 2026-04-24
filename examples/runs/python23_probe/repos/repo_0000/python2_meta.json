@@ -1,0 +1,15 @@
+{
+  "case_type": "str_bytes",
+  "child_seed": 42000126,
+  "emission": {
+    "case_type": "str_bytes",
+    "files": [
+      "setup.py",
+      "app.py"
+    ],
+    "name": "py2_str_bytes_7132"
+  },
+  "note": "Synthetic Python 2 fixture for the M9 falsification probe. NOT a credible Python eval corpus.",
+  "repo_index": 0,
+  "seed": 42
+}

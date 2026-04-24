@@ -1,0 +1,7 @@
+version: v1-fixture-unstamped
+oracle_tier: compile_only
+checks:
+  - name: compile_ok
+    command: "mvn -q -DskipTests compile"
+  - name: bytecode_shape
+    kind: ast_conformance

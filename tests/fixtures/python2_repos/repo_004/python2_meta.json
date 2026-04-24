@@ -1,0 +1,6 @@
+{
+  "case_type": "str_bytes",
+  "repo_index": 4,
+  "seed": 45,
+  "note": "Variant: implicit ASCII coerce in string concatenation."
+}

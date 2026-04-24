@@ -1,0 +1,15 @@
+{
+  "case_type": "setup_py_div",
+  "child_seed": 42000143,
+  "emission": {
+    "case_type": "setup_py_div",
+    "files": [
+      "setup.py",
+      "legacy_module.py"
+    ],
+    "name": "py2_setup_py_div_3147"
+  },
+  "note": "Synthetic Python 2 fixture for the M9 falsification probe. NOT a credible Python eval corpus.",
+  "repo_index": 17,
+  "seed": 42
+}

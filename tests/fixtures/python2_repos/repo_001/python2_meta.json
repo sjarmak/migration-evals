@@ -1,0 +1,6 @@
+{
+  "case_type": "str_bytes",
+  "repo_index": 1,
+  "seed": 42,
+  "note": "Python 2 str-is-bytes semantic shift. Migrating to Python 3 requires explicit bytes/str disambiguation."
+}

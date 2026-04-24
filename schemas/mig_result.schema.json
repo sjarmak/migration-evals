@@ -1,0 +1,81 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "mig_result.v1",
+  "title": "Migration Eval Trial Result",
+  "description": "Schema for per-trial result.json files emitted by the agentic migration eval framework. See docs/migration_eval/README.md and prd_agentic_migration_eval_framework.md for context.",
+  "type": "object",
+  "required": [
+    "task_id",
+    "agent_model",
+    "migration_id",
+    "success",
+    "failure_class",
+    "oracle_tier",
+    "oracle_spec_sha",
+    "recipe_spec_sha",
+    "pre_reg_sha",
+    "score_pre_cutoff",
+    "score_post_cutoff"
+  ],
+  "properties": {
+    "task_id": {
+      "type": "string",
+      "description": "Unique per-trial task identifier (e.g. 'oss-maven-sample-042')."
+    },
+    "agent_model": {
+      "type": "string",
+      "description": "Agent + model identifier, e.g. 'claude-sonnet-4-6'."
+    },
+    "migration_id": {
+      "type": "string",
+      "description": "Migration identifier, e.g. 'java8_17', 'python2_3'."
+    },
+    "success": {
+      "type": "boolean",
+      "description": "True iff the trial passed the reported oracle tier."
+    },
+    "failure_class": {
+      "type": ["string", "null"],
+      "enum": [
+        "agent_error",
+        "harness_error",
+        "oracle_error",
+        "infra_error",
+        null
+      ],
+      "description": "PRD M6 four-way failure discrimination; null when success=true."
+    },
+    "oracle_tier": {
+      "type": "string",
+      "enum": [
+        "compile_only",
+        "tests",
+        "ast_conformance",
+        "judge",
+        "daikon"
+      ],
+      "description": "PRD M1 tiered oracle funnel stage that produced the pass/fail signal."
+    },
+    "oracle_spec_sha": {
+      "type": "string",
+      "description": "SHA of the oracle spec in force when this trial was scored (PRD M8-lite)."
+    },
+    "recipe_spec_sha": {
+      "type": "string",
+      "description": "SHA of the migration recipe spec in force for this trial (PRD M8-lite)."
+    },
+    "pre_reg_sha": {
+      "type": "string",
+      "description": "SHA of the pre-registered hypotheses_and_thresholds.md file (PRD M8-lite)."
+    },
+    "score_pre_cutoff": {
+      "type": "number",
+      "description": "PRD M7 contamination-split score for repos created BEFORE the model training cutoff."
+    },
+    "score_post_cutoff": {
+      "type": "number",
+      "description": "PRD M7 contamination-split score for repos created AFTER the model training cutoff."
+    }
+  },
+  "additionalProperties": true
+}

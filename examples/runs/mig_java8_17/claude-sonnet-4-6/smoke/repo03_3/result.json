@@ -1,0 +1,91 @@
+{
+  "agent_model": "claude-sonnet-4-6",
+  "failure_class": null,
+  "funnel": {
+    "failure_class": null,
+    "final_verdict": {
+      "cost_usd": 0.08,
+      "details": {
+        "cache_control_sent": true,
+        "judge_text": "PASS judge approves repo03.",
+        "model": "claude-haiku-4-5",
+        "raw_envelope": {
+          "content": [
+            {
+              "text": "PASS judge approves repo03.",
+              "type": "text"
+            }
+          ],
+          "id": "msg_repo03",
+          "model": "claude-haiku-4-5"
+        },
+        "repo_path": "tests/migration_eval/fixtures/funnel_repos/repo03",
+        "rubric_sha_prefix": "You are a migration-eval judge. "
+      },
+      "passed": true,
+      "tier": "judge"
+    },
+    "per_tier_verdict": [
+      {
+        "cost_usd": 0.01,
+        "details": {
+          "command": "mvn -B -e compile",
+          "exit_code": 0,
+          "repo_path": "tests/migration_eval/fixtures/funnel_repos/repo03",
+          "stderr_tail": "",
+          "stdout_tail": ""
+        },
+        "passed": true,
+        "tier": "compile_only"
+      },
+      {
+        "cost_usd": 0.03,
+        "details": {
+          "command": "mvn -B -e test",
+          "exit_code": 0,
+          "repo_path": "tests/migration_eval/fixtures/funnel_repos/repo03",
+          "stderr_tail": "",
+          "stdout_tail": ""
+        },
+        "passed": true,
+        "tier": "tests"
+      },
+      {
+        "cost_usd": 0.08,
+        "details": {
+          "cache_control_sent": true,
+          "judge_text": "PASS judge approves repo03.",
+          "model": "claude-haiku-4-5",
+          "raw_envelope": {
+            "content": [
+              {
+                "text": "PASS judge approves repo03.",
+                "type": "text"
+              }
+            ],
+            "id": "msg_repo03",
+            "model": "claude-haiku-4-5"
+          },
+          "repo_path": "tests/migration_eval/fixtures/funnel_repos/repo03",
+          "rubric_sha_prefix": "You are a migration-eval judge. "
+        },
+        "passed": true,
+        "tier": "judge"
+      }
+    ],
+    "total_cost_usd": 0.12
+  },
+  "migration_id": "java8_17",
+  "oracle_spec_sha": "c5e25d834042ce35ad24867ed398ae624278d0dacb3911fbf6778e89f966d914",
+  "oracle_tier": "judge",
+  "pre_reg_sha": "c5e25d834042ce35ad24867ed398ae624278d0dacb3911fbf6778e89f966d914",
+  "recipe_spec_sha": "c5e25d834042ce35ad24867ed398ae624278d0dacb3911fbf6778e89f966d914",
+  "repo_created_at": "2020-11-15",
+  "repo_path": "tests/migration_eval/fixtures/funnel_repos/repo03",
+  "score_post_cutoff": 0.0,
+  "score_pre_cutoff": 1.0,
+  "seed": 3,
+  "success": true,
+  "task_id": "java8_17::repo03",
+  "variant": "smoke"
+}

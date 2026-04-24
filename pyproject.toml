@@ -1,0 +1,65 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "migration-evals"
+version = "0.1.0"
+description = "Tiered-oracle funnel for evaluating agentic code migrations (Java 8→17, Python 2→3, ...)"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { file = "LICENSE" }
+authors = [
+    { name = "Stephanie Jarmak", email = "stephanie.jarmak@sourcegraph.com" },
+]
+keywords = ["migration", "agentic", "evaluation", "benchmark", "llm"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Testing",
+]
+dependencies = [
+    "PyYAML>=6.0",
+    "Jinja2>=3.1",
+    "jsonschema>=4.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4",
+    "pytest-cov>=4.1",
+    "ruff>=0.4",
+    "black>=24.0",
+    "mypy>=1.10",
+]
+
+[project.urls]
+Homepage = "https://github.com/sjarmak/migration-evals"
+Issues = "https://github.com/sjarmak/migration-evals/issues"
+
+[project.scripts]
+migration-evals = "migration_evals.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["migration_evals*"]
+
+[tool.setuptools.package-data]
+migration_evals = ["templates/*.j2"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+pythonpath = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.black]
+line-length = 100
+target-version = ["py310"]

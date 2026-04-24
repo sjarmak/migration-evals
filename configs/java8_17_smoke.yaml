@@ -1,0 +1,41 @@
+# java8_17 smoke config — 3-repo fixture run.
+#
+# This config drives `python -m migration_evals.cli run --config ...`
+# end-to-end against the committed fixture repos so the smoke path never
+# touches the network. It is the canonical example cited by
+# docs/usage.md and tests/test_cli_runner.py.
+
+migration_id: java8_17
+agent_model: claude-sonnet-4-6
+variant: smoke
+output_root: runs/analysis/mig_java8_17/claude-sonnet-4-6/smoke
+model_cutoff_date: "2025-01-01"
+
+# Enable only the non-network tiers that the fixtures exercise. The AST
+# tier auto-engages when a repo sets ``is_synthetic: true`` in its
+# meta.json; the smoke fixtures do not, so AST is skipped regardless.
+stages:
+  - compile
+  - tests
+  - judge
+
+repos:
+  - path: tests/fixtures/funnel_repos/repo01
+    seed: 1
+  - path: tests/fixtures/funnel_repos/repo02
+    seed: 2
+  - path: tests/fixtures/funnel_repos/repo03
+    seed: 3
+
+adapters:
+  anthropic_cassette_dir: tests/fixtures/judge_cassettes
+  daytona_cassette_dir: tests/fixtures/funnel_repos
+
+stamps:
+  # Placeholder stamps for the smoke: the hypotheses document is the
+  # closest committed artifact we have, so all three SHAs reuse it. Real
+  # runs are expected to point oracle_spec/recipe_spec at their own
+  # committed spec files.
+  oracle_spec: docs/hypotheses_and_thresholds.md
+  recipe_spec: docs/hypotheses_and_thresholds.md
+  hypotheses: docs/hypotheses_and_thresholds.md

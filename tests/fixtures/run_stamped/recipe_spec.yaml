@@ -1,0 +1,6 @@
+version: v1-fixture-stamped
+migration_id: java8_17
+steps:
+  - rename_package: { from: javax.xml.bind, to: jakarta.xml.bind }
+  - bump_java_target: "17"
+  - update_spring_boot: "3.2.x"

@@ -1,0 +1,15 @@
+{
+  "case_type": "two_to_three",
+  "child_seed": 42000131,
+  "emission": {
+    "case_type": "two_to_three",
+    "files": [
+      "setup.py",
+      "runtime_div.py"
+    ],
+    "name": "py2_two_to_three_2035"
+  },
+  "note": "Synthetic Python 2 fixture for the M9 falsification probe. NOT a credible Python eval corpus.",
+  "repo_index": 5,
+  "seed": 42
+}

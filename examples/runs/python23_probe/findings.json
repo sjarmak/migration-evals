@@ -1,0 +1,53 @@
+{
+  "intent": "Falsification probe (PRD M9). NOT a credible Python eval number. Surfaces schema inadequacies in M2/M3/M5 interfaces.",
+  "mismatches_by_module": {
+    "harness": [
+      {
+        "field": "Recipe.ecosystem",
+        "issue": "missing_ecosystem_discriminator",
+        "module": "harness",
+        "reason": "Recipe schema has no ecosystem/language field. Defaults bake in Maven assumptions; a Python 2\u21923 harness cannot self-declare. Observed Recipe fields: ['build_cmd', 'dockerfile', 'harness_provenance', 'test_cmd']."
+      }
+    ],
+    "ledger": [
+      {
+        "field": "oracle_tier",
+        "issue": "oracle_tier_enum_lacks_python_runtime",
+        "module": "ledger",
+        "reason": "mig_result.schema.json:oracle_tier enum=['compile_only', 'tests', 'ast_conformance', 'judge', 'daikon'] does not include 'python_2to3_runtime'. Python 2\u21923 runtime semantic checks have no representable tier in the ledger."
+      }
+    ],
+    "synthetic": [
+      {
+        "field": "GENERATOR_PRIMITIVES",
+        "issue": "case_type_not_in_generator_primitives",
+        "module": "synthetic",
+        "reason": "case_type='str_bytes' is not a member of the Java GENERATOR_PRIMITIVES set (['dep_bumps', 'deprecated_api', 'enhanced_switch', 'lambda', 'optional', 'pattern_match', 'records', 'sealed', 'text_blocks', 'var_infer']). The Java synthetic schema does not generalize to Python."
+      },
+      {
+        "field": "GENERATOR_PRIMITIVES",
+        "issue": "case_type_not_in_generator_primitives",
+        "module": "synthetic",
+        "reason": "case_type='setup_py_div' is not a member of the Java GENERATOR_PRIMITIVES set (['dep_bumps', 'deprecated_api', 'enhanced_switch', 'lambda', 'optional', 'pattern_match', 'records', 'sealed', 'text_blocks', 'var_infer']). The Java synthetic schema does not generalize to Python."
+      },
+      {
+        "field": "GENERATOR_PRIMITIVES",
+        "issue": "case_type_not_in_generator_primitives",
+        "module": "synthetic",
+        "reason": "case_type='two_to_three' is not a member of the Java GENERATOR_PRIMITIVES set (['dep_bumps', 'deprecated_api', 'enhanced_switch', 'lambda', 'optional', 'pattern_match', 'records', 'sealed', 'text_blocks', 'var_infer']). The Java synthetic schema does not generalize to Python."
+      }
+    ]
+  },
+  "modules_with_mismatches": [
+    "harness",
+    "ledger",
+    "synthetic"
+  ],
+  "n_repos": 20,
+  "primitive_coverage": {
+    "setup_py_div": 9,
+    "str_bytes": 3,
+    "two_to_three": 8
+  },
+  "schema_revision_required": true
+}

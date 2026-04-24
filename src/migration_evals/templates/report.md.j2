@@ -1,0 +1,79 @@
+{#
+  Reference-only Jinja2 template for migration_evals.report.
+  --------------------------------------------------------------
+  The runtime rendering path uses a hand-rolled f-string renderer in
+  scripts/migration_eval/report.py (format_report). This file is kept
+  as a documentation artifact so the target structure is obvious to
+  future maintainers. It is NOT imported or rendered by the CLI — see
+  docs/migration_eval/usage.md for the rationale (avoid an added
+  runtime dep).
+
+  The variables expected by this template match the keys of the dict
+  returned by migration_evals.report.build_report_data:
+
+    summary:          dict  — migration_id, agent_model, variant, n_trials
+    n_trials:         int
+    funnel:           list[dict]  tier_name / n_entered / n_passed /
+                                   n_failed / cumulative_pass_rate
+    contamination:    dict  — score_pre / score_post / gap_pp /
+                              warning_flag / n_pre / n_post
+    gold_anchor:      CorrelationReport | None
+    stamps:           dict  — oracle_spec_sha / recipe_spec_sha /
+                              pre_reg_sha
+    failure_classes:  dict[str, int]
+#}
+# Migration Eval Funnel Report
+
+- migration_id: `{{ summary.migration_id }}`
+- agent_model: `{{ summary.agent_model }}`
+- variant: `{{ summary.variant }}`
+- n_trials: {{ n_trials }}
+
+## 1. Funnel
+
+| tier_name | n_entered | n_passed | n_failed | cumulative_pass_rate |
+|-----------|-----------|----------|----------|----------------------|
+{% for row in funnel -%}
+| {{ row.tier_name }} | {{ row.n_entered }} | {{ row.n_passed }} | {{ row.n_failed }} | {{ "%.4f"|format(row.cumulative_pass_rate) }} |
+{% endfor %}
+
+## 2. Contamination Split
+
+- score_pre_cutoff: {{ "%.4f"|format(contamination.score_pre) }} (n={{ contamination.n_pre }})
+- score_post_cutoff: {{ "%.4f"|format(contamination.score_post) }} (n={{ contamination.n_post }})
+- gap_pp: {{ "%.4f"|format(contamination.gap_pp) }}
+- warning_flag: {{ "YES" if contamination.warning_flag else "no" }}
+
+{% if gold_anchor is not none %}
+## 3. Gold Anchor Correlation
+
+- point: {{ "%.4f"|format(gold_anchor.point) }}
+- ci_low: {{ "%.4f"|format(gold_anchor.ci_low) }}
+- ci_high: {{ "%.4f"|format(gold_anchor.ci_high) }}
+- eval_broken: {{ "YES" if gold_anchor.eval_broken else "no" }}
+- n_pairs: {{ gold_anchor.details.n_pairs }}
+
+## 4. Spec Stamps
+{% else %}
+## 3. Spec Stamps
+{% endif %}
+
+- oracle_spec_sha: `{{ stamps.oracle_spec_sha }}`
+- recipe_spec_sha: `{{ stamps.recipe_spec_sha }}`
+- pre_reg_sha: `{{ stamps.pre_reg_sha }}`
+
+{% if gold_anchor is not none %}
+## 5. Failure Class Breakdown
+{% else %}
+## 4. Failure Class Breakdown
+{% endif %}
+
+{% if failure_classes %}
+| failure_class | count |
+|---------------|-------|
+{% for cls, count in failure_classes.items() -%}
+| {{ cls }} | {{ count }} |
+{% endfor %}
+{% else %}
+- (no failures)
+{% endif %}

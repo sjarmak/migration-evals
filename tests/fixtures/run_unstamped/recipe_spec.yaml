@@ -1,0 +1,5 @@
+version: v1-fixture-unstamped
+migration_id: java8_17
+steps:
+  - rename_package: { from: javax.xml.bind, to: jakarta.xml.bind }
+  - bump_java_target: "17"

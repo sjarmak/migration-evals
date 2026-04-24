@@ -1,0 +1,14 @@
+{
+  "agent_model": "claude-sonnet-4-6",
+  "build_cmd": "mvn -B -e compile",
+  "harness_provenance": {
+    "model": "claude-haiku-4-5",
+    "prompt_version": "v1",
+    "timestamp": "2026-04-24T00:00:00Z"
+  },
+  "is_synthetic": false,
+  "migration_id": "java8_17",
+  "repo_created_at": "2024-06-01",
+  "task_id": "funnel-repo06",
+  "test_cmd": "mvn -B -e test"
+}

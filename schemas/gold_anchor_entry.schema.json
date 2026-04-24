@@ -1,0 +1,39 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "gold_anchor_entry.v1",
+  "title": "Migration Eval Gold Anchor Entry",
+  "description": "Schema for a single human-adjudicated label in the migration-eval gold anchor set (PRD M4-lite). Entries are stored as a JSON array; this schema validates one element of that array. See docs/migration_eval/gold_anchor.md for scope and re-anchoring cadence.",
+  "type": "object",
+  "required": [
+    "repo_url",
+    "commit_sha",
+    "human_verdict",
+    "reviewer_notes",
+    "labeled_at"
+  ],
+  "properties": {
+    "repo_url": {
+      "type": "string",
+      "description": "Canonical repository URL, e.g. https://github.com/org/repo."
+    },
+    "commit_sha": {
+      "type": "string",
+      "description": "Commit SHA that was reviewed."
+    },
+    "human_verdict": {
+      "type": "string",
+      "enum": ["accept", "reject"],
+      "description": "Reviewer verdict on the migration diff/outcome."
+    },
+    "reviewer_notes": {
+      "type": "string",
+      "description": "Free-form reviewer commentary explaining the verdict."
+    },
+    "labeled_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO 8601 timestamp when the label was recorded."
+    }
+  },
+  "additionalProperties": false
+}

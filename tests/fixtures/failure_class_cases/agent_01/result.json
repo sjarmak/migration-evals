@@ -1,0 +1,13 @@
+{
+  "task_id": "agent_case_01",
+  "agent_model": "claude-sonnet-4-6",
+  "migration_id": "java8_17",
+  "success": false,
+  "failure_class": null,
+  "oracle_tier": "compile_only",
+  "oracle_spec_sha": "a",
+  "recipe_spec_sha": "b",
+  "pre_reg_sha": "c",
+  "score_pre_cutoff": 0.1,
+  "score_post_cutoff": 0.05
+}

@@ -1,0 +1,1 @@
+{"content": [{"type": "text", "text": "{\"dockerfile\": \"FROM maven:3.9-eclipse-temurin-11\\nWORKDIR /src\\nCOPY . .\\n\", \"build_cmd\": \"mvn -B -e compile\", \"test_cmd\": \"mvn -B -e test\"}"}]}

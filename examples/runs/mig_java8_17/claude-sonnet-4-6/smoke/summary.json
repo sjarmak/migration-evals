@@ -1,0 +1,13 @@
+{
+  "agent_model": "claude-sonnet-4-6",
+  "migration_id": "java8_17",
+  "model_cutoff_date": "2025-01-01",
+  "n_trials": 3,
+  "output_root": "runs/analysis/mig_java8_17/claude-sonnet-4-6/smoke",
+  "stamps": {
+    "oracle_spec_sha": "c5e25d834042ce35ad24867ed398ae624278d0dacb3911fbf6778e89f966d914",
+    "pre_reg_sha": "c5e25d834042ce35ad24867ed398ae624278d0dacb3911fbf6778e89f966d914",
+    "recipe_spec_sha": "c5e25d834042ce35ad24867ed398ae624278d0dacb3911fbf6778e89f966d914"
+  },
+  "variant": "smoke"
+}

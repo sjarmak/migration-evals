@@ -1,0 +1,7 @@
+version: v1-fixture-stamped
+oracle_tier: compile_only
+checks:
+  - name: compile_ok
+    command: "mvn -q -DskipTests compile"
+  - name: unit_tests
+    command: "mvn -q test"

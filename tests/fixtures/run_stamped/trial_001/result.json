@@ -1,0 +1,13 @@
+{
+  "task_id": "oss-maven-stamped-001",
+  "agent_model": "claude-sonnet-4-6",
+  "migration_id": "java8_17",
+  "success": true,
+  "failure_class": null,
+  "oracle_tier": "compile_only",
+  "oracle_spec_sha": "79a65900fe2da5252ed173c18c125a06a99b25014e5398b545e167a7354e8b2f",
+  "recipe_spec_sha": "2eeae1feba028ac9eb9007c1906406af6a3a6d6434e632c1b4a6d894824d0b7c",
+  "pre_reg_sha": "c5e25d834042ce35ad24867ed398ae624278d0dacb3911fbf6778e89f966d914",
+  "score_pre_cutoff": 0.84,
+  "score_post_cutoff": 0.77
+}

@@ -1,0 +1,13 @@
+{
+  "task_id": "oss-maven-unstamped-001",
+  "agent_model": "claude-sonnet-4-6",
+  "migration_id": "java8_17",
+  "success": true,
+  "failure_class": null,
+  "oracle_tier": "compile_only",
+  "oracle_spec_sha": "",
+  "recipe_spec_sha": "",
+  "pre_reg_sha": "",
+  "score_pre_cutoff": 0.80,
+  "score_post_cutoff": 0.74
+}
