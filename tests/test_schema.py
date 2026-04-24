@@ -69,7 +69,14 @@ def test_schema_failure_class_enum(schema: dict) -> None:
 
 
 def test_schema_oracle_tier_enum(schema: dict) -> None:
-    expected = {"compile_only", "tests", "ast_conformance", "judge", "daikon"}
+    expected = {
+        "diff_valid",
+        "compile_only",
+        "tests",
+        "ast_conformance",
+        "judge",
+        "daikon",
+    }
     actual = set(schema["properties"]["oracle_tier"]["enum"])
     assert actual == expected
 
@@ -106,6 +113,7 @@ def test_oracle_tier_enum_roundtrip() -> None:
     from migration_evals.types import OracleTier
 
     expected = {
+        "diff_valid": OracleTier.DIFF_VALID,
         "compile_only": OracleTier.COMPILE_ONLY,
         "tests": OracleTier.TESTS,
         "ast_conformance": OracleTier.AST_CONFORMANCE,

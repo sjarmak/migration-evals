@@ -220,7 +220,7 @@ The 30-idea design space converges on a clear architecture: a **tiered-oracle fu
 
 **D2. Mechanical publication gate (weeks 1-2)** — `repo_health.py --publication-gate` CI check + Slack bot auto-redaction of un-stamped scores + CODEOWNERS on `hypotheses_and_thresholds.md`. Replaces procedural gate. Addresses Operational + Team/Process + Scope + Integration.
 
-**D3. External-dependency adapter layer (week 1)** — thin adapter + replay cassette per dep (Anthropic, Daytona, OpenRewrite, Cody, GitHub, Docker). OpenRewrite vendored at pinned SHA. Two-model shadow judge calibration always running. Addresses Technical + Integration + Operational.
+**D3. External-dependency adapter layer (week 1)** — thin adapter + replay cassette per dep (Anthropic, Daytona, OpenRewrite, code-search backend, GitHub, Docker). OpenRewrite vendored at pinned SHA. Two-model shadow judge calibration always running. Addresses Technical + Integration + Operational.
 
 **D4. CODEOWNERS split (week 1, one PR)** — engineer shipping migration agent ≠ engineer approving threshold changes or gold-anchor re-labels. Each critical artifact has primary + shadow owner on staggered rotation. Addresses Team/Process + Scope + Operational.
 

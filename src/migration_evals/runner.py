@@ -47,6 +47,7 @@ LOG = logging.getLogger(__name__)
 
 # Tier -> CLI stage name, used when config enumerates stages.
 _STAGE_TO_TIER = {
+    "diff": "diff_valid",
     "compile": "compile_only",
     "tests": "tests",
     "judge": "judge",
@@ -103,6 +104,7 @@ def _build_payload(
     funnel_result: Any,
     migration_id: str,
     agent_model: str,
+    agent_runner: Optional[str],
     variant: str,
     model_cutoff_date: Optional[date],
 ) -> dict[str, Any]:
@@ -132,6 +134,7 @@ def _build_payload(
     payload: dict[str, Any] = {
         "task_id": task_id,
         "agent_model": agent_model,
+        "agent_runner": agent_runner,
         "migration_id": migration_id,
         "variant": variant,
         "seed": repo_entry.seed,
@@ -222,6 +225,11 @@ def run_from_config(config_path: Path) -> int:
         print(f"error: config missing required key: {exc.args[0]!r}", file=sys.stderr)
         return 2
 
+    agent_runner_raw = raw_cfg.get("agent_runner")
+    agent_runner: Optional[str] = (
+        str(agent_runner_raw) if agent_runner_raw else None
+    )
+
     if not isinstance(repos_raw, Sequence) or not repos_raw:
         print("error: config 'repos' must be a non-empty list", file=sys.stderr)
         return 2
@@ -238,6 +246,7 @@ def run_from_config(config_path: Path) -> int:
     oracle_spec = _as_path(stamps_cfg.get("oracle_spec"))
     recipe_spec = _as_path(stamps_cfg.get("recipe_spec"))
     hypotheses = _as_path(stamps_cfg.get("hypotheses"))
+    prompt_spec = _as_path(stamps_cfg.get("prompt_spec"))
     if oracle_spec is None or recipe_spec is None or hypotheses is None:
         print(
             "error: config 'stamps' must include oracle_spec, recipe_spec, "
@@ -275,10 +284,13 @@ def run_from_config(config_path: Path) -> int:
             funnel_result=funnel_result,
             migration_id=migration_id,
             agent_model=agent_model,
+            agent_runner=agent_runner,
             variant=variant,
             model_cutoff_date=cutoff,
         )
-        stamped = stamp_result(base_payload, oracle_spec, recipe_spec, hypotheses)
+        stamped = stamp_result(
+            base_payload, oracle_spec, recipe_spec, hypotheses, prompt_spec
+        )
 
         trial_dir = output_root / f"{repo_entry.path.name}_{repo_entry.seed}"
         trial_dir.mkdir(parents=True, exist_ok=True)
@@ -295,18 +307,22 @@ def run_from_config(config_path: Path) -> int:
             result_path.write_text(json.dumps(stamped, indent=2, sort_keys=True) + "\n")
         written += 1
 
+    summary_stamps = {
+        "oracle_spec_sha": _sha_of(oracle_spec),
+        "recipe_spec_sha": _sha_of(recipe_spec),
+        "pre_reg_sha": _sha_of(hypotheses),
+    }
+    if prompt_spec is not None:
+        summary_stamps["prompt_sha"] = _sha_of(prompt_spec)
     summary = {
         "migration_id": migration_id,
         "agent_model": agent_model,
+        "agent_runner": agent_runner,
         "variant": variant,
         "output_root": str(output_root),
         "n_trials": written,
         "model_cutoff_date": raw_cfg.get("model_cutoff_date"),
-        "stamps": {
-            "oracle_spec_sha": _sha_of(oracle_spec),
-            "recipe_spec_sha": _sha_of(recipe_spec),
-            "pre_reg_sha": _sha_of(hypotheses),
-        },
+        "stamps": summary_stamps,
     }
     (output_root / "summary.json").write_text(
         json.dumps(summary, indent=2, sort_keys=True) + "\n"

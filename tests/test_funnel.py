@@ -94,12 +94,13 @@ def test_funnel_cascade_all_pass() -> None:
     result = run_funnel(FIXTURE_REPOS / "repo01", recipe, adapters)
     assert isinstance(result, FunnelResult)
     tier_names = [name for name, _ in result.per_tier_verdict]
+    # T0 diff_valid runs first (cheap structural check), then T1/T2/T3.
     # AST not injected (is_synthetic=False), Daikon disabled.
-    assert tier_names == ["compile_only", "tests", "judge"]
+    assert tier_names == ["diff_valid", "compile_only", "tests", "judge"]
     assert result.final_verdict.tier == "judge"
     assert result.final_verdict.passed is True
     assert result.failure_class is None
-    assert result.total_cost_usd == pytest.approx(0.01 + 0.03 + 0.08)
+    assert result.total_cost_usd == pytest.approx(0.001 + 0.01 + 0.03 + 0.08)
 
 
 def test_funnel_short_circuits_on_t1_failure() -> None:
@@ -110,7 +111,8 @@ def test_funnel_short_circuits_on_t1_failure() -> None:
     result = run_funnel(FIXTURE_REPOS / "repo01", recipe, adapters)
 
     tier_names = [name for name, _ in result.per_tier_verdict]
-    assert tier_names == ["compile_only"]
+    assert tier_names == ["diff_valid", "compile_only"]
+    assert result.final_verdict.tier == "compile_only"
     assert result.final_verdict.passed is False
     assert result.failure_class == "harness_error"
     assert anthropic.call_count == 0  # judge never reached
@@ -127,7 +129,7 @@ def test_funnel_short_circuits_on_t2_failure_classifies_agent_error() -> None:
     }
     result = run_funnel(FIXTURE_REPOS / "repo01", recipe, adapters)
     tier_names = [name for name, _ in result.per_tier_verdict]
-    assert tier_names == ["compile_only", "tests"]
+    assert tier_names == ["diff_valid", "compile_only", "tests"]
     assert result.failure_class == "agent_error"
 
 
@@ -148,7 +150,13 @@ def test_funnel_synthetic_runs_ast_tier(tmp_path: Path) -> None:
     }
     result = run_funnel(repo, recipe, adapters, is_synthetic=True)
     tier_names = [name for name, _ in result.per_tier_verdict]
-    assert tier_names == ["compile_only", "tests", "ast_conformance", "judge"]
+    assert tier_names == [
+        "diff_valid",
+        "compile_only",
+        "tests",
+        "ast_conformance",
+        "judge",
+    ]
 
 
 def test_funnel_skips_daikon_by_default() -> None:

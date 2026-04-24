@@ -96,11 +96,12 @@ a `summary.json` plus one `result.json` per repo, each validating against
               │
     ┌─────────▼────────────────────────────────────────────┐
     │              Tiered Oracle Funnel                    │
-    │  T1: compile + typecheck       (~$0.01/repo)         │
-    │  T2: existing tests            (~$0.03/repo)         │
-    │  T2b: AST-spec conformance     (synthetic only)      │
-    │  T3: LLM-judge (cached prompt) (~$0.08/repo)         │
-    │  T4: Daikon invariants (opt)   (~$0.10/repo)         │
+    │  T0: diff validity              (~$0.001/repo, local)│
+    │  T1: compile + typecheck        (~$0.01/repo)        │
+    │  T2: existing tests             (~$0.03/repo)        │
+    │  T2b: AST-spec conformance      (synthetic only)     │
+    │  T3: LLM-judge (cached prompt)  (~$0.08/repo)        │
+    │  T4: Daikon invariants (opt)    (~$0.10/repo)        │
     └─────────┬────────────────────────────────────────────┘
               │
     ┌─────────▼────────────────────────────────────────────┐
@@ -117,11 +118,11 @@ a `summary.json` plus one `result.json` per repo, each validating against
     └──────────────────────────────────────────────────────┘
 ```
 
-Five non-negotiable design properties:
+Seven non-negotiable design properties:
 
 1. **Funnel, not a single number.** Every report breaks results into
-   `compile / tests / ast / judge / daikon` so failures localize without
-   re-running the cascade.
+   `diff / compile / tests / ast / judge / daikon` so failures localize
+   without re-running the cascade.
 2. **Synthetic + automated real-world anchor (not either).** Procedurally
    generated repos give exact AST ground-truth at zero marginal cost. The
    merge-survival anchor harvested from public OSS PRs catches the
@@ -135,15 +136,26 @@ Five non-negotiable design properties:
    model cutoff; gaps >5pp auto-flag a `contamination_warning`.
 5. **Pre-registration gates publication.** No headline number leaves the
    project until `oracle_spec_sha`, `recipe_spec_sha`, and `pre_reg_sha`
-   match committed files
+   match committed files. When the migration is *prompt-defined* rather
+   than recipe-defined, the agent prompt itself is hashed as a 4th stamp
+   (`prompt_sha`) so the prompt is auditable end-to-end
    (`python -m migration_evals.publication_gate --check-run`).
+6. **Runner is separate from model.** The schema carries `agent_runner`
+   (e.g. `claude_code`, `amp`, `cursor`, `aider`) alongside `agent_model`
+   (e.g. `claude-sonnet-4-6`) so cost / reliability metrics can be sliced
+   by harness independently of the underlying LLM.
+7. **CI feedback loop is a documented integration point.** When the
+   funnel is invoked inside a multi-iteration agent workflow, every
+   `FunnelResult` can be written back as a structured workflow variable
+   so the agent's next iteration sees the prior verdict and adapts. See
+   `docs/oracle_funnel.md` §CI feedback loop integration.
 
 ---
 
 ## What's implemented vs. scaffolded
 
 This codebase lands the **MVP scaffolding (M1–M9)** specified in the PRD.
-Modules are pure Python, schema-validated, and exercised by 174 tests via
+Modules are pure Python, schema-validated, and exercised by 207 tests via
 cassette-based replay so the suite needs no API keys, no Daytona sandbox,
 and no Maven install.
 

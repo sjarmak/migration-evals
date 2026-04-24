@@ -22,6 +22,7 @@ from typing import Any, Callable, Mapping, Optional
 
 from migration_evals.harness.recipe import Recipe
 from migration_evals.oracles import (
+    tier0_diff,
     tier1_compile,
     tier2_tests,
     tier3_judge,
@@ -36,11 +37,13 @@ AST_DEFAULT_COST_USD = 0.0
 
 # Stage alias table — maps CLI --stage values to the set of tiers to run.
 STAGE_ALIASES: dict[str, tuple[str, ...]] = {
+    "diff": (tier0_diff.TIER_NAME,),
     "compile": (tier1_compile.TIER_NAME,),
     "tests": (tier2_tests.TIER_NAME,),
     "judge": (tier3_judge.TIER_NAME,),
     "daikon": (tier4_daikon.TIER_NAME,),
     "all": (
+        tier0_diff.TIER_NAME,
         tier1_compile.TIER_NAME,
         tier2_tests.TIER_NAME,
         AST_TIER_NAME,
@@ -81,6 +84,10 @@ def _ast_verdict(repo_path: Path, recipe: Recipe) -> OracleVerdict:
 
 def _failure_class_for(tier_name: str) -> str:
     """Map the tier that short-circuited to a :class:`FailureClass` value."""
+    if tier_name == tier0_diff.TIER_NAME:
+        # A malformed patch / unparseable file is the agent's fault, not the
+        # harness or the oracle.
+        return FailureClass.AGENT_ERROR.value
     if tier_name == tier1_compile.TIER_NAME:
         return FailureClass.HARNESS_ERROR.value
     return FailureClass.AGENT_ERROR.value
@@ -123,6 +130,10 @@ def run_funnel(
     anthropic = adapters.get("anthropic")
 
     pipeline: list[tuple[str, Callable[[], OracleVerdict]]] = [
+        (
+            tier0_diff.TIER_NAME,
+            lambda: tier0_diff.run(repo_path, recipe, daytona),
+        ),
         (
             tier1_compile.TIER_NAME,
             lambda: tier1_compile.run(repo_path, recipe, daytona),

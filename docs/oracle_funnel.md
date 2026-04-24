@@ -9,13 +9,22 @@ The funnel runs the cheapest, highest-precision tiers first and only
 escalates to more expensive tiers when an earlier tier passes. The first
 tier whose verdict is `passed=False` short-circuits the cascade.
 
-| Order | Tier              | Cost target / call | Module                                                        | Purpose                                                                  |
-|-------|-------------------|--------------------|---------------------------------------------------------------|--------------------------------------------------------------------------|
+| Order | Tier              | Cost target / call | Module                                                     | Purpose                                                                  |
+|-------|-------------------|--------------------|------------------------------------------------------------|--------------------------------------------------------------------------|
+| 0     | `diff_valid`      | $0.001 (local)     | `src/migration_evals/oracles/tier0_diff.py`                | Patch parses, applies cleanly, and migrated source files have balanced braces / parens. Catches the worst hallucinations before paying for a sandbox. |
 | 1     | `compile_only`    | $0.01              | `src/migration_evals/oracles/tier1_compile.py`             | Run the recipe's `build_cmd`. Non-zero exit fails the trial.            |
 | 2     | `tests`           | $0.03              | `src/migration_evals/oracles/tier2_tests.py`               | Run the recipe's `test_cmd` against the migrated repo.                   |
 | 2b    | `ast_conformance` | $0.00 (local)      | `src/migration_evals/synthetic/ast_oracle.py` (wrapped)    | Synthetic-only — regex AST-spec conformance against a known migration.   |
 | 3     | `judge`           | $0.08              | `src/migration_evals/oracles/tier3_judge.py`               | Single-pass Claude judge with prompt caching on the rubric block.        |
 | 4     | `daikon`          | $0.10 (target)     | `src/migration_evals/oracles/tier4_daikon.py`              | Stub today; will run Daikon invariant inference once integrated.         |
+
+Tier 0 (`diff_valid`) is the first stage in the cascade. It tries three
+checks in order and uses the first that has signal: (a) a unified-diff
+artifact at `<repo>/patch.diff` (or `agent_diff.patch` / `changeset.diff`),
+(b) the synthetic `orig/` vs `migrated/` subtree shape, or (c) a structural
+sanity check on the migrated source files. A failure here is classified
+as `agent_error` because a malformed patch is the agent's fault, not the
+harness or the oracle.
 
 Tier 2b (`ast_conformance`) is interleaved between Tier 2 and Tier 3 only
 when the trial is for a synthetic repo (`is_synthetic=True`). Tier 4 is
@@ -23,6 +32,44 @@ gated behind `adapters["enable_daikon"]`. A tier that raises
 `NotImplementedError` is skipped without breaking the cascade — this is
 how the Daikon stub stays out of the way until the real implementation
 ships.
+
+## CI feedback loop integration
+
+When the funnel is wired into a workflow orchestrator that supports
+multi-iteration agent runs, every tier's verdict can be written back to
+the orchestrator as a structured signal so the agent's next iteration can
+read it and adapt.
+
+The natural shape of that hook is:
+
+1. After each iteration, the orchestrator invokes the funnel with the
+   current state of the repo.
+2. The funnel returns a `FunnelResult` whose `final_verdict` carries
+   `tier`, `passed`, and a `details` dict.
+3. The orchestrator persists `final_verdict` as a workflow variable
+   (e.g. `last_oracle_verdict`) keyed by iteration number.
+4. The agent prompt for the next iteration includes the prior verdict —
+   the agent now knows whether the patch compiled, which test failed,
+   what the judge complained about, etc.
+
+This is the integration point for any "CI feedback loop" experiment in a
+production agentic-workflow system. The funnel is deliberately designed
+to be invoked inside a loop (it is stateless, deterministic on a fixed
+repo + recipe, and short-circuits on the first failure to keep iteration
+latency low). Wiring is the orchestrator's responsibility — the eval
+framework only owns the verdict shape and the per-tier cost accounting.
+
+A reference invocation:
+
+```python
+from migration_evals.funnel import run_funnel
+verdict = run_funnel(repo_path, recipe, adapters)
+orchestrator.set_workflow_variable(
+    instance_id,
+    name="last_oracle_verdict",
+    value=verdict.to_dict(),
+)
+```
 
 ## Funnel orchestrator
 

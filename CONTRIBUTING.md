@@ -29,7 +29,7 @@ Daytona / harness responses so you never need a sandbox to iterate.
 ## Architecture rules
 
 1. **Adapters are Protocols.** Production vendor SDKs (Anthropic, Daytona,
-   Cody, etc.) are imported only inside the concrete adapter implementations
+   the code-search backend, etc.) are imported only inside the concrete adapter implementations
    in `migration_evals/adapters.py`. Domain code (`funnel`, `oracles`,
    `gold_anchor`, etc.) imports the Protocol, never the SDK.
 2. **Schemas are the contract.** Every `result.json` validates against

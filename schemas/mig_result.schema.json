@@ -24,11 +24,15 @@
     },
     "agent_model": {
       "type": "string",
-      "description": "Agent + model identifier, e.g. 'claude-sonnet-4-6'."
+      "description": "Underlying language model identifier, e.g. 'claude-sonnet-4-6'."
+    },
+    "agent_runner": {
+      "type": ["string", "null"],
+      "description": "Optional agent runner / harness identifier, distinct from the underlying model. Examples: 'claude_code', 'amp', 'cursor', 'aider', 'custom'. Null or missing means the runner is unspecified — slice metrics by agent_model only."
     },
     "migration_id": {
       "type": "string",
-      "description": "Migration identifier, e.g. 'java8_17', 'python2_3'."
+      "description": "Migration identifier. Either a stable hand-authored recipe id (e.g. 'java8_17', 'python2_3') OR the first 12 hex chars of the prompt_sha when the migration is prompt-defined."
     },
     "success": {
       "type": "boolean",
@@ -48,13 +52,14 @@
     "oracle_tier": {
       "type": "string",
       "enum": [
+        "diff_valid",
         "compile_only",
         "tests",
         "ast_conformance",
         "judge",
         "daikon"
       ],
-      "description": "PRD M1 tiered oracle funnel stage that produced the pass/fail signal."
+      "description": "PRD M1 tiered oracle funnel stage that produced the pass/fail signal. 'diff_valid' is Tier-0 (cheap syntactic / patch-application check)."
     },
     "oracle_spec_sha": {
       "type": "string",
@@ -67,6 +72,10 @@
     "pre_reg_sha": {
       "type": "string",
       "description": "SHA of the pre-registered hypotheses_and_thresholds.md file (PRD M8-lite)."
+    },
+    "prompt_sha": {
+      "type": ["string", "null"],
+      "description": "Optional SHA of the agent prompt file when the migration is prompt-defined rather than recipe-defined. Enforced by the publication gate when manifest.json declares a 'prompt_spec' key (PRD M8-lite extension)."
     },
     "score_pre_cutoff": {
       "type": "number",

@@ -28,8 +28,13 @@ class OracleTier(str, Enum):
 
     Each value identifies which tier of the cascading oracle funnel produced
     the trial's pass/fail signal. Cheaper tiers sit earlier in the list.
+
+    DIFF_VALID is Tier-0: a near-zero-cost syntactic / patch-application
+    check that catches the worst hallucinations (malformed patches, files
+    that fail to parse) before paying for a Tier-1 sandbox compile.
     """
 
+    DIFF_VALID = "diff_valid"
     COMPILE_ONLY = "compile_only"
     TESTS = "tests"
     AST_CONFORMANCE = "ast_conformance"

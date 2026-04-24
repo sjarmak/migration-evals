@@ -34,10 +34,18 @@ from pathlib import Path
 from migration_evals.pre_reg import compute_spec_sha
 
 REQUIRED_MANIFEST_KEYS = ("oracle_spec", "recipe_spec", "hypotheses")
+# Optional manifest keys: enforced as a stamp only when present in the
+# manifest.json. ``prompt_spec`` is the canonical artifact for a
+# prompt-defined migration (the migration target lives in the agent prompt
+# rather than a hand-authored recipe).
+OPTIONAL_MANIFEST_KEYS = ("prompt_spec",)
 STAMP_FIELDS = {
     "oracle_spec_sha": "oracle_spec",
     "recipe_spec_sha": "recipe_spec",
     "pre_reg_sha": "hypotheses",
+}
+OPTIONAL_STAMP_FIELDS = {
+    "prompt_sha": "prompt_spec",
 }
 
 GOLD_ANCHOR_KEY = "gold_anchor_correlation"
@@ -148,9 +156,20 @@ def check_run(run_dir: Path, *, require_gold_anchor: bool = False) -> int:
         return _fail(f"manifest.json missing under {run_dir}")
 
     # Precompute expected SHAs from the committed files referenced in the
-    # manifest.
+    # manifest. Required stamps are always enforced; optional stamps
+    # (e.g. prompt_sha) are enforced only when the manifest declares them.
     expected_shas: dict[str, str] = {}
     for stamp_field, manifest_key in STAMP_FIELDS.items():
+        spec_path = _resolve_spec_path(run_dir, manifest[manifest_key])
+        if not spec_path.is_file():
+            return _fail(
+                f"manifest references missing file for {manifest_key!r}: "
+                f"{spec_path}"
+            )
+        expected_shas[stamp_field] = compute_spec_sha(spec_path)
+    for stamp_field, manifest_key in OPTIONAL_STAMP_FIELDS.items():
+        if manifest_key not in manifest:
+            continue
         spec_path = _resolve_spec_path(run_dir, manifest[manifest_key])
         if not spec_path.is_file():
             return _fail(
