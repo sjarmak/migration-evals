@@ -27,16 +27,15 @@ import sys
 from dataclasses import dataclass
 from datetime import date, datetime, timezone
 from pathlib import Path
-from typing import Any, Iterable, Mapping, Optional, Sequence
+from typing import Any, Mapping, Optional, Sequence
 
 import yaml
 
+from migration_evals.adapters_anthropic import build_anthropic_adapter
 from migration_evals.adapters_docker import build_sandbox_adapter
 from migration_evals.cli import (
-    _CassetteAnthropicAdapter,
     _build_recipe_from_meta,
     _load_repo_meta,
-    _resolve_stages,
 )
 from migration_evals.failure_class import classify as classify_failure
 from migration_evals.funnel import run_funnel
@@ -282,7 +281,11 @@ def run_from_config(config_path: Path) -> int:
                 adapters_cfg=adapters_cfg,
                 cassette_dir=sandbox_cassette_dir,
             ),
-            "anthropic": _CassetteAnthropicAdapter(repo_entry.path.name, anthropic_cassette_dir),
+            "anthropic": build_anthropic_adapter(
+                repo_path=repo_entry.path,
+                adapters_cfg=adapters_cfg,
+                cassette_dir=anthropic_cassette_dir,
+            ),
             "enable_daikon": False,
         }
         trial_started_at = datetime.now(tz=timezone.utc).isoformat()

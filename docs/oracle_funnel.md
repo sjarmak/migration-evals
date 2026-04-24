@@ -217,3 +217,32 @@ mounts the repo read-write at `docker_workdir`, and force-kills the
 container on `exec` timeout so the inner build/test process dies rather
 than continuing to consume resources. Implementation:
 `src/migration_evals/adapters_docker.py`.
+
+## Anthropic backends (config-driven)
+
+Tier 3 (`judge`) reaches the LLM via `adapters.anthropic_provider`:
+
+| Provider | Use when |
+| --- | --- |
+| `cassette` (default) | Replay-cassette runs / smoke tests; no API key required. |
+| `sdk` | Live calls against `anthropic`'s Messages API. Reads `$ANTHROPIC_API_KEY` if `anthropic_api_key` is not set. |
+
+SDK provider config (all keys optional):
+
+```yaml
+adapters:
+  anthropic_provider: sdk
+  anthropic_api_key: ${ANTHROPIC_API_KEY}        # else env
+  anthropic_per_call_budget_usd: 0.10            # pre-call worst-case guard
+  cost_rates_usd_per_mtok:                        # optional override
+    claude-haiku-4-5: {input: 1.0, output: 5.0, cache_read: 0.10, cache_write: 1.25}
+```
+
+The adapter forwards the rubric block byte-identically so the
+`cache_control: ephemeral` markup the judge tier sets actually triggers
+prompt-cache hits. Per-call cost is computed from `response.usage` and
+accumulated on `adapter.total_cost_usd`. Pre-call worst-case
+(input-est + `max_tokens`) is checked against
+`anthropic_per_call_budget_usd`; if it would exceed the cap the call
+raises `BudgetExceededError` before any spend occurs. Implementation:
+`src/migration_evals/adapters_anthropic.py`.
