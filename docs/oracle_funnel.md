@@ -192,3 +192,28 @@ The CLI also reads two env vars used in tests / replay runs:
   envelope.
 - `MIGRATION_EVAL_FAKE_JUDGE_CASSETTE_DIR` - directory of judge response
   envelopes keyed by repo name.
+
+## Sandbox backends (config-driven)
+
+The config-driven runner (`run --config path.yaml`) picks the sandbox
+backend from `adapters.sandbox_provider`:
+
+| Provider | Use when |
+| --- | --- |
+| `cassette` (default) | Replay-cassette runs, smoke tests, no Docker required. Matches `configs/java8_17_smoke.yaml`. |
+| `docker` | Real compile / test execution against a local container. Requires the `docker` CLI on `$PATH`. |
+
+Docker provider config (all keys optional):
+
+```yaml
+adapters:
+  sandbox_provider: docker
+  docker_bin: docker      # override if podman or a remote daemon
+  docker_workdir: /work   # mount point + cwd inside the container
+```
+
+The Docker adapter persists one container per `create_sandbox` call,
+mounts the repo read-write at `docker_workdir`, and force-kills the
+container on `exec` timeout so the inner build/test process dies rather
+than continuing to consume resources. Implementation:
+`src/migration_evals/adapters_docker.py`.
