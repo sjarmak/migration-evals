@@ -38,3 +38,9 @@ env/
 .dolt/
 *.db
 .beads-credential-key
+
+# bd + Claude Code workspace dirs - already-tracked files keep being
+# tracked; this just stops new files under these paths from being
+# auto-staged.
+.beads/
+.claude/
