@@ -1,29 +1,26 @@
 # migration-evals
 
-A **tiered-oracle funnel** for evaluating automated code migrations end to
-end - built so an agent-driven migration team can produce **fast,
-defensible proofpoints** (e.g., *"this migration works on 85% of in-scope
-repos with a 0.78 gold-anchor correlation"*) for prospects, customer
-decks, and internal go/no-go reviews. The headline is a published
-funnel, contamination split, and pre-registered spec stamps instead of
-a single hand-wavy success rate.
+A tiered-oracle funnel for evaluating automated code migrations.
+Per-repo trials cascade through cheap-to-expensive oracles
+(diff validity → compile → tests → AST conformance → LLM judge →
+invariants) and emit one stamped JSON result per trial. Aggregation
+produces a per-tier funnel breakdown, a contamination-split between
+repos created before and after the model's cutoff, and a correlation
+against merged-PR survival as a real-world anchor.
 
-The framework is deliberately **vendor-neutral and modular**. It plugs
-into any agent-driven changeset pipeline via three small adapter
-Protocols (sandbox, Anthropic, GitHub) - cassette-replay stand-ins ship
-in the box, and a Docker-backed sandbox + the Anthropic SDK adapter ship
-as drop-in implementations. The v1 implementation targets Java 8→17
-(Maven) and ships with a working Python 2→3 falsification probe; the
-design generalizes to JS/TS, pinned-dep bumps, Spring Boot upgrades,
-and CVE fan-out without schema changes.
+The v1 implementation targets Java 8→17 (Maven) and ships with a
+Python 2→3 falsification probe. Adapter Protocols (sandbox, Anthropic,
+GitHub) decouple the funnel from any specific runtime: cassette-replay
+stand-ins ship in the box for offline use, and a Docker-backed sandbox
+plus an Anthropic SDK adapter are the drop-in live implementations.
+The schema generalizes to JS/TS, pinned-dep bumps, Spring Boot
+upgrades, and CVE fan-out without changes.
 
-The whole pipeline is **automated**. The gold-anchor ground-truth set is
-harvested from public OSS migration PRs that were merged *and* survived
-30+ days without a revert; the result is a calibration signal that costs
-API quota, not engineering time. End-to-end smoke runs from a fresh
-clone with no API keys, no Docker, and no integration with any specific
-agent platform - so a prospect can reproduce the funnel before any
-deeper integration.
+The smoke path runs end-to-end from a fresh clone with no API keys,
+no Docker, and no integration with any specific agent platform. The
+gold-anchor ground-truth set is harvested automatically from public
+OSS migration PRs that were merged and survived 30+ days without a
+revert.
 
 ---
 
@@ -104,36 +101,30 @@ a `summary.json` plus one `result.json` per repo, each validating against
 
 ---
 
-## Proofpoint workflow (for prospect / customer conversations)
+## Running against real agent output
 
-The fastest path from a clean clone to a defensible number a prospect
-can interrogate:
+The smoke path uses replay cassettes; running against real diffs needs
+two adapter swaps in the YAML config:
 
-1. **Smoke run from cassettes** (no spend, no Docker) - establishes
-   that the funnel mechanics are real:
-   `python -m migration_evals.cli run --config configs/java8_17_smoke.yaml`
-2. **Gold-anchor calibration from public OSS** (no spend beyond GitHub
-   API quota) - establishes that the oracle correlates with
-   maintainer-accepted reality:
-   `python scripts/mine_gold_anchor.py --migration java8_17 --target-count 50`
-3. **Live tier 1 + 2 against your agent's diffs** - flip
-   `adapters.sandbox_provider: docker` in a config, point at a
-   directory of real repo+`patch.diff` pairs, and watch
-   compile/test verdicts land per repo. See
-   [`docs/oracle_funnel.md` §Sandbox backends](docs/oracle_funnel.md).
-4. **Live tier 3 LLM judge** - flip
-   `adapters.anthropic_provider: sdk` with
-   `anthropic_per_call_budget_usd` set so the budget guard refuses any
-   call that would exceed the cap.
-5. **Publication gate** stamps every result with the four SHAs
-   (`oracle_spec`, `recipe_spec`, `hypotheses`, optional `prompt_spec`).
-   The headline number cannot be cherry-picked after the fact - the
-   stamps are computed pre-run and embedded in the JSON.
+```yaml
+adapters:
+  sandbox_provider: docker          # tier 1 (compile) + tier 2 (tests)
+  docker_workdir: /work
+  anthropic_provider: sdk           # tier 3 (LLM judge)
+  anthropic_per_call_budget_usd: 0.10
+```
 
-The point is: every claim the prospect sees is either (a) reproducible
-on their machine in <2 minutes (smoke), or (b) tied to a stamped,
-published artifact whose inputs are inspectable. There is no "trust me,
-the number is 85%" step.
+With `sandbox_provider: docker` the funnel mounts each repo at
+`docker_workdir` inside an ephemeral container and runs the recipe's
+`build_cmd` / `test_cmd` against it. With `anthropic_provider: sdk` the
+tier-3 judge calls the Anthropic API directly; the rubric block is
+sent with `cache_control: ephemeral` so prompt-cache hits register, and
+`anthropic_per_call_budget_usd` is enforced as a pre-call worst-case
+guard that refuses any call estimated to exceed the cap.
+
+See [`docs/oracle_funnel.md`](docs/oracle_funnel.md) for the full
+backend selection table and [`docs/tier0_skip.md`](docs/tier0_skip.md)
+for the prerequisites tier 0 (retroactive merged-PR scoring) needs.
 
 ---
 
@@ -180,7 +171,7 @@ the number is 85%" step.
     └──────────────────────────────────────────────────────┘
 ```
 
-Seven non-negotiable design properties:
+Seven design properties:
 
 1. **Funnel, not a single number.** Every report breaks results into
    `diff / compile / tests / ast / judge / daikon` so failures localize
