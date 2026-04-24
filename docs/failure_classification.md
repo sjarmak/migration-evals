@@ -19,7 +19,7 @@ listed above; the first match wins.
 
 | Priority | Class          | Trigger                                                                                            |
 |---------:|----------------|----------------------------------------------------------------------------------------------------|
-| 1        | `infra_error`  | `result.json.infra_error_marker` truthy, **or** `status.txt` / `infra.log` contains `daytona` / `docker` / `container exited` / `sandbox failed` / `image pull` / `oci runtime`. |
+| 1        | `infra_error`  | `result.json.infra_error_marker` truthy, **or** `status.txt` / `infra.log` contains `docker` / `container exited` / `sandbox failed` / `image pull` / `oci runtime`. |
 | 2        | `harness_error`| `result.json.harness_error_marker` truthy, **or** any of `stderr.log` / `stdout.log` / `harness.log` mentions `recipe failed` / `recipe error` / `harness error` / `harness failed` / `harness timeout` / `recipe not found` / `install failed` / `bootstrap failed`. |
 | 3        | `oracle_error` | `result.json.oracle_error_marker` truthy, **or** `result.json.agent_reported_success=true` while `success=false`, **or** a file matching `ast_oracle_trace*` / `judge_error*` / `oracle_trace*` exists in the trial dir. |
 | 4        | `agent_error`  | Default when `success=false` and no higher-priority signal fires. Also used when `result.json` is missing or unreadable. |
@@ -31,11 +31,11 @@ classify.
 
 ### infra_error
 
-- `status.txt` body: `Daytona sandbox failed to boot after 3 retries`
+- `status.txt` body: `sandbox failed: container exited 137 after 3 retries`
 - `infra.log` body: `docker: image pull failed with 403`
 - `result.json`: `{"success": false, "infra_error_marker": true, ...}`
 - `status.txt` body: `OCI runtime create failed: container exited with 139`
-- `status.txt` body: `sandbox failed: daytona api 502 bad gateway`
+- `status.txt` body: `sandbox failed: docker daemon unreachable`
 
 ### harness_error
 

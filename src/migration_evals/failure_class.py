@@ -5,7 +5,7 @@ four `FailureClass` values based on the artifacts in the trial directory.
 
 Decision order (checked top to bottom; first match wins):
 
-    1. infra_error   — daytona/docker failures; sandbox never reached the agent
+    1. infra_error   — sandbox / container failures; harness never reached the agent
     2. harness_error — recipe / harness failures BEFORE the agent started
     3. oracle_error  — agent said pass but oracle subsystem threw
     4. agent_error   — everything else (the agent failed the task itself)
@@ -26,12 +26,13 @@ from migration_evals.types import FailureClass
 # Phrases that, when found in status.txt / stderr / stdout, imply the sandbox
 # or container layer failed before the trial could meaningfully run.
 _INFRA_SIGNATURES = (
-    "daytona",
     "docker",
     "container exited",
     "sandbox failed",
     "image pull",
     "oci runtime",
+    "kubelet",
+    "no space left on device",
 )
 
 # Phrases that imply the harness / recipe layer failed before the agent

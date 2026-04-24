@@ -53,7 +53,7 @@ The natural shape of that hook is:
    what the judge complained about, etc.
 
 This is the integration point for any "CI feedback loop" experiment in a
-production agentic-workflow system. The funnel is deliberately designed
+production code-migration workflow system. The funnel is deliberately designed
 to be invoked inside a loop (it is stateless, deterministic on a fixed
 repo + recipe, and short-circuits on the first failure to keep iteration
 latency low). Wiring is the orchestrator's responsibility — the eval
@@ -84,7 +84,7 @@ from migration_evals.funnel import run_funnel
 result = run_funnel(
     repo_path,
     recipe,
-    adapters={"daytona": daytona, "anthropic": anthropic, "enable_daikon": False},
+    adapters={"sandbox": sandbox, "anthropic": anthropic, "enable_daikon": False},
     is_synthetic=False,
     stages=None,  # None = all applicable; or e.g. ("compile_only",)
 )
@@ -187,7 +187,7 @@ conforming to `schemas/mig_result.schema.json`.
 
 The CLI also reads two env vars used in tests / replay runs:
 
-- `MIGRATION_EVAL_FAKE_DAYTONA_CASSETTE_DIR` — directory of cassette
+- `MIGRATION_EVAL_FAKE_SANDBOX_CASSETTE_DIR` — directory of cassette
   files keyed by repo name; missing files default to a successful exit
   envelope.
 - `MIGRATION_EVAL_FAKE_JUDGE_CASSETTE_DIR` — directory of judge response

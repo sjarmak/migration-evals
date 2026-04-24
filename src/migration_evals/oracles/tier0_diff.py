@@ -55,13 +55,13 @@ _HUNK_RE = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@")
 def run(
     repo_path: Path,
     harness_recipe: Recipe,
-    daytona_adapter: Optional[Any] = None,
+    sandbox_adapter: Optional[Any] = None,
     *,
     cost_usd: float = DEFAULT_COST_USD,
 ) -> OracleVerdict:
     """Return a Tier-0 diff-validity verdict for ``repo_path``.
 
-    ``daytona_adapter`` and ``harness_recipe`` are accepted for signature
+    ``sandbox_adapter`` and ``harness_recipe`` are accepted for signature
     consistency with the other tiers but unused — Tier-0 is local-only.
     """
     repo_path = Path(repo_path)

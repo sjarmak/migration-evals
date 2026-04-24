@@ -57,7 +57,7 @@ This `README.md` is scaffolded by the `foundation-module-scaffold` work unit. Do
 - `src/migration_evals/`
   - `cli.py` — argparse entry point for `run` / `report` / `regression` / `harness` / `probe` subcommands.
   - `types.py` — shared enums (`FailureClass`, `OracleTier`).
-  - `adapters.py` — PRD D3 external-dependency Protocols (Anthropic, Daytona, OpenRewrite, code-search backend, GitHub, Docker) with replay-cassette hooks.
+  - `adapters.py` — PRD D3 external-dependency Protocols (Anthropic, sandbox runtime, OpenRewrite, code-search backend, GitHub, Docker) with replay-cassette hooks.
   - `oracles/` — tiered oracle funnel stages (downstream).
   - `synthetic/` — procedural synthetic-repo generator + AST-conformance (downstream).
   - `harness/` — LLM-inferred build harness synthesis and caching (downstream).

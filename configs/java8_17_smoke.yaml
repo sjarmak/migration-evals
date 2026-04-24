@@ -29,7 +29,7 @@ repos:
 
 adapters:
   anthropic_cassette_dir: tests/fixtures/judge_cassettes
-  daytona_cassette_dir: tests/fixtures/funnel_repos
+  sandbox_cassette_dir: tests/fixtures/funnel_repos
 
 stamps:
   # Placeholder stamps for the smoke: the hypotheses document is the

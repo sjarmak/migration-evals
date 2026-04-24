@@ -47,7 +47,7 @@ def _make_recipe() -> Recipe:
     )
 
 
-class StubDaytona:
+class StubSandbox:
     """Records every command and returns a fixed exit envelope per command."""
 
     def __init__(self, exit_for_cmd: Mapping[str, int] | None = None) -> None:
@@ -87,7 +87,7 @@ class StubAnthropic:
 def test_funnel_cascade_all_pass() -> None:
     recipe = _make_recipe()
     adapters = {
-        "daytona": StubDaytona(),
+        "sandbox": StubSandbox(),
         "anthropic": StubAnthropic("PASS"),
         "enable_daikon": False,
     }
@@ -105,9 +105,9 @@ def test_funnel_cascade_all_pass() -> None:
 
 def test_funnel_short_circuits_on_t1_failure() -> None:
     recipe = _make_recipe()
-    daytona = StubDaytona({recipe.build_cmd: 1})
+    sandbox = StubSandbox({recipe.build_cmd: 1})
     anthropic = StubAnthropic()
-    adapters = {"daytona": daytona, "anthropic": anthropic, "enable_daikon": False}
+    adapters = {"sandbox": sandbox, "anthropic": anthropic, "enable_daikon": False}
     result = run_funnel(FIXTURE_REPOS / "repo01", recipe, adapters)
 
     tier_names = [name for name, _ in result.per_tier_verdict]
@@ -116,14 +116,14 @@ def test_funnel_short_circuits_on_t1_failure() -> None:
     assert result.final_verdict.passed is False
     assert result.failure_class == "harness_error"
     assert anthropic.call_count == 0  # judge never reached
-    assert recipe.test_cmd not in daytona.calls
+    assert recipe.test_cmd not in sandbox.calls
 
 
 def test_funnel_short_circuits_on_t2_failure_classifies_agent_error() -> None:
     recipe = _make_recipe()
-    daytona = StubDaytona({recipe.test_cmd: 1})
+    sandbox = StubSandbox({recipe.test_cmd: 1})
     adapters = {
-        "daytona": daytona,
+        "sandbox": sandbox,
         "anthropic": StubAnthropic(),
         "enable_daikon": False,
     }
@@ -144,7 +144,7 @@ def test_funnel_synthetic_runs_ast_tier(tmp_path: Path) -> None:
 
     recipe = _make_recipe()
     adapters = {
-        "daytona": StubDaytona(),
+        "sandbox": StubSandbox(),
         "anthropic": StubAnthropic("PASS"),
         "enable_daikon": False,
     }
@@ -162,7 +162,7 @@ def test_funnel_synthetic_runs_ast_tier(tmp_path: Path) -> None:
 def test_funnel_skips_daikon_by_default() -> None:
     recipe = _make_recipe()
     adapters = {
-        "daytona": StubDaytona(),
+        "sandbox": StubSandbox(),
         "anthropic": StubAnthropic("PASS"),
         "enable_daikon": False,
     }
@@ -175,7 +175,7 @@ def test_funnel_with_daikon_enabled_skips_stub_gracefully() -> None:
     """Even when enable_daikon=True the stub raises NotImplementedError; cascade survives."""
     recipe = _make_recipe()
     adapters = {
-        "daytona": StubDaytona(),
+        "sandbox": StubSandbox(),
         "anthropic": StubAnthropic("PASS"),
         "enable_daikon": True,
     }
@@ -189,9 +189,9 @@ def test_funnel_with_daikon_enabled_skips_stub_gracefully() -> None:
 
 def test_funnel_stage_filter_compile_only() -> None:
     recipe = _make_recipe()
-    daytona = StubDaytona()
+    sandbox = StubSandbox()
     anthropic = StubAnthropic("PASS")
-    adapters = {"daytona": daytona, "anthropic": anthropic, "enable_daikon": False}
+    adapters = {"sandbox": sandbox, "anthropic": anthropic, "enable_daikon": False}
     result = run_funnel(
         FIXTURE_REPOS / "repo01",
         recipe,
@@ -215,7 +215,7 @@ def _validator() -> Draft7Validator:
 def test_cli_run_stage_compile_emits_10_valid_results(tmp_path: Path) -> None:
     out_dir = tmp_path / "funnel_run"
     env = os.environ.copy()
-    env["MIGRATION_EVAL_FAKE_DAYTONA_CASSETTE_DIR"] = ""  # default success envelope
+    env["MIGRATION_EVAL_FAKE_SANDBOX_CASSETTE_DIR"] = ""  # default success envelope
     env["MIGRATION_EVAL_FAKE_JUDGE_CASSETTE_DIR"] = str(JUDGE_CASSETTE_DIR)
     env["PYTHONPATH"] = str(REPO_ROOT) + os.pathsep + env.get("PYTHONPATH", "")
 

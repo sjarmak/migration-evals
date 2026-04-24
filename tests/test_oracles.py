@@ -41,8 +41,8 @@ def _make_recipe(build_cmd: str = "mvn -B -e compile", test_cmd: str = "mvn -B -
     )
 
 
-class FakeDaytonaCassette:
-    """Replay-cassette implementation of the DaytonaAdapter Protocol.
+class FakeSandboxCassette:
+    """Replay-cassette implementation of the SandboxAdapter Protocol.
 
     Maps ``cmd -> (exit_code, stdout, stderr)``. Unknown commands raise so
     a misconfigured test fails loudly instead of silently passing.
@@ -62,7 +62,7 @@ class FakeDaytonaCassette:
     def exec(self, sandbox_id: str, *, command: str, timeout_s: int = 600, cassette: Any = None) -> Mapping[str, Any]:
         self.executed.append((sandbox_id, command))
         if command not in self._records:
-            raise AssertionError(f"FakeDaytonaCassette: no record for command {command!r}")
+            raise AssertionError(f"FakeSandboxCassette: no record for command {command!r}")
         exit_code, stdout, stderr = self._records[command]
         return {"exit_code": exit_code, "stdout": stdout, "stderr": stderr}
 
@@ -104,19 +104,19 @@ class FakeAnthropicCassette:
 
 def test_tier1_compile_pass() -> None:
     recipe = _make_recipe()
-    daytona = FakeDaytonaCassette({recipe.build_cmd: (0, "BUILD SUCCESS", "")})
-    verdict = tier1_compile.run(FIXTURE_REPOS / "repo01", recipe, daytona)
+    sandbox = FakeSandboxCassette({recipe.build_cmd: (0, "BUILD SUCCESS", "")})
+    verdict = tier1_compile.run(FIXTURE_REPOS / "repo01", recipe, sandbox)
     assert verdict.tier == "compile_only"
     assert verdict.passed is True
     assert verdict.cost_usd == pytest.approx(0.01)
     assert verdict.details["exit_code"] == 0
-    assert daytona.destroyed == daytona.created  # cleanup happened
+    assert sandbox.destroyed == sandbox.created  # cleanup happened
 
 
 def test_tier1_compile_fail() -> None:
     recipe = _make_recipe()
-    daytona = FakeDaytonaCassette({recipe.build_cmd: (1, "", "compile error: ;")})
-    verdict = tier1_compile.run(FIXTURE_REPOS / "repo02", recipe, daytona)
+    sandbox = FakeSandboxCassette({recipe.build_cmd: (1, "", "compile error: ;")})
+    verdict = tier1_compile.run(FIXTURE_REPOS / "repo02", recipe, sandbox)
     assert verdict.passed is False
     assert verdict.details["exit_code"] == 1
 
@@ -124,12 +124,12 @@ def test_tier1_compile_fail() -> None:
 def test_tier1_compile_missing_exit_code_treated_as_fail() -> None:
     recipe = _make_recipe()
 
-    class WeirdDaytona(FakeDaytonaCassette):
+    class WeirdSandbox(FakeSandboxCassette):
         def exec(self, sandbox_id, *, command, timeout_s=600, cassette=None):
             return {"stdout": "", "stderr": ""}  # no exit_code key
 
     verdict = tier1_compile.run(
-        FIXTURE_REPOS / "repo03", recipe, WeirdDaytona({recipe.build_cmd: (0, "", "")})
+        FIXTURE_REPOS / "repo03", recipe, WeirdSandbox({recipe.build_cmd: (0, "", "")})
     )
     assert verdict.passed is False
 
@@ -139,8 +139,8 @@ def test_tier1_compile_missing_exit_code_treated_as_fail() -> None:
 
 def test_tier2_tests_pass() -> None:
     recipe = _make_recipe()
-    daytona = FakeDaytonaCassette({recipe.test_cmd: (0, "Tests run: 5, Failures: 0", "")})
-    verdict = tier2_tests.run(FIXTURE_REPOS / "repo01", recipe, daytona)
+    sandbox = FakeSandboxCassette({recipe.test_cmd: (0, "Tests run: 5, Failures: 0", "")})
+    verdict = tier2_tests.run(FIXTURE_REPOS / "repo01", recipe, sandbox)
     assert verdict.tier == "tests"
     assert verdict.passed is True
     assert verdict.cost_usd == pytest.approx(0.03)
@@ -148,8 +148,8 @@ def test_tier2_tests_pass() -> None:
 
 def test_tier2_tests_fail() -> None:
     recipe = _make_recipe()
-    daytona = FakeDaytonaCassette({recipe.test_cmd: (1, "", "Tests failed: 2")})
-    verdict = tier2_tests.run(FIXTURE_REPOS / "repo01", recipe, daytona)
+    sandbox = FakeSandboxCassette({recipe.test_cmd: (1, "", "Tests failed: 2")})
+    verdict = tier2_tests.run(FIXTURE_REPOS / "repo01", recipe, sandbox)
     assert verdict.passed is False
 
 
@@ -200,7 +200,7 @@ def test_tier3_judge_empty_envelope_is_fail() -> None:
 def test_tier4_daikon_is_importable_and_raises() -> None:
     recipe = _make_recipe()
     with pytest.raises(NotImplementedError):
-        tier4_daikon.run(FIXTURE_REPOS / "repo01", recipe, daytona_adapter=None)
+        tier4_daikon.run(FIXTURE_REPOS / "repo01", recipe, sandbox_adapter=None)
 
 
 # -- OracleVerdict immutability ----------------------------------------------

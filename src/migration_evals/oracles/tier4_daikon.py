@@ -21,7 +21,7 @@ DEFAULT_COST_USD = 0.10
 def run(
     repo_path: Path,
     harness_recipe: Recipe,
-    daytona_adapter: Any,
+    sandbox_adapter: Any,
     *,
     cassette: Optional[Any] = None,
     cost_usd: float = DEFAULT_COST_USD,

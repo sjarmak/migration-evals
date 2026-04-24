@@ -24,7 +24,7 @@ DEFAULT_TIMEOUT_S = 900
 def run(
     repo_path: Path,
     harness_recipe: Recipe,
-    daytona_adapter: Any,
+    sandbox_adapter: Any,
     *,
     image: str = DEFAULT_IMAGE,
     timeout_s: int = DEFAULT_TIMEOUT_S,
@@ -34,13 +34,13 @@ def run(
 ) -> OracleVerdict:
     """Run the recipe's test command and return a tests verdict."""
     repo_path = Path(repo_path)
-    sandbox_id = daytona_adapter.create_sandbox(
+    sandbox_id = sandbox_adapter.create_sandbox(
         image=image,
         env=env,
         cassette=cassette,
     )
     try:
-        envelope = daytona_adapter.exec(
+        envelope = sandbox_adapter.exec(
             sandbox_id,
             command=harness_recipe.test_cmd,
             timeout_s=timeout_s,
@@ -48,7 +48,7 @@ def run(
         )
     finally:
         try:
-            daytona_adapter.destroy_sandbox(sandbox_id)
+            sandbox_adapter.destroy_sandbox(sandbox_id)
         except Exception:  # pragma: no cover - defensive
             pass
 

@@ -33,7 +33,7 @@ import yaml
 
 from migration_evals.cli import (
     _CassetteAnthropicAdapter,
-    _CassetteDaytonaAdapter,
+    _CassetteSandboxAdapter,
     _build_recipe_from_meta,
     _load_repo_meta,
     _resolve_stages,
@@ -249,7 +249,7 @@ def run_from_config(config_path: Path) -> int:
     cutoff = _coerce_cutoff(raw_cfg.get("model_cutoff_date"))
 
     adapters_cfg = raw_cfg.get("adapters") or {}
-    daytona_cassette_dir = _as_path(adapters_cfg.get("daytona_cassette_dir"))
+    sandbox_cassette_dir = _as_path(adapters_cfg.get("sandbox_cassette_dir"))
     anthropic_cassette_dir = _as_path(adapters_cfg.get("anthropic_cassette_dir"))
 
     stamps_cfg = raw_cfg.get("stamps") or {}
@@ -277,7 +277,7 @@ def run_from_config(config_path: Path) -> int:
         meta = _load_repo_meta(repo_entry.path)
         recipe = _build_recipe_from_meta(meta)
         adapters = {
-            "daytona": _CassetteDaytonaAdapter(repo_entry.path.name, daytona_cassette_dir),
+            "sandbox": _CassetteSandboxAdapter(repo_entry.path.name, sandbox_cassette_dir),
             "anthropic": _CassetteAnthropicAdapter(repo_entry.path.name, anthropic_cassette_dir),
             "enable_daikon": False,
         }

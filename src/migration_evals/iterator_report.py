@@ -1,6 +1,6 @@
 """Iterator-batch reporting for fan-out workflow runs.
 
-Production agentic-migration workflows typically fan out across hundreds-
+Production code-migration workflows typically fan out across hundreds-
 to-thousands of repos as a single "iterator" instance. The natural unit
 of analysis at that point is the *batch*, not the individual trial:
 

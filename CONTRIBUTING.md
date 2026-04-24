@@ -15,7 +15,7 @@ pytest -q
 
 The full test suite must stay green at all times: it runs in <10s on a
 laptop, has no API key dependencies, and uses cassette-replayed Anthropic /
-Daytona / harness responses so you never need a sandbox to iterate.
+sandbox / harness responses so you never need a sandbox to iterate.
 
 ## Code style
 
@@ -28,7 +28,7 @@ Daytona / harness responses so you never need a sandbox to iterate.
 
 ## Architecture rules
 
-1. **Adapters are Protocols.** Production vendor SDKs (Anthropic, Daytona,
+1. **Adapters are Protocols.** Production vendor SDKs (Anthropic, sandbox runtime,
    the code-search backend, etc.) are imported only inside the concrete adapter implementations
    in `migration_evals/adapters.py`. Domain code (`funnel`, `oracles`,
    `gold_anchor`, etc.) imports the Protocol, never the SDK.

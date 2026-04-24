@@ -61,7 +61,7 @@ def test_tier0_passes_on_well_formed_patch_artifact(tmp_path: Path) -> None:
     repo = tmp_path / "repo"
     repo.mkdir()
     (repo / "patch.diff").write_text(VALID_PATCH)
-    verdict = tier0_diff.run(repo, _stub_recipe(), daytona_adapter=None)
+    verdict = tier0_diff.run(repo, _stub_recipe(), sandbox_adapter=None)
     assert verdict.tier == "diff_valid"
     assert verdict.passed is True
     assert verdict.details["check"] == "patch_artifact"
@@ -73,7 +73,7 @@ def test_tier0_fails_on_malformed_patch_artifact(tmp_path: Path) -> None:
     repo = tmp_path / "repo"
     repo.mkdir()
     (repo / "patch.diff").write_text(MALFORMED_PATCH)
-    verdict = tier0_diff.run(repo, _stub_recipe(), daytona_adapter=None)
+    verdict = tier0_diff.run(repo, _stub_recipe(), sandbox_adapter=None)
     assert verdict.tier == "diff_valid"
     assert verdict.passed is False
     assert verdict.details["check"] == "patch_artifact"
@@ -90,7 +90,7 @@ def test_tier0_recognises_alternative_patch_filenames(tmp_path: Path) -> None:
     repo = tmp_path / "repo"
     repo.mkdir()
     (repo / "agent_diff.patch").write_text(VALID_PATCH)
-    verdict = tier0_diff.run(repo, _stub_recipe(), daytona_adapter=None)
+    verdict = tier0_diff.run(repo, _stub_recipe(), sandbox_adapter=None)
     assert verdict.passed is True
     assert verdict.details["check"] == "patch_artifact"
 
@@ -118,7 +118,7 @@ def _make_synthetic_pair(root: Path, *, valid: bool) -> Path:
 
 def test_tier0_passes_on_well_formed_synthetic_pair(tmp_path: Path) -> None:
     repo = _make_synthetic_pair(tmp_path, valid=True)
-    verdict = tier0_diff.run(repo, _stub_recipe(), daytona_adapter=None)
+    verdict = tier0_diff.run(repo, _stub_recipe(), sandbox_adapter=None)
     assert verdict.passed is True
     assert verdict.details["check"] == "orig_vs_migrated"
     assert verdict.details["n_files_checked"] == 1
@@ -127,7 +127,7 @@ def test_tier0_passes_on_well_formed_synthetic_pair(tmp_path: Path) -> None:
 
 def test_tier0_fails_when_migrated_file_brace_imbalanced(tmp_path: Path) -> None:
     repo = _make_synthetic_pair(tmp_path, valid=False)
-    verdict = tier0_diff.run(repo, _stub_recipe(), daytona_adapter=None)
+    verdict = tier0_diff.run(repo, _stub_recipe(), sandbox_adapter=None)
     assert verdict.passed is False
     assert verdict.details["check"] == "orig_vs_migrated"
     assert verdict.details["reason"] == "migrated_file_invalid"
@@ -139,7 +139,7 @@ def test_tier0_fails_when_migrated_subtree_empty(tmp_path: Path) -> None:
     (repo / "orig").mkdir(parents=True)
     (repo / "orig" / "Foo.java").write_text("class Foo {}\n")
     (repo / "migrated").mkdir()
-    verdict = tier0_diff.run(repo, _stub_recipe(), daytona_adapter=None)
+    verdict = tier0_diff.run(repo, _stub_recipe(), sandbox_adapter=None)
     assert verdict.passed is False
     assert verdict.details["reason"] == "migrated_subtree_empty"
 
@@ -151,7 +151,7 @@ def test_tier0_passes_when_no_source_files(tmp_path: Path) -> None:
     repo = tmp_path / "repo"
     repo.mkdir()
     (repo / "README.md").write_text("hi")
-    verdict = tier0_diff.run(repo, _stub_recipe(), daytona_adapter=None)
+    verdict = tier0_diff.run(repo, _stub_recipe(), sandbox_adapter=None)
     assert verdict.passed is True
     assert verdict.details["check"] == "repo_structural"
     assert verdict.details["reason"] == "no_source_files_to_check"
@@ -162,7 +162,7 @@ def test_tier0_passes_on_balanced_source_files(tmp_path: Path) -> None:
     repo.mkdir()
     (repo / "Foo.java").write_text("class Foo { void bar() { return; } }\n")
     (repo / "lib.py").write_text("def f(x): return x\n")
-    verdict = tier0_diff.run(repo, _stub_recipe(), daytona_adapter=None)
+    verdict = tier0_diff.run(repo, _stub_recipe(), sandbox_adapter=None)
     assert verdict.passed is True
     assert verdict.details["check"] == "repo_structural"
 
@@ -171,7 +171,7 @@ def test_tier0_fails_on_unbalanced_braces_in_source_file(tmp_path: Path) -> None
     repo = tmp_path / "repo"
     repo.mkdir()
     (repo / "Foo.java").write_text("class Foo { void bar( { return; }\n")
-    verdict = tier0_diff.run(repo, _stub_recipe(), daytona_adapter=None)
+    verdict = tier0_diff.run(repo, _stub_recipe(), sandbox_adapter=None)
     assert verdict.passed is False
     assert verdict.details["check"] == "repo_structural"
     assert verdict.details["reason"] == "source_file_invalid"
@@ -188,14 +188,14 @@ def test_funnel_runs_tier0_first(tmp_path: Path) -> None:
     repo.mkdir()
     (repo / "patch.diff").write_text(MALFORMED_PATCH)
 
-    class _NeverCalledDaytona:
+    class _NeverCalledSandbox:
         def create_sandbox(self, **kwargs):
             raise AssertionError("Tier-0 failure should short-circuit before Tier-1")
 
     result = run_funnel(
         repo,
         _stub_recipe(),
-        adapters={"daytona": _NeverCalledDaytona(), "anthropic": None, "enable_daikon": False},
+        adapters={"sandbox": _NeverCalledSandbox(), "anthropic": None, "enable_daikon": False},
         is_synthetic=False,
     )
     assert result.final_verdict.tier == "diff_valid"
@@ -213,7 +213,7 @@ def test_funnel_skips_tier0_via_stage_filter(tmp_path: Path) -> None:
     repo.mkdir()
     (repo / "patch.diff").write_text(MALFORMED_PATCH)
 
-    class _PassingDaytona:
+    class _PassingSandbox:
         def create_sandbox(self, **kwargs):
             return "sb-1"
 
@@ -226,7 +226,7 @@ def test_funnel_skips_tier0_via_stage_filter(tmp_path: Path) -> None:
     result = run_funnel(
         repo,
         _stub_recipe(),
-        adapters={"daytona": _PassingDaytona(), "anthropic": None, "enable_daikon": False},
+        adapters={"sandbox": _PassingSandbox(), "anthropic": None, "enable_daikon": False},
         is_synthetic=False,
         stages=("compile_only",),
     )

@@ -11,7 +11,7 @@ A tier that raises :class:`NotImplementedError` is treated as *skipped*
 
 The ``adapters`` argument is a plain mapping so callers can add new
 entries (e.g. ``openrewrite`` for future tiers) without changing the
-signature. The known keys are ``"daytona"``, ``"anthropic"``, and
+signature. The known keys are ``"sandbox"``, ``"anthropic"``, and
 ``"enable_daikon"``.
 """
 
@@ -126,21 +126,21 @@ def run_funnel(
     """
     repo_path = Path(repo)
     enable_daikon = bool(adapters.get("enable_daikon"))
-    daytona = adapters.get("daytona")
+    sandbox = adapters.get("sandbox")
     anthropic = adapters.get("anthropic")
 
     pipeline: list[tuple[str, Callable[[], OracleVerdict]]] = [
         (
             tier0_diff.TIER_NAME,
-            lambda: tier0_diff.run(repo_path, recipe, daytona),
+            lambda: tier0_diff.run(repo_path, recipe, sandbox),
         ),
         (
             tier1_compile.TIER_NAME,
-            lambda: tier1_compile.run(repo_path, recipe, daytona),
+            lambda: tier1_compile.run(repo_path, recipe, sandbox),
         ),
         (
             tier2_tests.TIER_NAME,
-            lambda: tier2_tests.run(repo_path, recipe, daytona),
+            lambda: tier2_tests.run(repo_path, recipe, sandbox),
         ),
         (AST_TIER_NAME, lambda: _ast_verdict(repo_path, recipe)),
         (
@@ -149,7 +149,7 @@ def run_funnel(
         ),
         (
             tier4_daikon.TIER_NAME,
-            lambda: tier4_daikon.run(repo_path, recipe, daytona),
+            lambda: tier4_daikon.run(repo_path, recipe, sandbox),
         ),
     ]
 

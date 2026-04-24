@@ -32,7 +32,7 @@
     },
     "iterator_id": {
       "type": ["string", "null"],
-      "description": "Optional batch identifier for trials produced by a single fan-out workflow. Production agentic workflows often iterate over hundreds-to-thousands of repos as a single 'iterator' instance; iterator_id ties trials back to that batch so completion / latency / cost can be aggregated per batch. Null when the trial is standalone."
+      "description": "Optional batch identifier for trials produced by a single fan-out workflow. Production fan-out workflows often iterate over hundreds-to-thousands of repos as a single 'iterator' instance; iterator_id ties trials back to that batch so completion / latency / cost can be aggregated per batch. Null when the trial is standalone."
     },
     "started_at": {
       "type": ["string", "null"],

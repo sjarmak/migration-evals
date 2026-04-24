@@ -18,7 +18,7 @@ metric defined below, and state a direction of effect.
 - H3: The four-way failure classifier in `failure_class.py` reaches >= 90%
   precision on the labeled holdout fixtures.
 - H4: Agents using the baseline harness produce strictly fewer
-  `infra_error` trials than the Daytona harness by a margin of >= 5
+  `infra_error` trials than the sandbox harness by a margin of >= 5
   percentage points.
 
 ## Thresholds table

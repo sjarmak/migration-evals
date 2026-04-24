@@ -18,7 +18,7 @@ The 30-idea design space converges on a clear architecture: a **tiered-oracle fu
 
 1. Produce defensible, calibrated success-rate numbers for a named migration (v1: Java 8→17) at 95% CI, with pre-registered oracle spec.
 2. Report results as a **funnel** (generated → compiles → tests pass → semantic-invariant preserved → merge-survivaled-on-gold-set), never as a single collapsed number.
-3. Run 1000 repos per quarter end-to-end on existing production infrastructure (Daytona, GitHub API) for under ~$35K/quarter inference + ~$5K infra.
+3. Run 1000 repos per quarter end-to-end on existing production infrastructure (containerized sandbox + GitHub API) for under ~$35K/quarter inference + ~$5K infra.
 4. Make regression tracking a diff-query against a growing ledger, not a separate system.
 5. Be ecosystem-pluggable: adding Python 2→3 or pinned-dep bumps should take ~2 weeks of recipe-spec authoring, not a rebuild.
 6. Surface four discriminated failure modes per trial (`agent_error`, `harness_error`, `oracle_error`, `infra_error`) so 3-person team can triage without reading trajectories.
@@ -42,7 +42,7 @@ The 30-idea design space converges on a clear architecture: a **tiered-oracle fu
 
 **M1. Tiered oracle funnel (idea #22)** — Cascade of oracles ordered cheapest-first, with stage-level reporting.
 - Tier 1: compile + typecheck (cost ~$0.01/repo, target ~70% of failures caught here)
-- Tier 2: existing test suite runs green in Daytona sandbox (cost ~$0.03/repo, ~20% more caught)
+- Tier 2: existing test suite runs green in a sandbox (cost ~$0.03/repo, ~20% more caught)
 - Tier 3: LLM-judge single-pass on residual ambiguous cases (cost ~$0.08-$0.25/repo with prompt caching)
 - Tier 4 (optional, rate-limited): Daikon-style dynamic-invariant check or convex-hull rerun
 - **Acceptance:** Running `csb mig run --stage=compile` on 10 repos returns in ≤ 3 minutes and emits `result.json` with `oracle_tier: compile_only` flag. Full stack on 1000 repos completes overnight for under $300 total inference at current Sonnet pricing with prompt caching enabled.
@@ -107,7 +107,7 @@ The 30-idea design space converges on a clear architecture: a **tiered-oracle fu
 
 3. **Statistical rigor (N≥3000 for 3pp claims) vs. budget (1000 quarterly feasible).** Resolved by pre-registration + CI reporting. Sub-3pp claims require power and are not published. Within-tier larger differences are reportable at 1000.
 
-4. **Oracle proliferation vs. cost.** Every candidate oracle was evaluated against the cost cascade. Primary: compile + test + AST-conformance. Secondary: LLM-judge as Tier-3 tiebreaker. Reserve: Daikon (#4) for non-mechanical residuals. Rejected: trace (#1, Goodhart-bait), eBPF (#24, Daytona privilege risk), BMC (#21, exponential blow-up), convex-hull (#26, luxury good), digital-twin (#28, engineering-heavy).
+4. **Oracle proliferation vs. cost.** Every candidate oracle was evaluated against the cost cascade. Primary: compile + test + AST-conformance. Secondary: LLM-judge as Tier-3 tiebreaker. Reserve: Daikon (#4) for non-mechanical residuals. Rejected: trace (#1, Goodhart-bait), eBPF (#24, sandbox privilege risk), BMC (#21, exponential blow-up), convex-hull (#26, luxury good), digital-twin (#28, engineering-heavy).
 
 5. **LLM-judge role.** Tier-3 tiebreaker only, single-pass (not a jury), on residuals that survived Tier-1+2. Jury (#16) and convex-hull (#26) stack judgment on judgment without adding independent signal — one judge with calibrated rubric is the right dose.
 
@@ -203,7 +203,7 @@ The 30-idea design space converges on a clear architecture: a **tiered-oracle fu
 ## Open Questions
 
 1. What's the true Tier-1 catch rate on real Java 8→17? Need a 100-repo pilot to measure. If 90% not 70%, Tier-3+4 costs drop 3×.
-2. Does Daytona allow `CAP_BPF`? Decides whether eBPF (#24) is ever viable as a replacement for Daikon.
+2. Does the chosen sandbox allow `CAP_BPF`? Decides whether eBPF (#24) is ever viable as a replacement for Daikon.
 3. Prompt-caching economics for Tier-3 judge: expected 4× input-cost cut. Needs validation on actual workload.
 4. Who owns harness repair when M2 synthesis fails? Auto-quarantine + loud summary vs. block-until-human-triage. Small-rotation operations probably force auto-quarantine.
 5. Does the regression ledger need a privacy-classification policy when it joins data from internal repos with results from public OSS repos?
@@ -220,7 +220,7 @@ The 30-idea design space converges on a clear architecture: a **tiered-oracle fu
 
 **D2. Mechanical publication gate (weeks 1-2)** — `repo_health.py --publication-gate` CI check + Slack bot auto-redaction of un-stamped scores + CODEOWNERS on `hypotheses_and_thresholds.md`. Replaces procedural gate. Addresses Operational + Team/Process + Scope + Integration.
 
-**D3. External-dependency adapter layer (week 1)** — thin adapter + replay cassette per dep (Anthropic, Daytona, OpenRewrite, code-search backend, GitHub, Docker). OpenRewrite vendored at pinned SHA. Two-model shadow judge calibration always running. Addresses Technical + Integration + Operational.
+**D3. External-dependency adapter layer (week 1)** — thin adapter + replay cassette per dep (Anthropic, sandbox runtime, OpenRewrite, code-search backend, GitHub, Docker). OpenRewrite vendored at pinned SHA. Two-model shadow judge calibration always running. Addresses Technical + Integration + Operational.
 
 **D4. CODEOWNERS split (week 1, one PR)** — engineer shipping migration agent ≠ engineer approving threshold changes or gold-anchor re-labels. Each critical artifact has primary + shadow owner on staggered rotation. Addresses Team/Process + Scope + Operational.
 
@@ -258,4 +258,4 @@ The 30-idea design space converges on a clear architecture: a **tiered-oracle fu
 
 **Key surprises that reshape priorities:** (a) inference cost dominates infra 70-170× → oracle optimization not container optimization; (b) eval is a training-data leak vector → treat as secret with 12-month half-life; (c) "perfect on all oracles" migrations get rejected by real reviewers at ~15% → error bar ≈ signal size without human anchor; (d) Amazon's PR-count is misleading industry precedent → funnel reporting is a differentiator.
 
-**Ideas explicitly ruled out (with reason):** #1 trace (Goodhart-bait), #5 WASM (doesn't cover JVM), #8 shadow canary (out-of-scope infra), #16 jury as primary (correlated hallucination), #19 ecosystem ripple (second-order), #21 BMC as default (exponential blow-up), #24 eBPF (Daytona privileges), #27 WTP market (out of scope), #28 digital twin (engineering-heavy), #30 micro-ecosystem (second-order).
+**Ideas explicitly ruled out (with reason):** #1 trace (Goodhart-bait), #5 WASM (doesn't cover JVM), #8 shadow canary (out-of-scope infra), #16 jury as primary (correlated hallucination), #19 ecosystem ripple (second-order), #21 BMC as default (exponential blow-up), #24 eBPF (sandbox privileges), #27 WTP market (out of scope), #28 digital twin (engineering-heavy), #30 micro-ecosystem (second-order).

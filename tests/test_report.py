@@ -33,7 +33,7 @@ def _smoke_config(tmp_path: Path, output_root: Path) -> Path:
         {"path": str(REPO_ROOT / entry["path"]), "seed": entry["seed"]}
         for entry in raw["repos"]
     ]
-    for key in ("anthropic_cassette_dir", "daytona_cassette_dir"):
+    for key in ("anthropic_cassette_dir", "sandbox_cassette_dir"):
         raw["adapters"][key] = str(REPO_ROOT / raw["adapters"][key])
     for key in ("oracle_spec", "recipe_spec", "hypotheses"):
         raw["stamps"][key] = str(REPO_ROOT / raw["stamps"][key])

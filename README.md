@@ -172,7 +172,7 @@ Seven non-negotiable design properties:
 
 This codebase lands the **MVP scaffolding (M1–M9)** specified in the PRD.
 Modules are pure Python, schema-validated, and exercised by 229 tests via
-cassette-based replay so the suite needs no API keys, no Daytona sandbox,
+cassette-based replay so the suite needs no API keys, no sandbox container,
 and no Maven install.
 
 **Production-ready (replay-tested end to end):**
@@ -211,10 +211,10 @@ and no Maven install.
 
 **Scaffolded as Protocols (need vendor adapters wired in):**
 
-- `migration_evals.adapters` defines `AnthropicAdapter`, `DaytonaAdapter`,
+- `migration_evals.adapters` defines `AnthropicAdapter`, `SandboxAdapter`,
   `OpenRewriteAdapter`, `CodeSearchAdapter`, `GitHubAdapter`, `DockerAdapter`
   Protocols. The cassette-replay implementations in `cli.py` keep the funnel
-  testable; production adapters that hit real Anthropic / Daytona / a code
+  testable; production adapters that hit real Anthropic / sandbox / a code
   search backend / etc. are the next integration step.
 - `oracles.tier4_daikon` is a stub that returns `daikon_skipped`; integrating
   the real Daikon binary is deferred to v2 (PRD N1).
@@ -239,7 +239,7 @@ in order. Every step below is fully automatable — none of them require
 recurring reviewer time.
 
 1. **Wire production adapters.** Implement `AnthropicAdapter` against the
-   real Claude SDK and `DaytonaAdapter` against the Daytona SDK (replacing
+   real Claude SDK and `SandboxAdapter` against a sandbox SDK (replacing
    the cassette stand-ins in `migration_evals.cli`). All other modules are
    already Protocol-typed and need no changes.
 2. **Mine the first 200 Java 8→17 OSS candidates.** Use the GitHub Search

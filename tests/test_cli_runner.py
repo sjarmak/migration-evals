@@ -42,7 +42,7 @@ def _smoke_config(tmp_path: Path, output_root: Path) -> Path:
         for entry in raw["repos"]
     ]
     # Same for cassette + stamp paths.
-    for key in ("anthropic_cassette_dir", "daytona_cassette_dir"):
+    for key in ("anthropic_cassette_dir", "sandbox_cassette_dir"):
         if key in raw["adapters"]:
             raw["adapters"][key] = str(REPO_ROOT / raw["adapters"][key])
     for key in ("oracle_spec", "recipe_spec", "hypotheses"):

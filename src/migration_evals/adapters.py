@@ -70,8 +70,14 @@ class AnthropicAdapter(Protocol):
 
 
 @runtime_checkable
-class DaytonaAdapter(Protocol):
-    """Minimum Daytona sandbox surface used by the tiered-oracle funnel."""
+class SandboxAdapter(Protocol):
+    """Minimum sandbox surface used by the tiered-oracle funnel.
+
+    Implementations can wrap any container runtime — Docker, a Kubernetes
+    job runner, Modal-like serverless containers, a remote sandbox SaaS,
+    or a local-only stand-in. The funnel only sees the three methods
+    below.
+    """
 
     def create_sandbox(
         self,
@@ -163,7 +169,7 @@ class GitHubAdapter(Protocol):
 
 @runtime_checkable
 class DockerAdapter(Protocol):
-    """Minimum Docker surface used for local (non-Daytona) harness runs."""
+    """Minimum Docker surface used for local harness runs."""
 
     def build_image(
         self,
@@ -192,7 +198,7 @@ class DockerAdapter(Protocol):
 __all__ = [
     "Cassette",
     "AnthropicAdapter",
-    "DaytonaAdapter",
+    "SandboxAdapter",
     "OpenRewriteAdapter",
     "CodeSearchAdapter",
     "GitHubAdapter",

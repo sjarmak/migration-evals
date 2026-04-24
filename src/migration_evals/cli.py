@@ -250,11 +250,11 @@ def build_parser() -> argparse.ArgumentParser:
 # ---------------------------------------------------------------------------
 
 
-class _CassetteDaytonaAdapter:
-    """Cassette-backed Daytona stand-in for fixture/replay runs.
+class _CassetteSandboxAdapter:
+    """Cassette-backed sandbox stand-in for fixture/replay runs.
 
     Reads pre-recorded ``(exit_code, stdout, stderr)`` envelopes from a
-    JSON file under ``$MIGRATION_EVAL_FAKE_DAYTONA_CASSETTE_DIR``. The
+    JSON file under ``$MIGRATION_EVAL_FAKE_SANDBOX_CASSETTE_DIR``. The
     file name matches the repo directory name. Default behavior when the
     cassette is absent is to return a successful exit envelope.
     """
@@ -436,8 +436,8 @@ def _handle_run(args: argparse.Namespace) -> int:
     out_dir.mkdir(parents=True, exist_ok=True)
 
     stages = _resolve_stages(args.stage)
-    daytona_cassette_dir_env = os.environ.get("MIGRATION_EVAL_FAKE_DAYTONA_CASSETTE_DIR")
-    daytona_cassette_dir = Path(daytona_cassette_dir_env) if daytona_cassette_dir_env else None
+    sandbox_cassette_dir_env = os.environ.get("MIGRATION_EVAL_FAKE_SANDBOX_CASSETTE_DIR")
+    sandbox_cassette_dir = Path(sandbox_cassette_dir_env) if sandbox_cassette_dir_env else None
     judge_cassette_dir_env = os.environ.get("MIGRATION_EVAL_FAKE_JUDGE_CASSETTE_DIR")
     judge_cassette_dir = Path(judge_cassette_dir_env) if judge_cassette_dir_env else None
 
@@ -456,7 +456,7 @@ def _handle_run(args: argparse.Namespace) -> int:
         meta = _load_repo_meta(repo_dir)
         recipe = _build_recipe_from_meta(meta)
         adapters = {
-            "daytona": _CassetteDaytonaAdapter(repo_dir.name, daytona_cassette_dir),
+            "sandbox": _CassetteSandboxAdapter(repo_dir.name, sandbox_cassette_dir),
             "anthropic": _CassetteAnthropicAdapter(repo_dir.name, judge_cassette_dir),
             "enable_daikon": False,
         }

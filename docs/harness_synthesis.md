@@ -28,7 +28,7 @@ Every cached recipe is a JSON document with two top-level keys:
 ```
 
 - `recipe.dockerfile` / `build_cmd` / `test_cmd` — strings consumed by the
-  Daytona / Docker runner.
+  container runtime.
 - `recipe.harness_provenance` — append-only metadata. The three keys
   `model`, `prompt_version`, and `timestamp` (ISO-8601 UTC, `Z`-suffixed)
   are required; extra keys are allowed and forwarded verbatim.
