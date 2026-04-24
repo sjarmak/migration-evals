@@ -1,8 +1,8 @@
 # Contributing
 
-This repo is the shared substrate for the wg-agentic-migrations team. The
-working assumption is that contributors are also the operators — there is no
-separate maintainer layer.
+The working assumption is that contributors are also the operators — there
+is no separate maintainer layer. Anyone running the eval is responsible for
+keeping the test suite green and the docs in sync.
 
 ## Development setup
 
@@ -76,10 +76,11 @@ template:
   one-paragraph note in the PR description that updates the relevant
   doc page in `docs/`.
 
-## Provenance
+## Design history
 
-This package was extracted from
-[CodeScaleBench](https://github.com/sourcegraph/CodeScaleBench) `main` at
-the commit that landed M9 (Python 2→3 probe). The full design history
-lives in [`docs/PRD.md`](docs/PRD.md) and
-[`docs/premortem.md`](docs/premortem.md).
+The full design rationale — diverge/converge over 30 candidate ideas, then a
+3-position debate (Pragmatist / Rigorist / Ecosystem-Hawk), then a 5-lens
+premortem — is captured in [`docs/PRD.md`](docs/PRD.md) and
+[`docs/premortem.md`](docs/premortem.md). Read these before proposing
+architectural changes; the M-list and risk-class IDs (M1–M9, R1–R15) are
+referenced throughout the codebase.

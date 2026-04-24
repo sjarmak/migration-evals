@@ -65,21 +65,21 @@ jobs:
 
 ## CODEOWNERS pattern (governance — not applied here)
 
-The pre-registered hypotheses file must be owned by the agentic-migrations
+The pre-registered hypotheses file must be owned by the migration-eval-owners
 leadership group so that post-hoc edits require explicit review. The
 following line MUST be added to `.github/CODEOWNERS` by a team
 administrator (this repository change is a governance action and is NOT
 performed by this work unit):
 
 ```
-docs/hypotheses_and_thresholds.md @wg-agentic-migrations-leads
+docs/hypotheses_and_thresholds.md @framework-owners
 ```
 
 The same pattern may be extended to the broader `docs/`
 directory if the working group prefers broader coverage:
 
 ```
-docs/ @wg-agentic-migrations-leads
+docs/ @framework-owners
 ```
 
 ## Operator playbook for stale-stamp failures

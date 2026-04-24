@@ -1,6 +1,6 @@
-# Premortem: Agentic Migration Eval Framework
+# Premortem: Migration Eval Framework
 
-**Source:** `/premortem` (5 failure lenses) on `prd_agentic_migration_eval_framework.md` v0.2
+**Source:** `/premortem` (5 failure lenses) on `docs/PRD.md` v0.2
 **Framing:** It is 10 months from now; the project failed. Each lens wrote the postmortem.
 
 ## 1. Risk Registry
@@ -39,7 +39,7 @@
 
 ### Theme E: "Ecosystem-pluggable" is aspirational under schedule pressure
 - **Surfaced by:** Technical (M9 findings patched narrowly, deeper "build config is migration target" assumption missed), Scope (Python 2→3 not what customers want either), Team/Process (3-2 vote to defer schema revision past Phase 2 publication)
-- **Combined severity:** High — the entire business case for agentic-migrations-at-scale rests on this surviving
+- **Combined severity:** High — the entire business case for automated-migrations-at-scale rests on this surviving
 - **Mitigation:** M9 findings are a hard prerequisite for the first external Java number, not an advisory; probe extended to 5-10 real Python repos (Open Q #8 escalation triggered by default); the v1 migration picked should itself come from live market demand so "one ecosystem, deep" is still commercially useful
 
 ## 3. Mitigation Priority List
@@ -66,7 +66,7 @@
 **Defer penalty:** if skipped, the 10-month scope failure narrative is the default outcome.
 
 ### D2. Mechanical publication gate — week 1-2 tooling
-**What to change:** Build three enforcements: (a) `repo_health.py --publication-gate` CI check that fails any commit under `docs/` or `runs/analysis/` containing a numeric score without all 5 required SHAs, (b) Slack bot integration in `#wg-agentic-migrations` that auto-redacts messages containing per-repo scores unless SHAs are attached, (c) CODEOWNERS on `hypotheses_and_thresholds.md` requiring the designated Rigorist (not an agent shipper) to approve any threshold change.
+**What to change:** Build three enforcements: (a) `repo_health.py --publication-gate` CI check that fails any commit under `docs/` or `runs/analysis/` containing a numeric score without all 5 required SHAs, (b) Slack bot integration in `#migration-eval-owners` that auto-redacts messages containing per-repo scores unless SHAs are attached, (c) CODEOWNERS on `hypotheses_and_thresholds.md` requiring the designated Rigorist (not an agent shipper) to approve any threshold change.
 **Addresses:** Operational, Team/Process, Scope, Integration.
 **Effort:** ~2 engineer-weeks.
 **Defer penalty:** procedural gate decays inside 6 weeks per 4 of 5 narratives.
@@ -138,13 +138,13 @@ By the time the M9 Python 2→3 probe ran in week 9, it had flagged schema issue
 
 ### Narrative 4: Scope & Requirements Failure
 
-**What happened:** Ten months after kickoff, wg-agentic-migrations shipped a technically pristine eval framework and got politely ignored. The Java 8→17 funnel ran on 1,000 repos at $142/pass, gold-anchor correlation held at 0.78, contamination split worked as designed. The headline — "our agent resolves Java 8→17 on 83% of corpus Y at Tier-2" — was defensible, calibrated, pre-registered. It was also the wrong number for every stakeholder with a budget. The working-group lead needed it for leadership review in month 4 and pulled merged-PR counts from Batch Changes because the funnel wasn't ready; by the time it was ready, leadership had internalized PR-count as the metric. Sales and the nascent migration-services motion asked repeatedly for "dollars saved per migration" and got a tiered funnel back. Two design-partner customers reported their actual pain was Spring Boot 2→3, log4j CVE fan-out, and internal-framework version bumps — not Java 8→17, which most had finished via OpenRewrite in 2023. The M9 Python 2→3 probe ran on schedule but nobody needed Python 2→3 either; the real Python ask was Django 3→5 and Pydantic 1→2. By month 10 the eval was cited exactly once externally, in a blog post PMM had to rewrite.
+**What happened:** Ten months after kickoff, the project shipped a technically pristine eval framework and got politely ignored. The Java 8→17 funnel ran on 1,000 repos at $142/pass, gold-anchor correlation held at 0.78, contamination split worked as designed. The headline — "our agent resolves Java 8→17 on 83% of corpus Y at Tier-2" — was defensible, calibrated, pre-registered. It was also the wrong number for every stakeholder with a budget. Leadership needed a dollar figure for month-4 review and pulled merged-PR counts from existing PR-batch tooling because the funnel wasn't ready; by the time it was ready, leadership had internalized PR-count as the metric. Field stakeholders asked repeatedly for "dollars saved per migration" and got a tiered funnel back. Two design-partner users reported their actual pain was Spring Boot 2→3, log4j CVE fan-out, and internal-framework version bumps — not Java 8→17, which most had finished via OpenRewrite in 2023. The M9 Python 2→3 probe ran on schedule but nobody needed Python 2→3 either; the real Python ask was Django 3→5 and Pydantic 1→2. By month 10 the eval was cited exactly once externally, in a blog post that had to be rewritten.
 
-**Root cause:** Optimized for epistemic defensibility of a number buyers didn't ask for. The PRD treated "stakeholders" as wg-agentic-migrations + vague "downstream consumers" and never forced a concrete answer to *whose decision does this number change*. Leadership wanted dollars-saved; field wanted per-migration-recipe confidence scores for customer conversations; customers wanted evidence on *their* migration. "85% on Java 8→17" was a benchmark-builder's instinct (clean, tractable, well-understood) — but Java 8→17 was already solved and tooled in the enterprise. Picking it meant measuring a skill no customer was still buying.
+**Root cause:** Optimized for epistemic defensibility of a number buyers didn't ask for. The PRD treated "stakeholders" as the eval owners + vague "downstream consumers" and never forced a concrete answer to *whose decision does this number change*. Leadership wanted dollars-saved; field wanted per-migration-recipe confidence scores for user conversations; users wanted evidence on *their* migration. "85% on Java 8→17" was a benchmark-builder's instinct (clean, tractable, well-understood) — but Java 8→17 was already solved and tooled in the enterprise. Picking it meant measuring a skill no user was still buying.
 
-**Warning signs:** Month 2 working-group lead asked "can we get a dollar figure for Q-review?" and got a link to funnel spec. Month 4 two design partners' intake forms listed Spring Boot 2→3 and log4j; nobody revised v1 choice. Month 5 first internal demo: "does our agent actually ship PRs customers merge?" Answer: "Phase 2." Month 6 gold correlation held at 0.78 but reviewer-accept on real customer PRs was 61%; 20pp gap logged as "expected" instead of escalated. Month 7 competing internal team shipped scrappier Spring Boot 2→3 CI-green tracker and got cited in a customer win.
+**Warning signs:** Month 2 leadership asked "can we get a dollar figure for Q-review?" and got a link to funnel spec. Month 4 two design partners' intake forms listed Spring Boot 2→3 and log4j; nobody revised v1 choice. Month 5 first internal demo: "does our agent actually ship PRs that get merged?" Answer: "Phase 2." Month 6 gold correlation held at 0.78 but real-PR merge-survival was 61%; 20pp gap logged as "expected" instead of escalated. Month 7 a competing internal team shipped a scrappier Spring Boot 2→3 CI-green tracker and got cited in a user win.
 
-**Mitigations:** Before committing to v1 migration, interview 5+ customer migration leads and 2+ Sourcegraph AEs, rank migrations by *remaining* market demand, not tractability. Require PRD to name by role the 3 people whose decisions the headline changes next quarter; validate metric shape with each. Treat reviewer-accept on real customer PRs as co-primary metric from day one, not Phase-2 ceiling. Pick v1 migration by live customer demand (Spring Boot 2→3, rotating CVE, dep-bump) even if messier.
+**Mitigations:** Before committing to v1 migration, interview 5+ migration leads on the user side and 2+ field engineers, rank migrations by *remaining* market demand, not tractability. Require PRD to name by role the 3 people whose decisions the headline changes next quarter; validate metric shape with each. Treat merge-survival on real user PRs as co-primary metric from day one, not Phase-2 ceiling. Pick v1 migration by live user demand (Spring Boot 2→3, rotating CVE, dep-bump) even if messier.
 
 **Severity:** Critical — **Likelihood:** High
 

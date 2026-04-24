@@ -2,7 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "gold_anchor_entry.v1",
   "title": "Migration Eval Gold Anchor Entry",
-  "description": "Schema for a single human-adjudicated label in the migration-eval gold anchor set (PRD M4-lite). Entries are stored as a JSON array; this schema validates one element of that array. See docs/migration_eval/gold_anchor.md for scope and re-anchoring cadence.",
+  "description": "Schema for a single merge-survival label in the migration-eval gold anchor set (PRD M4-lite). Labels are harvested automatically by scripts/mine_gold_anchor.py from public OSS migration PRs that were merged and survived >=30 days without a revert. Entries are stored as a JSON array; this schema validates one element. See docs/gold_anchor.md for scope and re-anchoring cadence.",
   "type": "object",
   "required": [
     "repo_url",
@@ -18,21 +18,21 @@
     },
     "commit_sha": {
       "type": "string",
-      "description": "Commit SHA that was reviewed."
+      "description": "Commit SHA evaluated — typically the merge commit of the source PR."
     },
     "human_verdict": {
       "type": "string",
       "enum": ["accept", "reject"],
-      "description": "Reviewer verdict on the migration diff/outcome."
+      "description": "Implicit maintainer verdict from merge-survival: 'accept' = PR merged and survived >=30 days without revert; 'reject' = closed-unmerged or merged-then-reverted. Field name retained for schema backward compatibility."
     },
     "reviewer_notes": {
       "type": "string",
-      "description": "Free-form reviewer commentary explaining the verdict."
+      "description": "Provenance string — typically the source PR URL and the survival-check method that produced the verdict."
     },
     "labeled_at": {
       "type": "string",
       "format": "date-time",
-      "description": "ISO 8601 timestamp when the label was recorded."
+      "description": "ISO 8601 timestamp when the label was harvested."
     }
   },
   "additionalProperties": false

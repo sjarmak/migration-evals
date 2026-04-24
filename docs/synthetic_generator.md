@@ -3,7 +3,7 @@
 This document describes the procedural Java 8 synthetic-repo generator and the
 AST-spec conformance oracle that scores pre/post migration diffs.
 
-Scope: PRD milestone **M3** (`prd_agentic_migration_eval_framework.md`), with
+Scope: PRD milestone **M3** (`docs/PRD.md`), with
 the D5 anti-tautology constraint explicitly encoded.
 
 ## Components

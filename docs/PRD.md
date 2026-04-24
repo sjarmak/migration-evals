@@ -1,25 +1,24 @@
-# PRD: Agentic Migration Eval Framework
+# PRD: Migration Eval Framework
 
-**Owner:** wg-agentic-migrations
 **Status:** Risk-annotated draft (v0.3)
-**Source:** `/diverge` (5 agents) → `/converge` (3-position debate) → `/premortem` (5 failure lenses) over 30 brainstormed ideas (session `5f59497c1562`)
-**Companion doc:** `premortem_agentic_migration_eval_framework.md`
+**Source:** `/diverge` (5 agents) → `/converge` (3-position debate) → `/premortem` (5 failure lenses) over 30 brainstormed ideas
+**Companion doc:** `docs/premortem.md`
 
 ## Problem Statement
 
-Sourcegraph's wg-agentic-migrations team needs to defend claims like "our Java 8→17 migration works 85% of the time" across 1000s of repos, track regressions across agent/model versions, and generalize to Python, JS/TS, and multiple build ecosystems — within a small-team / months-not-years budget.
+A project shipping an automated code-migration agent needs to defend claims like *"our Java 8→17 migration works 85% of the time"* across 1000s of repos, track regressions across agent/model versions, and generalize to Python, JS/TS, and multiple build ecosystems — within a small-rotation / months-not-years budget.
 
-Existing prior art is insufficient: MigrationBench is Java-8-Maven-only with operational brittleness; SWE-bench is per-issue not per-migration; LLM-judge rubrics are noisy and correlate across hallucinations; PR-replay assumes the human PR is gold; Sourcegraph Batch Changes scales but only measures CI-green. The industry's headline numbers (e.g., Amazon Q's "$260M / 30K apps") are PR-count, not merged-and-green-at-T+30d — the team must publish funnel numbers to be credible.
+Existing prior art is insufficient: MigrationBench is Java-8-Maven-only with operational brittleness; SWE-bench is per-issue not per-migration; LLM-judge rubrics are noisy and correlate across hallucinations; PR-replay assumes the human PR is gold; production PR-batch tooling scales but only measures CI-green. The industry's headline numbers (e.g., Amazon Q's "$260M / 30K apps") are PR-count, not merged-and-green-at-T+30d — to be credible the project must publish funnel numbers.
 
-The 30-idea design space converges on a clear architecture: a **tiered-oracle funnel** driven by **LLM-inferred build harnesses**, anchored by both **procedurally-generated synthetic repos with AST-level ground truth** and a **frozen human-accept gold set for external validity**, with all results stored in the existing CSB trial-directory layout so regression tracking and debugging are queries, not separate pipelines.
+The 30-idea design space converges on a clear architecture: a **tiered-oracle funnel** driven by **LLM-inferred build harnesses**, anchored by both **procedurally-generated synthetic repos with AST-level ground truth** and a **frozen merge-survival gold set for external validity**, with all results stored in a flat trial-directory layout so regression tracking and debugging are filesystem queries, not separate pipelines.
 
 ## Goals & Non-Goals
 
 ### Goals
 
 1. Produce defensible, calibrated success-rate numbers for a named migration (v1: Java 8→17) at 95% CI, with pre-registered oracle spec.
-2. Report results as a **funnel** (generated → compiles → tests pass → semantic-invariant preserved → human-accepted-on-gold-set), never as a single collapsed number.
-3. Run 1000 repos per quarter end-to-end on existing Sourcegraph infra (Daytona, Batch Changes, Cody code graph) for under ~$35K/quarter inference + ~$5K infra.
+2. Report results as a **funnel** (generated → compiles → tests pass → semantic-invariant preserved → merge-survivaled-on-gold-set), never as a single collapsed number.
+3. Run 1000 repos per quarter end-to-end on existing production infrastructure (Daytona, GitHub API) for under ~$35K/quarter inference + ~$5K infra.
 4. Make regression tracking a diff-query against a growing ledger, not a separate system.
 5. Be ecosystem-pluggable: adding Python 2→3 or pinned-dep bumps should take ~2 weeks of recipe-spec authoring, not a rebuild.
 6. Surface four discriminated failure modes per trial (`agent_error`, `harness_error`, `oracle_error`, `infra_error`) so 3-person team can triage without reading trajectories.
@@ -57,7 +56,7 @@ The 30-idea design space converges on a clear architecture: a **tiered-oracle fu
 **M4-lite. Human-accept gold anchor — 50 repos in MVP, scale to 200 in Phase 2 (derived from failure-mode R1)** — Frozen set of real migrations where a human reviewer accepted or rejected the diff. Never used for tuning; used only to report correlation.
 - **Acceptance:** Every full eval run emits `gold_anchor_correlation: float` with 95% CI (wide at N=50, ±~0.15) in the summary. Point estimate below 0.7 OR lower CI bound below 0.5 triggers an "eval broken" flag and blocks headline-number publication until re-anchored. Scaling to 200 repos in Phase 2 narrows the CI enough for tight pp-level claims.
 
-**M5. Regression ledger stored in CSB layout (idea #15)** — Every failed trial persisted with full provenance (agent version, model, prompt hash, harness recipe hash, seed, timestamp) under `runs/analysis/_ledger/<task_id>/`.
+**M5. Regression ledger stored in the flat trial-directory layout (idea #15)** — Every failed trial persisted with full provenance (agent version, model, prompt hash, harness recipe hash, seed, timestamp) under `runs/analysis/_ledger/<task_id>/`.
 - **Acceptance:** `csb mig regression --from=v1 --to=v2` produces a `regressed_tasks.md` with one row per newly-failing repo, linking to trial dir and prior-pass provenance. Content-hash deduplication keeps ledger size sub-linear in run count.
 
 **M6. Four-way failure-mode discrimination** — Every trial emits `result.json` with exactly one of `{agent_error, harness_error, oracle_error, infra_error}` as the top-level failure class when `success=false`.
@@ -96,7 +95,7 @@ The 30-idea design space converges on a clear architecture: a **tiered-oracle fu
 
 **N4. Primitive-task-genome scoring (idea #6)** — Fine-grained per-primitive accuracy breakdown. Subsumed partially by M3's per-primitive AST scoring.
 
-**N5. Author-in-the-loop merge-rate (idea #2)** — Actual OSS PR submission. Strong signal but high variance, high latency, and unclear Sourcegraph policy.
+**N5. Author-in-the-loop merge-rate (idea #2)** — Actual OSS PR submission. Strong signal but high variance, high latency, and unclear deployment policy.
 
 ## Design Considerations
 
@@ -112,7 +111,7 @@ The 30-idea design space converges on a clear architecture: a **tiered-oracle fu
 
 5. **LLM-judge role.** Tier-3 tiebreaker only, single-pass (not a jury), on residuals that survived Tier-1+2. Jury (#16) and convex-hull (#26) stack judgment on judgment without adding independent signal — one judge with calibrated rubric is the right dose.
 
-6. **Preserve existing CSB ergonomics.** Do not invent a new trial-directory layout or artifact format. Slot into `runs/analysis/mig_java8_17/<agent_model>/<variant>/<repo>_<seed>/` so existing scripts (`aggregate_status.py`, `compare_configs.py`, `cost_report.py`, observatory) keep working on day one.
+6. **Stable, flat trial-directory layout.** All artifacts land under `runs/analysis/mig_<migration_id>/<agent_model>/<variant>/<repo>_<seed>/` so any future analysis tooling (status aggregation, config comparison, cost reports) can be a filesystem walk, not a database query.
 
 ### Architectural shape (ASCII)
 
@@ -193,7 +192,7 @@ The 30-idea design space converges on a clear architecture: a **tiered-oracle fu
 
 ## Success Criteria for the Eval Itself (Eval-of-Eval)
 
-1. **Gold-anchor correlation ≥ 0.7** between funnel outcome and human-accepted gold set at all times; < 0.7 flags eval broken.
+1. **Gold-anchor correlation ≥ 0.7** between funnel outcome and merge-survivaled gold set at all times; < 0.7 flags eval broken.
 2. **Synthetic-real pass-rate gap ≤ 15pp**; larger gap triggers synthetic-generator review (construct-validity collapse signal).
 3. **Contamination gap ≤ 5pp** between pre-cutoff and post-cutoff score splits; larger triggers quarantine.
 4. **Failure-class precision ≥ 90%** on human-audited sample of 50 failed trials per quarter.
@@ -206,8 +205,8 @@ The 30-idea design space converges on a clear architecture: a **tiered-oracle fu
 1. What's the true Tier-1 catch rate on real Java 8→17? Need a 100-repo pilot to measure. If 90% not 70%, Tier-3+4 costs drop 3×.
 2. Does Daytona allow `CAP_BPF`? Decides whether eBPF (#24) is ever viable as a replacement for Daikon.
 3. Prompt-caching economics for Tier-3 judge: expected 4× input-cost cut. Needs validation on actual workload.
-4. Who owns harness repair when M2 synthesis fails? Auto-quarantine + loud summary vs. block-until-human-triage. Sourcegraph team size probably forces auto-quarantine.
-5. Does the regression ledger get exported on `public` branch push? Existing origin/upstream split isn't designed for per-task privacy classification.
+4. Who owns harness repair when M2 synthesis fails? Auto-quarantine + loud summary vs. block-until-human-triage. Small-rotation operations probably force auto-quarantine.
+5. Does the regression ledger need a privacy-classification policy when it joins data from internal repos with results from public OSS repos?
 6. **[MOVED TO MVP as M9]** ~Can the ecosystem-plugin API really be stable enough that Python 2→3 is a 2-week port?~ — Resolved by debate convergence: addressed in MVP week 9 via falsification probe.
 7. Does inter-juror disagreement on idiomaticity correlate with real reviewer disagreement, or with juror prompt-seed noise? Determines whether any form of LLM-jury belongs anywhere in the stack.
 8. **[NEW from debate]** Is the M9 probe too cheap to be probative? A 20-repo synthetic-only stress-test may fail to exercise divergences that only appear on real repos (e.g., 2to3 failure modes on production reflection-heavy Python). Escalation path: if the probe finds nothing, extend to 5-10 real Python repos in week 10 before declaring interfaces stable.
@@ -215,7 +214,7 @@ The 30-idea design space converges on a clear architecture: a **tiered-oracle fu
 
 ## Risk Annotations (from `/premortem`)
 
-> Full narratives in `premortem_agentic_migration_eval_framework.md`. Top-5 design modifications required before kickoff:
+> Full narratives in `docs/premortem.md`. Top-5 design modifications required before kickoff:
 
 **D1. Pre-flight stakeholder discovery (Phase 0, ~1 week)** — before M1 code, name 3 buyer-roles whose decisions the headline changes; validate metric shape with each. If any says the shape is wrong, revise PRD. Addresses Scope + Team/Process.
 

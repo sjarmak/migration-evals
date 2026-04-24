@@ -2,7 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "mig_result.v1",
   "title": "Migration Eval Trial Result",
-  "description": "Schema for per-trial result.json files emitted by the agentic migration eval framework. See docs/migration_eval/README.md and prd_agentic_migration_eval_framework.md for context.",
+  "description": "Schema for per-trial result.json files emitted by the migration eval framework. See docs/migration_eval/README.md and docs/PRD.md for context.",
   "type": "object",
   "required": [
     "task_id",

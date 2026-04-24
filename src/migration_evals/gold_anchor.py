@@ -1,9 +1,16 @@
 """Gold-anchor loader and correlation analysis for migration eval (PRD M4-lite).
 
-This module provides a frozen gold set (human accept/reject labels) and the
+This module provides a frozen gold set (accept/reject labels) and the
 correlation analysis that compares the oracle funnel's pass/fail signal to
-those human verdicts. The correlation coefficient is Phi (equivalent to
+those external verdicts. The correlation coefficient is Phi (equivalent to
 Pearson correlation on two binary variables).
+
+Labels are sourced automatically — see ``scripts/mine_gold_anchor.py`` —
+from public OSS migration PRs that were merged and survived ≥30 days
+without a revert. The ``human_verdict`` field name is preserved for
+backward compatibility with the JSON schema and existing fixtures, but
+it represents an *implicit* maintainer verdict observed via merge-survival,
+not a fresh per-trial human review.
 
 Key outputs:
 
@@ -29,21 +36,24 @@ ACCEPT = "accept"
 REJECT = "reject"
 VALID_VERDICTS = frozenset({ACCEPT, REJECT})
 
-# Eval-broken thresholds. Documented in docs/migration_eval/gold_anchor.md.
+# Eval-broken thresholds. Documented in docs/gold_anchor.md.
 POINT_THRESHOLD = 0.7
 CI_LOW_THRESHOLD = 0.5
 
 
 @dataclass(frozen=True)
 class GoldEntry:
-    """A single human-adjudicated label for an oracle-funnel trial.
+    """A single merge-survival label for an oracle-funnel trial.
 
     Fields:
         repo_url: Canonical repo URL used as part of the join key.
-        commit_sha: Commit SHA that was evaluated.
-        human_verdict: ``"accept"`` or ``"reject"``.
-        reviewer_notes: Free-form reviewer commentary.
-        labeled_at: ISO-8601 timestamp string.
+        commit_sha: Commit SHA that was evaluated (typically the merge commit).
+        human_verdict: ``"accept"`` (merged + survived ≥30 days without revert)
+            or ``"reject"`` (closed-unmerged or merged-then-reverted).
+            Field name retained for schema backward compatibility.
+        reviewer_notes: Provenance string — typically the source PR URL
+            and the survival check that produced the verdict.
+        labeled_at: ISO-8601 timestamp when the label was harvested.
     """
 
     repo_url: str

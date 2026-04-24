@@ -1,6 +1,6 @@
-# Agentic Migration Eval Framework
+# Migration Eval Framework
 
-This directory documents the CodeScaleBench **agentic migration eval framework** — a tiered-oracle funnel for defending calibrated success-rate numbers on named code migrations (v1: Java 8 -> 17). See `prd_agentic_migration_eval_framework.md` at the repo root for the full PRD and `premortem_agentic_migration_eval_framework.md` for the risk register.
+This directory documents the  **migration eval framework** — a tiered-oracle funnel for defending calibrated success-rate numbers on named code migrations (v1: Java 8 -> 17). See `docs/PRD.md` at the repo root for the full PRD and `docs/premortem.md` for the risk register.
 
 This `README.md` is scaffolded by the `foundation-module-scaffold` work unit. Downstream units add deeper docs (harness recipe format, oracle tier contracts, regression-ledger layout, pre-registration workflow).
 

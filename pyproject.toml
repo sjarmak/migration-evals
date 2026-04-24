@@ -5,14 +5,14 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "migration-evals"
 version = "0.1.0"
-description = "Tiered-oracle funnel for evaluating agentic code migrations (Java 8→17, Python 2→3, ...)"
+description = "Tiered-oracle funnel for evaluating automated code migrations (Java 8→17, Python 2→3, ...)"
 readme = "README.md"
 requires-python = ">=3.10"
 license = { file = "LICENSE" }
 authors = [
-    { name = "Stephanie Jarmak", email = "stephanie.jarmak@sourcegraph.com" },
+    { name = "Stephanie Jarmak", email = "36544495+sjarmak@users.noreply.github.com" },
 ]
-keywords = ["migration", "agentic", "evaluation", "benchmark", "llm"]
+keywords = ["migration", "evaluation", "benchmark", "llm"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",

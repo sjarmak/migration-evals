@@ -112,4 +112,4 @@ file does not balloon when many repos trip the same structural gap.
   contrast its `GENERATOR_PRIMITIVES` set with the Python case types.
 - `docs/harness_synthesis.md` — `Recipe` schema; note the
   absence of an ecosystem discriminator.
-- `prd_agentic_migration_eval_framework.md` — § M9 (falsification probe).
+- `docs/PRD.md` — § M9 (falsification probe).

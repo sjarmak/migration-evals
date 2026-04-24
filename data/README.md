@@ -2,30 +2,35 @@
 
 ## Gold anchor set
 
-`gold_anchor_template.json` is shipped as an empty JSON array `[]`. Real
-labels are never committed to this repository — they live in a private store
-and are loaded at analysis time. See
-[docs/gold_anchor.md](../docs/gold_anchor.md)
-for scope, re-anchoring cadence, and privacy handling.
+`gold_anchor_template.json` is shipped as an empty JSON array `[]`. The
+populated `gold_anchor.json` is **harvested automatically** by
+[`scripts/mine_gold_anchor.py`](../scripts/mine_gold_anchor.py) from public
+OSS migration PRs that were merged and survived ≥30 days without a revert
+— no human reviewer time required.
+
+See [docs/gold_anchor.md](../docs/gold_anchor.md) for scope, re-anchoring
+cadence, and the merge-survival labeling procedure.
 
 ### Schema
 
-Each entry in the gold set is an object validated by
-[schemas/gold_anchor_entry.schema.json](../../schemas/gold_anchor_entry.schema.json):
+Each entry is an object validated by
+[`schemas/gold_anchor_entry.schema.json`](../schemas/gold_anchor_entry.schema.json):
 
-| Field            | Type   | Notes                                    |
-| ---------------- | ------ | ---------------------------------------- |
-| `repo_url`       | string | Canonical repository URL.                |
-| `commit_sha`     | string | Commit SHA that was reviewed.            |
-| `human_verdict`  | string | Must be `"accept"` or `"reject"`.        |
-| `reviewer_notes` | string | Free-form reviewer commentary.           |
-| `labeled_at`     | string | ISO 8601 timestamp of the labeling act.  |
+| Field            | Type   | Notes                                                       |
+| ---------------- | ------ | ----------------------------------------------------------- |
+| `repo_url`       | string | Canonical repository URL.                                   |
+| `commit_sha`     | string | Merge commit of the source PR.                              |
+| `human_verdict`  | string | `"accept"` (merged + survived ≥30d) or `"reject"`.          |
+| `reviewer_notes` | string | Provenance — typically the source PR URL + check method.    |
+| `labeled_at`     | string | ISO 8601 timestamp the label was harvested.                 |
+
+The `human_verdict` field name is preserved for schema backward
+compatibility; semantically it is the implicit maintainer verdict observed
+via merge-survival.
 
 ### 12-month half-life
 
-Gold labels decay: a human review conducted 12 months ago is less reliable
-as an anchor than one conducted last week because both the ecosystem and the
-oracle funnel have moved. Labels older than 12 months should be treated as
-stale and re-reviewed before being used to compute
-`gold_anchor_correlation`. See the module doc for the full rationale and
-operational cadence.
+Labels older than 12 months should be treated as stale and re-harvested
+before being used to compute `gold_anchor_correlation`. The quarterly
+re-harvest cadence keeps median label age well under 6 months in practice.
+See the gold-anchor doc for the full rationale.

@@ -1,6 +1,6 @@
 # Hypotheses and Thresholds — Migration Eval (v1)
 
-This file is the **pre-registration** artifact for the agentic migration eval
+This file is the **pre-registration** artifact for the migration eval
 framework. Every hypothesis and threshold listed here is declared **BEFORE**
 any results are collected. The file's sha256 is stamped into every
 `result.json` as `pre_reg_sha` so that an auditor can prove, at any later

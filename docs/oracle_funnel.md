@@ -1,6 +1,6 @@
 # Tiered Oracle Funnel
 
-This document describes the cascading oracle funnel used by the agentic
+This document describes the cascading oracle funnel used by the automated code
 migration eval framework to score per-repo migration outcomes (PRD M1).
 
 ## Tier ordering

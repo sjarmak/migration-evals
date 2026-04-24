@@ -120,8 +120,8 @@ class OpenRewriteAdapter(Protocol):
 
 
 @runtime_checkable
-class CodyAdapter(Protocol):
-    """Minimum Sourcegraph Cody surface used during harness inference."""
+class CodeSearchAdapter(Protocol):
+    """Minimum generic code-search backend surface used during harness inference."""
 
     def search_code(
         self,
@@ -130,7 +130,7 @@ class CodyAdapter(Protocol):
         repo: Optional[str] = None,
         cassette: Optional[Cassette] = None,
     ) -> Iterable[Mapping[str, Any]]:
-        """Run a Sourcegraph code search and yield result envelopes."""
+        """Run a code search and yield result envelopes."""
         ...
 
 
@@ -194,7 +194,7 @@ __all__ = [
     "AnthropicAdapter",
     "DaytonaAdapter",
     "OpenRewriteAdapter",
-    "CodyAdapter",
+    "CodeSearchAdapter",
     "GitHubAdapter",
     "DockerAdapter",
 ]

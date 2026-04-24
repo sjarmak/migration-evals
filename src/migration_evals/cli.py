@@ -204,7 +204,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="python -m migration_evals.cli",
         description=(
-            "CodeScaleBench agentic migration eval framework CLI. "
+            " migration eval framework CLI. "
             "Subcommands: run, report, regression, harness, probe."
         ),
     )

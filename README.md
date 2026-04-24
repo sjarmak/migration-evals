@@ -1,22 +1,20 @@
 # migration-evals
 
-A **tiered-oracle funnel** for evaluating agentic code migrations end to end.
-Built to support Sourcegraph's wg-agentic-migrations team as they ship the
-agentic version of Batch Changes and need to defend claims like *"our Java
-8→17 migration works 85% of the time"* across 1000s of repos at
-publication-grade rigor.
+A **tiered-oracle funnel** for evaluating automated code migrations end to
+end — defending claims like *"this migration works on 85% of in-scope
+repos"* with a published funnel, contamination split, and pre-registered
+spec stamps instead of a single hand-wavy success rate.
 
-The framework is deliberately **modular and ecosystem-pluggable** — the v1
-implementation targets Java 8→17 (Maven), with a 1-week falsification probe
-demonstrating Python 2→3 generalization and a roadmap to JS/TS, pinned-dep
-bumps, and Spring Boot upgrades.
+The framework is deliberately **modular and ecosystem-pluggable**. The v1
+implementation targets Java 8→17 (Maven) and ships with a working Python
+2→3 falsification probe; the design generalizes to JS/TS, pinned-dep
+bumps, Spring Boot upgrades, and CVE fan-out without schema changes.
 
-> **Origin.** This repo was extracted from the
-> [CodeScaleBench](https://github.com/sourcegraph/CodeScaleBench) research
-> harness so the agentic-migrations working group can iterate on it
-> independently of the broader benchmark scaffolding. It carries the full
-> PRD, premortem, scaffolded modules, golden test fixtures, schemas,
-> documentation, and one full smoke run.
+The whole pipeline is **automated** — no reviewer-day step, no
+human-in-the-loop labeling. The gold-anchor ground-truth set is harvested
+from public OSS migration PRs that were merged *and* survived ≥30 days
+without a revert; the result is a calibration signal that costs API
+quota, not engineering time.
 
 ---
 
@@ -24,16 +22,17 @@ bumps, and Spring Boot upgrades.
 
 | Path | Purpose |
 | --- | --- |
-| [`docs/PRD.md`](docs/PRD.md) | The full risk-annotated v0.3 PRD — goals, non-goals, MVP/M1–M9, Should/Nice tiers, metrics, and capacity plan. |
-| [`docs/premortem.md`](docs/premortem.md) | Top-15 failure modes (R1–R15) across reviewer-disagreement, contamination, harness-synth, ecosystem generalization, infra blast-radius. Drives the M-list above. |
-| [`docs/README.md`](docs/README.md) | Per-component design notes (oracle funnel, harness synth, gold-anchor, publication gate, python23 probe, etc.). |
+| [`docs/PRD.md`](docs/PRD.md) | Risk-annotated v0.3 PRD — goals, non-goals, MVP/M1–M9, Should/Nice tiers, metrics, capacity plan. |
+| [`docs/premortem.md`](docs/premortem.md) | Top-15 failure modes (R1–R15) — reviewer-disagreement, contamination, harness-synth, ecosystem generalization, infra blast-radius. Drives the M-list. |
+| [`docs/README.md`](docs/README.md) | Per-component design notes (oracle funnel, harness synth, gold-anchor, publication gate, python23 probe). |
 | [`docs/usage.md`](docs/usage.md) | CLI quickstart for `run`/`report`/`regression`/`harness`/`probe`. |
 | [`src/migration_evals/`](src/migration_evals/) | Python package — CLI, funnel, oracles (compile/tests/AST/judge/daikon), gold anchor, ledger, contamination split, pre-registration / publication gate, Python 2→3 probe. |
 | [`schemas/`](schemas/) | JSON Schemas for `result.json` and gold-anchor entries. |
 | [`configs/java8_17_smoke.yaml`](configs/java8_17_smoke.yaml) | End-to-end smoke config: 3 fixture repos, all non-network tiers, replay cassettes — no API keys required. |
+| [`scripts/mine_gold_anchor.py`](scripts/mine_gold_anchor.py) | Automated gold-anchor harvester — builds `data/gold_anchor.json` from merged-PR survival via the `gh` CLI. |
 | [`tests/`](tests/) | 174 pytest cases: schema validation, funnel cascade, AST oracle, gold-anchor correlation + bootstrap CI, ledger diff, contamination split, publication gate, Python 2→3 probe. |
-| [`examples/runs/`](examples/runs/) | Committed example outputs from the smoke config and the Python 2→3 probe so reviewers can inspect real `result.json` shape. |
-| [`data/gold_anchor_template.json`](data/gold_anchor_template.json) | Empty seed for the human-verdict ground-truth set. |
+| [`examples/runs/`](examples/runs/) | Committed example outputs from the smoke config and the Python 2→3 probe. |
+| [`data/gold_anchor_template.json`](data/gold_anchor_template.json) | Empty seed — populated by `scripts/mine_gold_anchor.py`. |
 
 ---
 
@@ -47,22 +46,32 @@ cd migration-evals
 python3 -m venv .venv && source .venv/bin/activate
 pip install -e '.[dev]'
 
-# Run the full test suite (no API keys required — all tiers replay from cassettes)
+# 1. Run the full test suite (no API keys required — all tiers replay from cassettes)
 pytest -q
 
-# Run the smoke eval end-to-end against 3 fixture repos
+# 2. Run the smoke eval end-to-end against 3 fixture repos
 python -m migration_evals.cli run --config configs/java8_17_smoke.yaml
 
-# Aggregate the results into a funnel + contamination + spec-stamp report
+# 3. Aggregate the results into a funnel + contamination + spec-stamp report
 python -m migration_evals.cli report \
     --run runs/analysis/mig_java8_17/claude-sonnet-4-6/smoke \
     --out /tmp/smoke_report.md
+
+# 4. (Optional) Harvest a gold anchor from public Java 8→17 OSS migration PRs.
+#    Requires: `gh auth login` already done. Writes data/gold_anchor.json.
+python scripts/mine_gold_anchor.py \
+    --migration java8_17 \
+    --target-count 50 \
+    --out data/gold_anchor.json
 ```
 
-Expected end state after the smoke run: `runs/analysis/mig_java8_17/claude-sonnet-4-6/smoke/`
-contains a `summary.json` plus one `result.json` per repo, each validating
-against `schemas/mig_result.schema.json` and carrying `oracle_spec_sha`,
-`recipe_spec_sha`, `pre_reg_sha` stamps.
+After step 2: `runs/analysis/mig_java8_17/claude-sonnet-4-6/smoke/` contains
+a `summary.json` plus one `result.json` per repo, each validating against
+`schemas/mig_result.schema.json` and carrying `oracle_spec_sha`,
+`recipe_spec_sha`, `pre_reg_sha` stamps. After step 4: a populated
+`data/gold_anchor.json` validated against
+`schemas/gold_anchor_entry.schema.json` ready to feed into
+`migration_evals.cli report --gold ...`.
 
 ---
 
@@ -76,7 +85,7 @@ against `schemas/mig_result.schema.json` and carrying `oracle_spec_sha`,
     ┌─────────▼──────────┐       ┌──────────────────────┐
     │  Repo Acquisition  │       │   Synthetic Gen      │
     │  - OSS mining      │       │   - AST-ground-truth │
-    │  - Customer repos  │       │   - OpenRewrite spec │
+    │  - Internal repos  │       │   - OpenRewrite spec │
     │  - Frozen gold set │       └──────────┬───────────┘
     └─────────┬──────────┘                  │
               │                             │
@@ -113,28 +122,30 @@ Five non-negotiable design properties:
 1. **Funnel, not a single number.** Every report breaks results into
    `compile / tests / ast / judge / daikon` so failures localize without
    re-running the cascade.
-2. **Synthetic + real, not either-or.** Procedurally-generated Java 8 repos
-   give exact AST ground-truth at zero marginal cost; a frozen 50-repo
-   human-accept gold anchor checks that whatever score the funnel reports
-   actually correlates with reviewer outcomes.
-3. **Discriminated failure modes.** Every failed trial carries exactly one of
-   `agent_error / harness_error / oracle_error / infra_error` so a 3-person
-   team can triage 40-repo regressions in <2h.
+2. **Synthetic + automated real-world anchor (not either).** Procedurally
+   generated repos give exact AST ground-truth at zero marginal cost. The
+   merge-survival anchor harvested from public OSS PRs catches the
+   10–20% of cases where perfect-oracle migrations still get rejected
+   in real life. Both pipelines are scriptable; neither needs a reviewer.
+3. **Discriminated failure modes.** Every failed trial carries exactly one
+   of `agent_error / harness_error / oracle_error / infra_error` so a small
+   on-call rotation can triage 40-repo regressions in <2h.
 4. **Contamination is first-class.** Every report carries a `score_pre_cutoff`
    / `score_post_cutoff` split based on repo creation date relative to the
    model cutoff; gaps >5pp auto-flag a `contamination_warning`.
 5. **Pre-registration gates publication.** No headline number leaves the
-   working group until `oracle_spec_sha`, `recipe_spec_sha`, and `pre_reg_sha`
-   match committed files (`migration_evals.publication_gate --check-run`).
+   project until `oracle_spec_sha`, `recipe_spec_sha`, and `pre_reg_sha`
+   match committed files
+   (`python -m migration_evals.publication_gate --check-run`).
 
 ---
 
 ## What's implemented vs. scaffolded
 
-This codebase currently lands the **MVP scaffolding (M1–M9)** specified in
-the PRD. Modules are pure Python, schema-validated, and exercised by 174
-tests via cassette-based replay so the suite needs no API keys, no Daytona
-sandbox, and no Maven install.
+This codebase lands the **MVP scaffolding (M1–M9)** specified in the PRD.
+Modules are pure Python, schema-validated, and exercised by 174 tests via
+cassette-based replay so the suite needs no API keys, no Daytona sandbox,
+and no Maven install.
 
 **Production-ready (replay-tested end to end):**
 
@@ -151,20 +162,24 @@ sandbox, and no Maven install.
   (`migration_evals.ledger` + `cli regression`).
 - Gold-anchor correlation with bootstrap 95% CI + `eval_broken` gate
   (`migration_evals.gold_anchor`).
+- Automated gold-anchor harvester via merged-PR survival
+  (`scripts/mine_gold_anchor.py`) — replaces the original "schedule reviewer
+  days" step entirely.
 - Contamination split (`migration_evals.contamination`).
 - Pre-registration / publication gate
   (`migration_evals.pre_reg` + `migration_evals.publication_gate`).
 - Python 2→3 falsification probe with synthetic generator + findings JSON
   (`migration_evals.python23_probe`).
-- End-to-end CLI runner and funnel report (`migration_evals.{runner,report,cli}`).
+- End-to-end CLI runner and funnel report
+  (`migration_evals.{runner,report,cli}`).
 
 **Scaffolded as Protocols (need vendor adapters wired in):**
 
 - `migration_evals.adapters` defines `AnthropicAdapter`, `DaytonaAdapter`,
-  `OpenRewriteAdapter`, `CodyAdapter`, `GitHubAdapter`, `DockerAdapter`
+  `OpenRewriteAdapter`, `CodeSearchAdapter`, `GitHubAdapter`, `DockerAdapter`
   Protocols. The cassette-replay implementations in `cli.py` keep the funnel
-  testable; production adapters that hit real Anthropic/Daytona/Cody/etc. are
-  the next integration step.
+  testable; production adapters that hit real Anthropic / Daytona / a code
+  search backend / etc. are the next integration step.
 - `oracles.tier4_daikon` is a stub that returns `daikon_skipped`; integrating
   the real Daikon binary is deferred to v2 (PRD N1).
 
@@ -181,23 +196,27 @@ per module.
 
 ---
 
-## Recommended next steps for the agentic-migrations team
+## Recommended next steps
 
-These are the highest-leverage steps to take this from scaffolded MVP to a
-working group's regular reporting cadence. Roughly in order:
+The highest-leverage path from MVP scaffold to a regular reporting cadence,
+in order. Every step below is fully automatable — none of them require
+recurring reviewer time.
 
 1. **Wire production adapters.** Implement `AnthropicAdapter` against the
    real Claude SDK and `DaytonaAdapter` against the Daytona SDK (replacing
    the cassette stand-ins in `migration_evals.cli`). All other modules are
    already Protocol-typed and need no changes.
-2. **Mine the first 200 Java 8→17 OSS candidates.** Add a `tasks/` or
-   `data/oss_candidates.json` catalog and a small `scripts/mine_repos.py`.
-   Apply the harness-synthesis cache so repeat eval runs are content-hash
-   deduplicated.
-3. **Label the 50-repo gold anchor.** Schedule ~2 reviewer-days to fill
-   `data/gold_anchor.json` (validated by `schemas/gold_anchor_entry.schema.json`).
-   Until this lands, the publication gate runs in `--require-gold-anchor=off`
-   mode.
+2. **Mine the first 200 Java 8→17 OSS candidates.** Use the GitHub Search
+   API (`gh search repos --language=java 'pom.xml'`) to assemble a
+   `data/oss_candidates.json` catalog. Apply the harness-synthesis cache so
+   repeat eval runs are content-hash deduplicated.
+3. **Harvest the 50-repo gold anchor automatically.** Run
+   `python scripts/mine_gold_anchor.py --migration java8_17 --target-count 50`.
+   This pulls merged PRs that touched Java 8→17 idioms (lambda rewrites,
+   `var` introductions, Optional chains, etc.), checks they survived
+   ≥30 days without a revert, and writes `data/gold_anchor.json` validated
+   against `schemas/gold_anchor_entry.schema.json`. Until this lands, the
+   publication gate runs in `--require-gold-anchor=off` mode.
 4. **Stand up the publication gate in CI.** Add a GitHub Action that runs
    `python -m migration_evals.publication_gate --check-run runs/analysis/mig_*`
    on every PR that touches a run directory. See `docs/publication_gate.md`
@@ -207,17 +226,16 @@ working group's regular reporting cadence. Roughly in order:
    freeze the Java schema *before* shipping any external Java number. The
    probe machinery is already wired; just run it on a real Python 2→3 repo
    set.
-6. **Plug into Sourcegraph Batch Changes for repo acquisition.** Implement
-   `CodyAdapter` to fetch candidate repos via the Sourcegraph code graph and
-   submit migrated diffs as Batch Changes; this is the integration point
-   that lets the eval ride on existing Sourcegraph infrastructure rather
-   than building parallel mining.
+6. **Mine candidate repos via the GitHub Search API.** The
+   `CodeSearchAdapter` Protocol abstracts away the backend — point it at
+   `gh search code` for the OSS lane and at any internal code-search
+   backend (OpenGrok, Hound, Zoekt, etc.) for an internal lane.
 7. **Ship S1–S4** (process-telemetry classifier, IRT difficulty, monthly
    live-data rotation, ECE calibration) per the PRD Should-Have tier once
    the v1 funnel has been running for ~1 quarter.
 8. **Open external publication.** Once gold-anchor ≥0.7 with CI bound ≥0.5,
    publication gate green, contamination split <5pp, and ≥2 migrations
-   evaluated under the same schema — file a public technical report.
+   evaluated under the same schema — file an external technical report.
 
 ---
 
@@ -250,7 +268,7 @@ migration-evals/
 │       ├── adapters.py         # external-dependency Protocols
 │       ├── failure_class.py    # 4-way failure discriminator
 │       ├── contamination.py    # pre/post-cutoff split
-│       ├── gold_anchor.py      # human-verdict correlation + bootstrap CI
+│       ├── gold_anchor.py      # merge-survival correlation + bootstrap CI
 │       ├── ledger.py           # regression diff
 │       ├── pre_reg.py          # spec-SHA stamping
 │       ├── publication_gate.py # CI gate (importable + script)
@@ -261,6 +279,8 @@ migration-evals/
 │       ├── oracles/            # tier1_compile, tier2_tests, tier3_judge, tier4_daikon, verdict
 │       ├── synthetic/          # Java/Python generators + AST oracle + 10 primitives
 │       └── templates/          # report.md.j2
+├── scripts/
+│   └── mine_gold_anchor.py     # automated gold-anchor harvester
 ├── tests/                      # 174 pytest cases + fixtures (cassettes)
 ├── schemas/
 │   ├── mig_result.schema.json
@@ -286,8 +306,8 @@ engineering effort. Each links to the section of the PRD that justifies it.
 | --- | --- | --- |
 | **Tiered funnel, not a single oracle** | 70% of failures caught at $0.01/repo compile tier; LLM-judge runs only on residual ambiguous cases. | M1 |
 | **LLM-inferred harnesses, not hand-written Dockerfiles** | Harness authoring is the bottleneck in MigrationBench; LLM synthesis + content-hash cache amortizes the cost. | M2 |
-| **Synthetic AST-ground-truth + real human-anchor (not either)** | Synthetic gives exact accuracy at zero cost; human anchor catches the 10–20% where perfect-oracle migrations still get rejected. | M3 + M4-lite |
-| **4-way failure classes (agent/harness/oracle/infra)** | Triage budget for a 3-person team is 2h per regression batch; no class = no triage. | M6 |
+| **Synthetic AST + automated merge-survival anchor** | Synthetic gives exact accuracy at zero marginal cost; merge-survival labels catch the 10–20% where perfect-oracle migrations still get reverted. Both lanes are scriptable. | M3 + M4-lite |
+| **4-way failure classes (agent/harness/oracle/infra)** | Triage budget for a small on-call rotation is 2h per regression batch; no class = no triage. | M6 |
 | **Pre/post-cutoff contamination split is mandatory** | Industry headline numbers (Amazon Q etc.) are widely suspected of contamination; we get ahead of the critique. | M7 |
 | **Pre-registration via spec-SHA stamps** | Prevents post-hoc threshold-shifting; gates external publication. | M8-lite |
 | **Python 2→3 probe before freezing schema** | Falsification check that the Java-derived schema generalizes; if it doesn't, fix it *before* shipping the first external Java number. | M9 |
