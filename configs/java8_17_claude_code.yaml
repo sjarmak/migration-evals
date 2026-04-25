@@ -1,0 +1,47 @@
+# java8_17 smoke config with the live Claude Code judge wired in.
+#
+# Identical in shape to configs/java8_17_smoke.yaml except adapters
+# routes Tier-3 judge calls through `claude -p` (OAuth) instead of
+# the replay cassettes. Sandbox stays on cassettes because the
+# committed fixtures are sandbox-replay, not real Maven projects.
+#
+# Run from a workstation where `claude` is logged in:
+#
+#   python -m migration_evals.cli run --config configs/java8_17_claude_code.yaml
+#
+# Three Tier-3 judge calls land - one per fixture repo - with no
+# Anthropic API key required. Output goes to /tmp/runs/smoke_claude_code/
+# so the committed runs/ tree is not polluted.
+
+migration_id: java8_17
+agent_model: claude-haiku-4-5
+variant: smoke_claude_code
+output_root: /tmp/runs/smoke_claude_code
+model_cutoff_date: "2025-01-01"
+
+stages:
+  - compile
+  - tests
+  - judge
+
+repos:
+  - path: tests/fixtures/funnel_repos/repo01
+    seed: 1
+  - path: tests/fixtures/funnel_repos/repo02
+    seed: 2
+  - path: tests/fixtures/funnel_repos/repo03
+    seed: 3
+
+adapters:
+  # Sandbox stays on the cassette - the fixtures don't have real
+  # build/test commands worth running through Docker.
+  sandbox_cassette_dir: tests/fixtures/funnel_repos
+
+  # Tier-3 judge calls go through claude -p (OAuth, no API key).
+  anthropic_provider: claude_code
+  claude_timeout_s: 60
+
+stamps:
+  oracle_spec: docs/hypotheses_and_thresholds.md
+  recipe_spec: docs/hypotheses_and_thresholds.md
+  hypotheses: docs/hypotheses_and_thresholds.md

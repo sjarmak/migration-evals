@@ -116,6 +116,12 @@ class ClaudeCodeAdapter:
             "json",
             "--model",
             model,
+            # Tier-3 judge is a one-shot rubric call that should never reach
+            # for tools. Disallow common write/exec tools defensively so
+            # even a model that tries cannot touch the user's filesystem,
+            # git state, or shell.
+            "--disallowedTools",
+            "Bash,Edit,Write,NotebookEdit",
         ]
         if system_text:
             args.extend(["--system-prompt", system_text])
