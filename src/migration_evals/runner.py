@@ -45,7 +45,7 @@ from migration_evals.types import FailureClass
 LOG = logging.getLogger(__name__)
 
 # Tier -> CLI stage name, used when config enumerates stages.
-_STAGE_TO_TIER = {
+STAGE_TO_TIER = {
     "diff": "diff_valid",
     "compile": "compile_only",
     "tests": "tests",
@@ -86,11 +86,11 @@ def _resolve_stages_for_config(stages_cfg: Optional[Sequence[str]]) -> Optional[
         return None
     tiers: list[str] = []
     for stage in stages_cfg:
-        tier = _STAGE_TO_TIER.get(str(stage))
+        tier = STAGE_TO_TIER.get(str(stage))
         if tier is None:
             raise ValueError(
                 f"unknown stage {stage!r} in config; expected one of "
-                f"{sorted(_STAGE_TO_TIER)}"
+                f"{sorted(STAGE_TO_TIER)}"
             )
         tiers.append(tier)
     return tuple(tiers)

@@ -16,9 +16,12 @@ import json
 import subprocess
 import sys
 from pathlib import Path
+
 import pytest
 
 from migration_evals.changesets import FilesystemChangesetProvider
+
+# `seeded_remote` and the git helpers come from tests/conftest.py.
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 SCRIPT_PATH = _REPO_ROOT / "scripts" / "pull_changesets.py"
@@ -38,51 +41,12 @@ def pc():
     return _load_module()
 
 
-# -- tiny git helpers ------------------------------------------------------
-
-
 def _git(cmd: list[str], cwd: Path) -> str:
+    """Local git helper used for end-to-end assertions inside test bodies."""
     proc = subprocess.run(
         ["git", *cmd], cwd=cwd, capture_output=True, text=True, check=True
     )
     return proc.stdout.strip()
-
-
-def _make_seed_repo(root: Path) -> tuple[Path, str]:
-    """Init a working repo with a single file committed, return (path, sha)."""
-    src = root / "seed"
-    src.mkdir()
-    _git(["init", "-q", "-b", "main"], cwd=src)
-    _git(["config", "user.email", "test@example.com"], cwd=src)
-    _git(["config", "user.name", "test"], cwd=src)
-    (src / "foo.txt").write_text("hello\n")
-    _git(["add", "foo.txt"], cwd=src)
-    _git(["commit", "-q", "-m", "init"], cwd=src)
-    sha = _git(["rev-parse", "HEAD"], cwd=src)
-    return src, sha
-
-
-def _make_bare_remote(seed: Path, root: Path) -> str:
-    """Create a bare clone of ``seed`` and return a file:// URL."""
-    bare = root / "remote.git"
-    subprocess.run(
-        ["git", "clone", "--bare", "-q", str(seed), str(bare)], check=True
-    )
-    return f"file://{bare}"
-
-
-@pytest.fixture(scope="session")
-def seeded_remote(tmp_path_factory: pytest.TempPathFactory) -> tuple[str, str]:
-    """Session-scoped (file:// URL, commit_sha) for a one-commit bare repo.
-
-    The seed repo and bare clone are read-only after creation, so all
-    consumers can safely share them. Promoting this from per-test to
-    per-session avoids re-running ~5 git subprocesses per test.
-    """
-    root = tmp_path_factory.mktemp("seed-remote")
-    seed, sha = _make_seed_repo(root)
-    url = _make_bare_remote(seed, root)
-    return url, sha
 
 
 def _valid_patch_for_seed() -> str:
