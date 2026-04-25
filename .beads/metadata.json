@@ -1,7 +1,0 @@
-{
-  "database": "dolt",
-  "backend": "dolt",
-  "dolt_mode": "embedded",
-  "dolt_database": "migration_evals",
-  "project_id": "5b95cd42-c9a3-4ab8-b96f-c4d88ca2e0fe"
-}
