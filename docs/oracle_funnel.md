@@ -225,7 +225,26 @@ Tier 3 (`judge`) reaches the LLM via `adapters.anthropic_provider`:
 | Provider | Use when |
 | --- | --- |
 | `cassette` (default) | Replay-cassette runs / smoke tests; no API key required. |
-| `sdk` | Live calls against `anthropic`'s Messages API. Reads `$ANTHROPIC_API_KEY` if `anthropic_api_key` is not set. |
+| `claude_code` | Live calls via the local `claude -p` CLI using its OAuth credentials. No API key required; usage falls under the Claude Code subscription. Best for developer-machine runs. |
+| `sdk` | Live calls against `anthropic`'s Messages API. Reads `$ANTHROPIC_API_KEY` if `anthropic_api_key` is not set. Best for headless CI runners with provisioned API access. |
+
+`claude_code` provider config:
+
+```yaml
+adapters:
+  anthropic_provider: claude_code
+  claude_bin: claude          # default; absolute path also accepted
+  claude_timeout_s: 120       # per-call subprocess timeout (seconds)
+```
+
+This adapter flattens the system prompt into a single string and
+dispatches via `claude -p --output-format json`, then maps the envelope
+into the AnthropicAdapter shape the funnel expects. `cache_control`
+markers on system blocks are dropped - prompt caching for OAuth users
+is managed inside Claude Code, not via the paid-API marker. Cost
+reported on `adapter.total_cost_usd` is the API-equivalent cost from
+the JSON envelope; subscription billing is separate. Implementation:
+`src/migration_evals/adapters_claude_code.py`.
 
 SDK provider config (all keys optional):
 

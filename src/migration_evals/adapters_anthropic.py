@@ -297,6 +297,10 @@ def build_anthropic_adapter(
 
     * ``"cassette"`` (default) - the replay-cassette stand-in from
       :mod:`migration_evals.cli`. Smoke-config compatible.
+    * ``"claude_code"`` - dispatch via the ``claude -p`` CLI using the
+      user's Claude Code OAuth credentials. No API key required.
+      Optional keys: ``claude_bin`` (default ``claude``),
+      ``claude_timeout_s`` (default 120).
     * ``"sdk"`` - :class:`AnthropicSDKAdapter` wrapping ``anthropic``.
       Optional config keys: ``anthropic_api_key`` (else
       ``$ANTHROPIC_API_KEY``), ``anthropic_per_call_budget_usd``,
@@ -309,6 +313,18 @@ def build_anthropic_adapter(
         from migration_evals.cli import _CassetteAnthropicAdapter
 
         return _CassetteAnthropicAdapter(Path(repo_path).name, cassette_dir)
+
+    if provider == "claude_code":
+        from migration_evals.adapters_claude_code import (
+            DEFAULT_CLAUDE_BIN,
+            DEFAULT_TIMEOUT_S,
+            ClaudeCodeAdapter,
+        )
+
+        return ClaudeCodeAdapter(
+            claude_bin=adapters_cfg.get("claude_bin", DEFAULT_CLAUDE_BIN),
+            timeout_s=int(adapters_cfg.get("claude_timeout_s", DEFAULT_TIMEOUT_S)),
+        )
 
     if provider == "sdk":
         api_key = adapters_cfg.get("anthropic_api_key")
@@ -327,5 +343,6 @@ def build_anthropic_adapter(
         )
 
     raise ValueError(
-        f"unknown anthropic_provider {provider!r}; expected 'cassette' or 'sdk'"
+        f"unknown anthropic_provider {provider!r}; expected 'cassette', "
+        f"'claude_code', or 'sdk'"
     )
