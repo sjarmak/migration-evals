@@ -265,3 +265,32 @@ accumulated on `adapter.total_cost_usd`. Pre-call worst-case
 `anthropic_per_call_budget_usd`; if it would exceed the cap the call
 raises `BudgetExceededError` before any spend occurs. Implementation:
 `src/migration_evals/adapters_anthropic.py`.
+
+## Changeset providers (pulling agent diffs into the funnel)
+
+The funnel evaluates *agent-produced diffs*. Pulling those out of
+whatever artifact storage the agent pipeline uses is the job of a
+`ChangesetProvider` (`src/migration_evals/changesets.py`). Given an
+instance id, `provider.fetch(instance_id)` returns a `Changeset`
+carrying the base commit, unified diff, and provenance.
+
+| Provider | Use when |
+| --- | --- |
+| `filesystem` (default) | Pre-staged artifacts on local disk: `<root>/<instance_id>/{meta.json, patch.diff}`. Used by fixtures, tests, and manual re-staging. |
+| custom | S3-compatible object stores, blob storage, HTTP artifact servers, or any pipeline-specific backend — implement the `ChangesetProvider` Protocol alongside the consuming pipeline and call `register_provider(name, factory)` before `get_provider`. |
+
+`scripts/pull_changesets.py` is the thin CLI that walks a list of
+instance ids, clones each repo at its base commit, writes
+`<out-root>/<instance_id>/repo/patch.diff` + `meta.json`, and runs
+`git apply --check` on each. Example:
+
+```bash
+python scripts/pull_changesets.py \
+    --provider filesystem --config root=/tmp/staged \
+    --out-root /tmp/eval \
+    inst-1 inst-2
+```
+
+Exit codes: `0` all staged and applied cleanly; `1` CLI misuse; `2`
+one or more instances failed to stage or failed `git apply --check`
+(partial results left on disk for debugging).
