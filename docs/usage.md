@@ -47,6 +47,18 @@ python -m migration_evals.cli run \
 This path is preserved for the funnel integration test in
 `tests/test_funnel.py`.
 
+### Recipes and canonical stages
+
+Each migration ships a recipe template under `configs/recipes/<id>.yaml`
+(consumed by `scripts/run_eval.py`). Most recipes exercise tiers 0..2
+(`--stages diff,compile,tests`); a few intentionally cap at tier 1.
+
+| Recipe                          | Canonical stages         | Notes                                                                 |
+|---------------------------------|--------------------------|------------------------------------------------------------------------|
+| `java8_17`                      | `diff,compile,tests`     | mvn build + mvn test.                                                  |
+| `go_import_rewrite`             | `diff,compile,tests`     | `go build ./...` + `go test ./...`.                                    |
+| `dockerfile_base_image_bump`    | `diff,compile`           | tier 2 skipped; target test cmd varies per repo. test_cmd is a sentinel that errors if invoked. |
+
 ---
 
 ## `report`

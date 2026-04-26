@@ -1,0 +1,49 @@
+# Recipe template for the dockerfile_base_image_bump migration.
+#
+# Covers single-rule mechanical Dockerfile transformations: agent
+# rewrites a base image (FROM old_image:tag -> FROM new_image:tag).
+# Funnel signal:
+#   tier 0 (diff parses)        - real
+#   tier 1 (compile / docker build) - real; catches incompatible base
+#                                     images, missing system packages,
+#                                     entrypoint changes
+#   tier 2 (tests)              - INTENTIONALLY SKIPPED. The target
+#                                 application's test command varies per
+#                                 repo and forcing one here would push
+#                                 us toward per-target recipes that
+#                                 the starter does not need. Run this
+#                                 recipe with --stages diff,compile.
+#
+# The recipe.dockerfile is a docker-in-docker sandbox (we need dockerd
+# inside the trial container so build_cmd can `docker build .` against
+# the trial repo's Dockerfile).
+#
+# scripts/run_eval.py reads this template and synthesizes a per-instance
+# <repo>/meta.json from the union of these recipe fields and the
+# changeset-provider provenance (repo_url, commit_sha, workflow_id,
+# agent_runner, agent_model). The funnel's runner then loads that
+# meta.json and constructs a Recipe(dockerfile, build_cmd, test_cmd)
+# for the trial.
+#
+# Update the dockerfile / build_cmd here when the migration's canonical
+# build harness changes. test_cmd is a sentinel that loudly errors if
+# the tests stage is invoked - canonical stages are diff,compile.
+
+migration_id: dockerfile_base_image_bump
+model_cutoff_date: "2025-01-01"
+
+recipe:
+  dockerfile: |
+    FROM docker:24-dind-alpine
+    WORKDIR /work
+    COPY . .
+  build_cmd: "docker build ."
+  # tests tier intentionally not supported for this recipe; canonical
+  # invocation is --stages diff,compile. If invoked anyway, fail loud
+  # rather than silently passing.
+  test_cmd: 'echo "tests tier not supported for dockerfile_base_image_bump; rerun with --stages diff,compile" >&2; exit 2'
+
+stamps:
+  oracle_spec: docs/hypotheses_and_thresholds.md
+  recipe_spec: docs/hypotheses_and_thresholds.md
+  hypotheses: docs/hypotheses_and_thresholds.md

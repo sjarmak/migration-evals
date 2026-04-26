@@ -36,6 +36,7 @@ RECIPE_PATH = _REPO_ROOT / "configs" / "recipes" / "java8_17.yaml"
 RECIPE_CASES = [
     ("java8_17", "mvn", "FROM maven"),
     ("go_import_rewrite", "go build", "FROM golang"),
+    ("dockerfile_base_image_bump", "docker build", "FROM docker"),
 ]
 
 
