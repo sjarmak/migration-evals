@@ -119,18 +119,28 @@ traversal). `commit_sha` must be a 40-char lowercase hex SHA-1.
 
 If your artifacts are already served over HTTP:
 
-```python
-# Example: artifacts at https://artifacts.example.com/<id>/{meta.json,patch.diff}
+```bash
+# Artifacts at https://artifacts.example.com/<id>/{meta.json,patch.diff}
 python scripts/run_eval.py \
     --migration go_import_rewrite \
     --provider http \
-    --root unused \                # http provider ignores --root
-    ...
+    --base-url https://artifacts.example.com \
+    --http-header "Authorization: Bearer ${ARTIFACT_TOKEN}" \
+    --http-header "X-Trace: my-eval-run" \
+    --http-timeout-s 30 \
+    --http-max-bytes 67108864 \
+    --eval-root /tmp/eval \
+    --output-root runs/analysis/mig_go_import_rewrite/<your-runner>/poc \
+    --variant poc --stages diff \
+    inst-1 inst-2 inst-3
 ```
 
-Configure the base URL and headers via the YAML config (the driver
-forwards them). The `HTTPChangesetProvider` is a copy-modify reference
-template; for authenticated stores, fork it and override `_get_text`.
+Hardening built into the reference provider: cross-origin redirects
+are refused (would otherwise leak `--http-header` values to the
+redirect target), and per-response reads are capped at `--http-max-bytes`
+(default 64 MiB). For authenticated stores beyond static bearer
+tokens, fork `HTTPChangesetProvider` and override `_get_text` to plug
+in a session library (`requests`, `httpx`).
 
 ### 4c. Custom provider (S3, blob storage, GraphQL, ...)
 

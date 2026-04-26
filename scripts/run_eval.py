@@ -218,6 +218,47 @@ def emit_manifest(
     return manifest_path
 
 
+def _parse_http_headers(raw: list[str]) -> dict[str, str]:
+    headers: dict[str, str] = {}
+    for entry in raw:
+        if ":" not in entry:
+            raise ValueError(
+                f"--http-header expects KEY:VALUE, got {entry!r}"
+            )
+        key, _, value = entry.partition(":")
+        key = key.strip()
+        if not key:
+            raise ValueError(f"--http-header key is empty in {entry!r}")
+        headers[key] = value.strip()
+    return headers
+
+
+def _build_provider_config(args: argparse.Namespace) -> dict[str, Any]:
+    """Project the parsed CLI args into the config mapping the changeset
+    provider factory expects. Validates per-provider-required keys.
+    """
+    if args.provider == "filesystem":
+        if args.root is None:
+            raise ValueError("--provider filesystem requires --root")
+        return {"root": args.root}
+    if args.provider == "http":
+        if args.base_url is None:
+            raise ValueError("--provider http requires --base-url")
+        cfg: dict[str, Any] = {"base_url": args.base_url}
+        headers = _parse_http_headers(args.http_header)
+        if headers:
+            cfg["headers"] = headers
+        if args.http_timeout_s is not None:
+            cfg["timeout_s"] = args.http_timeout_s
+        if args.http_max_bytes is not None:
+            cfg["max_bytes"] = args.http_max_bytes
+        return cfg
+    # Unknown provider: leave config empty and let get_provider() name
+    # the error so the operator sees the canonical "known providers"
+    # list rather than a CLI-specific message.
+    return {}
+
+
 def _parse_stages(raw: str) -> list[str]:
     """Parse a comma-separated --stages value, validate against the runner's
     canonical stage map."""
@@ -239,6 +280,36 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--migration", required=True, help="Migration id (e.g. java8_17).")
     parser.add_argument("--provider", default="filesystem", help="ChangesetProvider name.")
     parser.add_argument("--root", default=None, help="Root dir for the filesystem provider.")
+    parser.add_argument(
+        "--base-url",
+        default=None,
+        help="Base URL for the http provider (e.g. https://artifacts.example.com).",
+    )
+    parser.add_argument(
+        "--http-header",
+        action="append",
+        default=[],
+        metavar="KEY:VALUE",
+        help=(
+            "Add a request header to every http-provider request. "
+            "Repeat for multiple headers."
+        ),
+    )
+    parser.add_argument(
+        "--http-timeout-s",
+        type=float,
+        default=None,
+        help="Per-request timeout for the http provider (default: 30.0s).",
+    )
+    parser.add_argument(
+        "--http-max-bytes",
+        type=int,
+        default=None,
+        help=(
+            "Per-response size cap for the http provider in bytes "
+            "(default: 64 MiB)."
+        ),
+    )
     parser.add_argument(
         "--eval-root",
         default="/tmp/eval",
@@ -304,12 +375,14 @@ def main(argv: list[str] | None = None) -> int:
         print("error: no instance ids supplied", file=sys.stderr)
         return 1
 
-    config: dict[str, str] = {}
-    if args.root is not None:
-        config["root"] = args.root
     try:
-        provider = get_provider(args.provider, config)
-    except (ValueError, KeyError) as exc:
+        provider_config = _build_provider_config(args)
+    except ValueError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    try:
+        provider = get_provider(args.provider, provider_config)
+    except (ValueError, KeyError, TypeError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
 

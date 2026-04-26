@@ -54,8 +54,13 @@ _REQUIRED_META_KEYS: tuple[str, ...] = (
 
 # Instance ids become path components and arrive from external pipelines;
 # constrain to a conservative alphanumeric + .-_ alphabet to defeat
-# traversal (`../`) and absolute-path inputs.
-_INSTANCE_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._\-]{0,127}$")
+# traversal (`../`) and absolute-path inputs. Both ends must be
+# alphanumeric so `.` and `-` cannot appear at the boundary (Windows
+# strips trailing dots from path components, which would otherwise let
+# `id.` and `id` collide).
+_INSTANCE_ID_RE = re.compile(
+    r"^[A-Za-z0-9](?:[A-Za-z0-9._\-]{0,126}[A-Za-z0-9])?$"
+)
 _SHA1_RE = re.compile(r"^[0-9a-f]{40}$")
 
 

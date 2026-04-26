@@ -141,6 +141,10 @@ def test_get_provider_filesystem_requires_root() -> None:
         "",
         "name with space",
         "name;rm-rf",
+        "trailing-dot.",
+        "trailing-hyphen-",
+        ".leading-dot",
+        "-leading-hyphen",
     ],
 )
 def test_validate_instance_id_rejects_unsafe(bad_id: str) -> None:

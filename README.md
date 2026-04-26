@@ -1,20 +1,28 @@
 # migration-evals
 
-A tiered-oracle funnel for evaluating automated code migrations.
-Per-repo trials cascade through cheap-to-expensive oracles
+Post-hoc grading framework for agent-produced **batch-change diffs**
+(one mechanical rule applied across many repos by an agent).
+Per-changeset trials cascade through cheap-to-expensive oracles
 (diff validity → compile → tests → AST conformance → LLM judge →
 invariants) and emit one stamped JSON result per trial. Aggregation
 produces a per-tier funnel breakdown, a contamination-split between
 repos created before and after the model's cutoff, and a correlation
 against merged-PR survival as a real-world anchor.
 
-The v1 implementation targets Java 8→17 (Maven) and ships with a
-Python 2→3 falsification probe. Adapter Protocols (sandbox, Anthropic,
-GitHub) decouple the funnel from any specific runtime: cassette-replay
-stand-ins ship in the box for offline use, and a Docker-backed sandbox
-plus an Anthropic SDK adapter are the drop-in live implementations.
-The schema generalizes to JS/TS, pinned-dep bumps, Spring Boot
-upgrades, and CVE fan-out without changes.
+Three migration shapes ship with worked recipes today: Java 8→17
+(Maven), Go import-path rewrites, and Dockerfile base-image bumps.
+Adapter Protocols (sandbox, Anthropic, changeset-provider) decouple
+the funnel from any specific runtime: cassette-replay stand-ins ship
+in the box for offline use; Docker-backed sandbox, Anthropic SDK,
+Claude-Code-OAuth, and HTTP-artifact-server adapters are the drop-in
+live implementations.
+
+**Non-goals.** The framework grades diffs that an agent has *already
+produced*. It does **not** evaluate issue understanding, repository
+exploration, retrieval, planning, or task-to-patch authoring — those
+are the domain of SWE-bench-shape benchmarks, not this one. The input
+is always `(repo, base_commit, patch.diff)`; how the agent got there
+is the agent pipeline's concern.
 
 The smoke path runs end-to-end from a fresh clone with no API keys,
 no Docker, and no integration with any specific agent platform. The

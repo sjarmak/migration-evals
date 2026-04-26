@@ -43,20 +43,15 @@ CI). A workstation with Docker available can run tier 1 via
 
 ## Reusing this example
 
-```bash
-mkdir -p /tmp/staged/canonical-dockerfile-1
-cp tests/fixtures/changeset_examples/dockerfile_base_image_bump/alpine_to_debian/{meta.json,patch.diff} \
-   /tmp/staged/canonical-dockerfile-1/
+> **The shipped `meta.json` is a template, not a runnable record.**
+> `commit_sha` is `0000…0000` and `repo_url` points at an `example.com`
+> placeholder. Both must be replaced with a real, clone-able remote
+> whose state matches `repo_state/` before `run_eval.py` can drive
+> this through the funnel against a live git remote. See the Go
+> fixture's README for a worked rewrite snippet; the same pattern
+> applies here. The shipped tests work around this by building a
+> seeded git remote from `repo_state/` in-process.
 
-python scripts/run_eval.py \
-    --migration dockerfile_base_image_bump \
-    --provider filesystem --root /tmp/staged \
-    --eval-root /tmp/eval \
-    --output-root runs/analysis/mig_dockerfile_base_image_bump/canonical/poc \
-    --variant poc \
-    --stages diff \
-    canonical-dockerfile-1
-```
-
-`tests/test_run_eval.py::test_canonical_dockerfile_bump_passes_tier0`
-exercises this flow against an in-process seeded remote.
+`tests/test_run_eval.py::test_canonical_example_passes_tier0[dockerfile_base_image_bump]`
+runs the flow against an in-process seeded remote without the manual
+rewrite — see `tests/conftest.py::seeded_dockerfile_bump_remote`.

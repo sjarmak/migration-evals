@@ -27,17 +27,39 @@ A workstation with Go installed can run the higher tiers via
 
 ## Reusing this example
 
-To run this through the funnel as if it were a real agent changeset,
-stage it into the filesystem-provider layout and invoke `run_eval`:
+> **The shipped `meta.json` is a template, not a runnable record.**
+> `commit_sha` is `0000…0000` and `repo_url` points at an `example.com`
+> placeholder. Both must be replaced with a real, clone-able remote
+> whose state matches `repo_state/` before `run_eval.py` can drive
+> this through the funnel against a live git remote. The shipped
+> tests work around this by building a seeded git remote from
+> `repo_state/` in-process.
+
+To run this through the funnel as if it were a real agent changeset:
 
 ```bash
-# Stage one synthetic instance pointing at this fixture.
-mkdir -p /tmp/staged/canonical-go-1
-cp tests/fixtures/changeset_examples/go_import_rewrite/ghodss_to_sigs/{meta.json,patch.diff} \
-   /tmp/staged/canonical-go-1/
-# (Replace meta.json's repo_url + commit_sha with a clone-able remote
-# whose state matches repo_state/.)
+# 1. Build a clone-able remote from repo_state/. One way:
+git init --bare /tmp/canonical-go-remote.git
+git -C /tmp/canonical-go-remote.git config user.email a@b.c
+git -C /tmp/canonical-go-remote.git config user.name t
+git clone /tmp/canonical-go-remote.git /tmp/canonical-go-seed
+cp -r tests/fixtures/changeset_examples/go_import_rewrite/ghodss_to_sigs/repo_state/. \
+      /tmp/canonical-go-seed/
+git -C /tmp/canonical-go-seed add -A
+git -C /tmp/canonical-go-seed commit -m init
+git -C /tmp/canonical-go-seed push origin HEAD:main
+SHA=$(git -C /tmp/canonical-go-seed rev-parse HEAD)
 
+# 2. Stage the changeset, REWRITING the placeholders.
+mkdir -p /tmp/staged/canonical-go-1
+cp tests/fixtures/changeset_examples/go_import_rewrite/ghodss_to_sigs/patch.diff \
+   /tmp/staged/canonical-go-1/
+jq --arg url file:///tmp/canonical-go-remote.git --arg sha "$SHA" \
+   '.repo_url = $url | .commit_sha = $sha' \
+   tests/fixtures/changeset_examples/go_import_rewrite/ghodss_to_sigs/meta.json \
+   > /tmp/staged/canonical-go-1/meta.json
+
+# 3. Drive the funnel.
 python scripts/run_eval.py \
     --migration go_import_rewrite \
     --provider filesystem --root /tmp/staged \
@@ -48,5 +70,6 @@ python scripts/run_eval.py \
     canonical-go-1
 ```
 
-`tests/test_run_eval.py::test_canonical_go_import_rewrite_passes_tier0`
-exercises this flow against an in-process seeded remote.
+`tests/test_run_eval.py::test_canonical_example_passes_tier0[go_import_rewrite]`
+runs the same flow against an in-process seeded remote without the
+manual rewrite — see `tests/conftest.py::seeded_go_import_remote`.

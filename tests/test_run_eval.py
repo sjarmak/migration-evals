@@ -397,6 +397,71 @@ def test_canonical_example_passes_tier0(
     assert payload["migration_id"] == migration_id
 
 
+# -- provider config plumbing ---------------------------------------------
+
+
+def test_build_provider_config_filesystem_requires_root(re_mod) -> None:
+    parser = re_mod._build_parser()
+    args = parser.parse_args(
+        [
+            "--migration", "java8_17",
+            "--provider", "filesystem",
+            "--output-root", "/tmp/out",
+            "--variant", "v",
+            "x",
+        ]
+    )
+    with pytest.raises(ValueError, match="filesystem requires --root"):
+        re_mod._build_provider_config(args)
+
+
+def test_build_provider_config_http_requires_base_url(re_mod) -> None:
+    parser = re_mod._build_parser()
+    args = parser.parse_args(
+        [
+            "--migration", "java8_17",
+            "--provider", "http",
+            "--output-root", "/tmp/out",
+            "--variant", "v",
+            "x",
+        ]
+    )
+    with pytest.raises(ValueError, match="http requires --base-url"):
+        re_mod._build_provider_config(args)
+
+
+def test_build_provider_config_http_threads_through_optionals(re_mod) -> None:
+    parser = re_mod._build_parser()
+    args = parser.parse_args(
+        [
+            "--migration", "java8_17",
+            "--provider", "http",
+            "--base-url", "https://artifacts.example.com",
+            "--http-header", "Authorization: Bearer xyz",
+            "--http-header", "X-Trace: abc",
+            "--http-timeout-s", "5.0",
+            "--http-max-bytes", "1024",
+            "--output-root", "/tmp/out",
+            "--variant", "v",
+            "x",
+        ]
+    )
+    cfg = re_mod._build_provider_config(args)
+    assert cfg == {
+        "base_url": "https://artifacts.example.com",
+        "headers": {"Authorization": "Bearer xyz", "X-Trace": "abc"},
+        "timeout_s": 5.0,
+        "max_bytes": 1024,
+    }
+
+
+def test_parse_http_headers_rejects_malformed(re_mod) -> None:
+    with pytest.raises(ValueError, match="KEY:VALUE"):
+        re_mod._parse_http_headers(["malformed-no-colon"])
+    with pytest.raises(ValueError, match="key is empty"):
+        re_mod._parse_http_headers([": no-key"])
+
+
 def test_main_unknown_migration_returns_exit_1(re_mod, tmp_path: Path) -> None:
     rc = re_mod.main(
         [
