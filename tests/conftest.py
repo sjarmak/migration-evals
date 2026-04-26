@@ -7,10 +7,15 @@ Promote new fixtures here when they're consumed by 2+ test modules.
 
 from __future__ import annotations
 
+import shutil
 import subprocess
 from pathlib import Path
+from typing import Callable
 
 import pytest
+
+_REPO_ROOT = Path(__file__).resolve().parent.parent
+_CHANGESET_EXAMPLES = _REPO_ROOT / "tests" / "fixtures" / "changeset_examples"
 
 
 def _git(cmd: list[str], cwd: Path) -> str:
@@ -20,16 +25,31 @@ def _git(cmd: list[str], cwd: Path) -> str:
     return proc.stdout.strip()
 
 
-def _make_seed_repo(root: Path) -> tuple[Path, str]:
-    """Init a one-commit git repo at ``root/seed`` and return (path, sha)."""
+def _populate_default(seed: Path) -> None:
+    (seed / "foo.txt").write_text("hello\n")
+
+
+def _make_seed_repo(
+    root: Path,
+    *,
+    populate: Callable[[Path], None] = _populate_default,
+    label: str = "init",
+) -> tuple[Path, str]:
+    """Init a one-commit git repo at ``root/seed`` and return (path, sha).
+
+    ``populate(seed)`` writes the initial files; the default writes
+    ``foo.txt: hello\\n`` so the legacy fixture stays untouched. Pass a
+    custom populator (e.g. ``lambda d: shutil.copytree(src, d, ...)``)
+    to seed from a directory tree.
+    """
     src = root / "seed"
     src.mkdir()
     _git(["init", "-q", "-b", "main"], cwd=src)
     _git(["config", "user.email", "test@example.com"], cwd=src)
     _git(["config", "user.name", "test"], cwd=src)
-    (src / "foo.txt").write_text("hello\n")
-    _git(["add", "foo.txt"], cwd=src)
-    _git(["commit", "-q", "-m", "init"], cwd=src)
+    populate(src)
+    _git(["add", "-A"], cwd=src)
+    _git(["commit", "-q", "-m", label], cwd=src)
     sha = _git(["rev-parse", "HEAD"], cwd=src)
     return src, sha
 
@@ -56,38 +76,21 @@ def seeded_remote(tmp_path_factory: pytest.TempPathFactory) -> tuple[str, str]:
     return url, sha
 
 
-def _seed_remote_from_dir(
-    tmp_path_factory: pytest.TempPathFactory, src_dir: Path, label: str
+def _seed_from_example(
+    tmp_path_factory: pytest.TempPathFactory,
+    example_subpath: str,
+    label: str,
 ) -> tuple[str, str]:
-    """Build a seeded git remote whose initial commit mirrors ``src_dir``.
-
-    Returns ``(file_url, commit_sha)``. The initial commit contains a
-    verbatim copy of ``src_dir``'s contents; the bare clone served at
-    ``file_url`` is read-only after creation.
-    """
+    """Build a seeded bare remote from a committed canonical example."""
+    src_dir = _CHANGESET_EXAMPLES / example_subpath / "repo_state"
     root = tmp_path_factory.mktemp(f"seed-{label}")
-    seed = root / "seed"
-    seed.mkdir()
-    _git(["init", "-q", "-b", "main"], cwd=seed)
-    _git(["config", "user.email", "test@example.com"], cwd=seed)
-    _git(["config", "user.name", "test"], cwd=seed)
-    # Mirror the directory tree into the seed repo.
-    for path in src_dir.rglob("*"):
-        rel = path.relative_to(src_dir)
-        dest = seed / rel
-        if path.is_dir():
-            dest.mkdir(parents=True, exist_ok=True)
-        else:
-            dest.parent.mkdir(parents=True, exist_ok=True)
-            dest.write_bytes(path.read_bytes())
-    _git(["add", "-A"], cwd=seed)
-    _git(["commit", "-q", "-m", f"init {label}"], cwd=seed)
-    sha = _git(["rev-parse", "HEAD"], cwd=seed)
+    seed, sha = _make_seed_repo(
+        root,
+        populate=lambda dst: shutil.copytree(src_dir, dst, dirs_exist_ok=True),
+        label=f"init {label}",
+    )
     url = _make_bare_remote(seed, root)
     return url, sha
-
-
-_REPO_ROOT = Path(__file__).resolve().parent.parent
 
 
 @pytest.fixture(scope="session")
@@ -95,16 +98,11 @@ def seeded_go_import_remote(
     tmp_path_factory: pytest.TempPathFactory,
 ) -> tuple[str, str]:
     """File:// URL + SHA for the canonical Go-import-rewrite example."""
-    src = (
-        _REPO_ROOT
-        / "tests"
-        / "fixtures"
-        / "changeset_examples"
-        / "go_import_rewrite"
-        / "ghodss_to_sigs"
-        / "repo_state"
+    return _seed_from_example(
+        tmp_path_factory,
+        "go_import_rewrite/ghodss_to_sigs",
+        "go-import-rewrite",
     )
-    return _seed_remote_from_dir(tmp_path_factory, src, "go-import-rewrite")
 
 
 @pytest.fixture(scope="session")
@@ -112,13 +110,8 @@ def seeded_dockerfile_bump_remote(
     tmp_path_factory: pytest.TempPathFactory,
 ) -> tuple[str, str]:
     """File:// URL + SHA for the canonical Dockerfile-base-image-bump example."""
-    src = (
-        _REPO_ROOT
-        / "tests"
-        / "fixtures"
-        / "changeset_examples"
-        / "dockerfile_base_image_bump"
-        / "alpine_to_debian"
-        / "repo_state"
+    return _seed_from_example(
+        tmp_path_factory,
+        "dockerfile_base_image_bump/alpine_to_debian",
+        "dockerfile-bump",
     )
-    return _seed_remote_from_dir(tmp_path_factory, src, "dockerfile-bump")

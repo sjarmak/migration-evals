@@ -90,7 +90,7 @@ if str(_SCRIPTS) not in sys.path:
 from migration_evals.changesets import get_provider  # noqa: E402
 from migration_evals.runner import STAGE_TO_TIER, run_from_config  # noqa: E402
 
-import pull_changesets  # noqa: E402  (sibling script; reuses stage_instance)
+import pull_changesets  # noqa: E402
 
 
 def load_recipe_template(path: Path) -> dict[str, Any]:
@@ -198,21 +198,18 @@ def emit_manifest(
 ) -> Path:
     """Write ``<output_root>/manifest.json`` from the recipe's stamps block.
 
-    The publication gate (``migration_evals.publication_gate``) reads this
-    file to look up the committed spec files whose sha256 must match each
-    trial's stored stamps. Stamp paths in the recipe yaml are expected to
-    be repo-root-relative (e.g. ``configs/oracle_spec.yaml``); the manifest
-    rewrites them as paths relative to ``output_root`` so the committed
-    manifest stays portable across machines.
+    Spec paths are rewritten as paths relative to ``output_root`` so the
+    committed manifest stays portable across machines.
     """
     stamps = template["stamps"]
     keys = ["oracle_spec", "recipe_spec", "hypotheses"]
     if "prompt_spec" in stamps:
         keys.append("prompt_spec")
+    output_resolved = output_root.resolve()
     manifest: dict[str, str] = {}
     for key in keys:
         spec_abs = (repo_root / stamps[key]).resolve()
-        manifest[key] = os.path.relpath(spec_abs, output_root.resolve())
+        manifest[key] = os.path.relpath(spec_abs, output_resolved)
     manifest_path = output_root / "manifest.json"
     manifest_path.write_text(
         json.dumps(manifest, indent=2, sort_keys=True) + "\n",

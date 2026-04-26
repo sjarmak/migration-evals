@@ -27,6 +27,7 @@ from migration_evals.changesets import (
     HTTPChangesetProvider,
     get_provider,
     register_provider,
+    unregister_provider,
     validate_commit_sha,
     validate_instance_id,
 )
@@ -317,10 +318,7 @@ def test_register_provider_round_trip() -> None:
         assert isinstance(provider, _Stub)
         assert sentinel_root == ["/tmp/whatever"]
     finally:
-        # Pop the registration so other tests see a clean registry. The
-        # test suite must not leak side effects between modules.
-        from migration_evals.changesets import _PROVIDER_FACTORIES
-        _PROVIDER_FACTORIES.pop("test_stub_provider", None)
+        unregister_provider("test_stub_provider")
 
 
 def test_register_provider_rejects_empty_name() -> None:

@@ -35,6 +35,8 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Mapping, Protocol, runtime_checkable
+from urllib.error import HTTPError, URLError
+from urllib.request import Request, urlopen
 
 _REQUIRED_META_KEYS: tuple[str, ...] = (
     "repo_url",
@@ -80,6 +82,40 @@ class Changeset:
     agent_model: str
 
 
+def _build_changeset(
+    instance_id: str, meta_text: str, patch_diff: str, *, source: str
+) -> Changeset:
+    """Parse meta-bytes, validate the required keys, and return a Changeset.
+
+    Shared between the filesystem and HTTP providers so a third backend
+    only has to bring `meta_text` and `patch_diff` to the table.
+    `source` is woven into error messages to point operators at the
+    failing locator (filesystem path or URL).
+    """
+    try:
+        meta = json.loads(meta_text)
+    except json.JSONDecodeError as exc:
+        raise ValueError(
+            f"meta.json for {instance_id!r} at {source} is not valid JSON: {exc}"
+        ) from exc
+    for key in _REQUIRED_META_KEYS:
+        if key not in meta:
+            raise KeyError(
+                f"meta.json for {instance_id!r} is missing required key {key!r}"
+            )
+    commit_sha = str(meta["commit_sha"])
+    validate_commit_sha(commit_sha)
+    return Changeset(
+        instance_id=instance_id,
+        repo_url=str(meta["repo_url"]),
+        commit_sha=commit_sha,
+        patch_diff=patch_diff,
+        workflow_id=str(meta["workflow_id"]),
+        agent_runner=str(meta["agent_runner"]),
+        agent_model=str(meta["agent_model"]),
+    )
+
+
 @runtime_checkable
 class ChangesetProvider(Protocol):
     """Minimum surface for fetching an agent changeset by instance id."""
@@ -114,22 +150,11 @@ class FilesystemChangesetProvider:
             raise FileNotFoundError(f"missing meta.json for {instance_id!r} at {meta_path}")
         if not patch_path.is_file():
             raise FileNotFoundError(f"missing patch.diff for {instance_id!r} at {patch_path}")
-        meta = json.loads(meta_path.read_text(encoding="utf-8"))
-        for key in _REQUIRED_META_KEYS:
-            if key not in meta:
-                raise KeyError(
-                    f"meta.json for {instance_id!r} is missing required key {key!r}"
-                )
-        commit_sha = str(meta["commit_sha"])
-        validate_commit_sha(commit_sha)
-        return Changeset(
-            instance_id=instance_id,
-            repo_url=str(meta["repo_url"]),
-            commit_sha=commit_sha,
+        return _build_changeset(
+            instance_id,
+            meta_text=meta_path.read_text(encoding="utf-8"),
             patch_diff=patch_path.read_text(encoding="utf-8"),
-            workflow_id=str(meta["workflow_id"]),
-            agent_runner=str(meta["agent_runner"]),
-            agent_model=str(meta["agent_model"]),
+            source=str(meta_path),
         )
 
 
@@ -169,39 +194,14 @@ class HTTPChangesetProvider:
         validate_instance_id(instance_id)
         meta_url = f"{self._base_url}/{instance_id}/meta.json"
         patch_url = f"{self._base_url}/{instance_id}/patch.diff"
-
-        meta_text = self._get_text(meta_url, what="meta.json")
-        try:
-            meta = json.loads(meta_text)
-        except json.JSONDecodeError as exc:
-            raise ValueError(
-                f"meta.json for {instance_id!r} at {meta_url} is not valid JSON: {exc}"
-            ) from exc
-        for key in _REQUIRED_META_KEYS:
-            if key not in meta:
-                raise KeyError(
-                    f"meta.json for {instance_id!r} is missing required key {key!r}"
-                )
-        commit_sha = str(meta["commit_sha"])
-        validate_commit_sha(commit_sha)
-        patch_diff = self._get_text(patch_url, what="patch.diff")
-        return Changeset(
-            instance_id=instance_id,
-            repo_url=str(meta["repo_url"]),
-            commit_sha=commit_sha,
-            patch_diff=patch_diff,
-            workflow_id=str(meta["workflow_id"]),
-            agent_runner=str(meta["agent_runner"]),
-            agent_model=str(meta["agent_model"]),
+        return _build_changeset(
+            instance_id,
+            meta_text=self._get_text(meta_url, what="meta.json"),
+            patch_diff=self._get_text(patch_url, what="patch.diff"),
+            source=meta_url,
         )
 
     def _get_text(self, url: str, *, what: str) -> str:
-        # Local imports keep the module importable on environments where
-        # urllib is unavailable (vanishingly rare but free defensive
-        # win) and signal that HTTP is not used by the filesystem path.
-        from urllib.error import HTTPError, URLError
-        from urllib.request import Request, urlopen
-
         req = Request(url, headers=self._headers)
         try:
             with urlopen(req, timeout=self._timeout_s) as resp:  # noqa: S310
@@ -239,6 +239,16 @@ def register_provider(
     if not isinstance(name, str) or not name:
         raise ValueError("provider name must be a non-empty string")
     _PROVIDER_FACTORIES[name] = factory
+
+
+def unregister_provider(name: str) -> None:
+    """Remove a previously-registered ``ChangesetProvider`` factory.
+
+    No-op when ``name`` is not registered. Intended for tests that
+    register a fixture provider and want to leave the registry clean
+    for the next test, and for hot-reload scenarios.
+    """
+    _PROVIDER_FACTORIES.pop(name, None)
 
 
 def _filesystem_factory(config: Mapping[str, Any]) -> ChangesetProvider:
