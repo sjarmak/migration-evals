@@ -59,6 +59,10 @@ class FunnelResult:
     final_verdict: OracleVerdict
     total_cost_usd: float
     failure_class: Optional[str]
+    # Side-channel verdicts emitted by the batch-change quality oracles
+    # (dsm). They run alongside the cascade and do NOT short-circuit it -
+    # ``passed=False`` here is informational, not a tier failure.
+    quality_verdicts: Tuple[Tuple[str, OracleVerdict], ...] = ()
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize to a JSON-friendly dict for result.json inclusion."""
@@ -80,6 +84,15 @@ class FunnelResult:
             },
             "total_cost_usd": self.total_cost_usd,
             "failure_class": self.failure_class,
+            "quality_verdicts": [
+                {
+                    "tier": name,
+                    "passed": verdict.passed,
+                    "cost_usd": verdict.cost_usd,
+                    "details": dict(verdict.details),
+                }
+                for name, verdict in self.quality_verdicts
+            ],
         }
 
 

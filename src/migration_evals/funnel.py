@@ -172,11 +172,15 @@ def run_funnel(
         verdicts.append((tier_name, verdict))
         total_cost += float(verdict.cost_usd)
         if not verdict.passed:
+            quality_verdicts = _run_quality_oracles_safe(
+                repo_path, adapters
+            )
             return FunnelResult(
                 per_tier_verdict=tuple(verdicts),
                 final_verdict=verdict,
                 total_cost_usd=round(total_cost, 6),
                 failure_class=_failure_class_for(tier_name),
+                quality_verdicts=quality_verdicts,
             )
 
     if not verdicts:
@@ -196,12 +200,44 @@ def run_funnel(
         )
 
     last_name, last_verdict = verdicts[-1]
+    quality_verdicts = _run_quality_oracles_safe(repo_path, adapters)
     return FunnelResult(
         per_tier_verdict=tuple(verdicts),
         final_verdict=last_verdict,
         total_cost_usd=round(total_cost, 6),
         failure_class=None,
+        quality_verdicts=quality_verdicts,
     )
+
+
+def _run_quality_oracles_safe(
+    repo_path: Path, adapters: Mapping[str, Any]
+) -> tuple[tuple[str, OracleVerdict], ...]:
+    """Run the batch-change quality oracles when the recipe configures one.
+
+    A trial without ``adapters['quality_spec']`` skips the quality phase
+    entirely (empty tuple, backward-compatible). Quality oracles are
+    informational - we deliberately swallow any unexpected exception from
+    them rather than letting a bug in a quality oracle break a trial that
+    the cascade already produced a verdict for.
+    """
+    quality_spec = adapters.get("quality_spec")
+    if quality_spec is None:
+        return ()
+    # Local import to avoid a circular module load (oracles.quality
+    # transitively imports verdict.py which imports nothing from funnel,
+    # but keeping it deferred makes the lazy boundary explicit).
+    from migration_evals.oracles.quality import run_quality_oracles
+    try:
+        return run_quality_oracles(repo_path, quality_spec)
+    except Exception as exc:  # pragma: no cover - defensive
+        skip = OracleVerdict(
+            tier="quality_phase",
+            passed=True,
+            cost_usd=0.0,
+            details={"skipped": True, "reason": f"quality_phase_error: {exc}"},
+        )
+        return (("quality_phase", skip),)
 
 
 __all__ = [

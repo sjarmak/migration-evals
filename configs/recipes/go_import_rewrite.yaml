@@ -37,3 +37,19 @@ stamps:
   # `tests/fixtures/calibration/go_import_rewrite/`. Required by the
   # publication gate under `--require-calibration`.
   calibration_report: configs/recipes/go_import_rewrite.calibration.json
+
+# Batch-change quality oracles (dsm). All fields optional; an oracle
+# whose inputs are missing emits a `skipped` verdict instead of a
+# false-positive pass. The committed ground-truth + sed pattern below
+# matches the canonical import-rewrite that the calibration corpus
+# exercises (good_001_simple_rename); other shapes can opt out by
+# omitting `quality:` from their per-instance meta.json.
+quality:
+  ground_truth_diff: configs/recipes/go_import_rewrite.ground_truth.diff
+  touched_paths_allowlist:
+    - "**/*.go"
+  baseline_tool: sed
+  baseline_pattern:
+    match: 'github\.com/foo/oldpkg'
+    replace: 'github.com/foo/newpkg'
+    files: '*.go'

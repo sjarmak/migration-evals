@@ -126,6 +126,102 @@ def _funnel_counts(results: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]
     return rows
 
 
+_QUALITY_ORACLE_ORDER: tuple[str, ...] = (
+    "diff_minimality",
+    "idempotency",
+    "baseline_comparison",
+)
+
+
+def _quality_aggregate(
+    results: Sequence[Mapping[str, Any]],
+) -> list[dict[str, Any]]:
+    """Aggregate the dsm batch-change quality oracles per tier.
+
+    For each oracle in fixed order:
+
+    - ``n_observed``: trials whose ``funnel.quality_verdicts`` includes
+      this oracle (always equals ``n_trials`` once the oracle is wired
+      into a config, but degrades gracefully on legacy result.json files
+      that pre-date the dsm field).
+    - ``n_passed``: trials where the oracle reported ``passed=True``.
+    - ``n_skipped``: trials where the oracle returned a ``skipped=True``
+      detail (no ground truth / no baseline_pattern / etc.). Skipped
+      trials count toward ``n_observed`` and ``n_passed`` because the
+      verdict is informational.
+    - ``mean_diff_size_ratio`` / ``mean_over_edit_pct`` /
+      ``mean_files_overlap``: only emitted for ``diff_minimality`` and
+      only over the trials where the metric is non-null.
+    - ``baseline_passed_rate``: only for ``baseline_comparison``;
+      fraction of trials where ``baseline_passed=True`` (i.e. the
+      baseline tool would have produced the same migration).
+    """
+    rows: list[dict[str, Any]] = []
+    for tier in _QUALITY_ORACLE_ORDER:
+        n_observed = 0
+        n_passed = 0
+        n_skipped = 0
+        ratios: list[float] = []
+        over_edits: list[float] = []
+        overlaps: list[float] = []
+        baseline_passes = 0
+        for row in results:
+            verdicts = (row.get("funnel") or {}).get("quality_verdicts") or []
+            for verdict in verdicts:
+                if not isinstance(verdict, Mapping):
+                    continue
+                if verdict.get("tier") != tier:
+                    continue
+                n_observed += 1
+                if bool(verdict.get("passed")):
+                    n_passed += 1
+                details = verdict.get("details") or {}
+                if details.get("skipped") is True:
+                    n_skipped += 1
+                if tier == "diff_minimality":
+                    ratio = details.get("diff_size_ratio")
+                    if isinstance(ratio, (int, float)):
+                        ratios.append(float(ratio))
+                    over = details.get("over_edit_pct")
+                    if isinstance(over, (int, float)):
+                        over_edits.append(float(over))
+                    overlap = details.get("touched_files_overlap")
+                    if isinstance(overlap, (int, float)):
+                        overlaps.append(float(overlap))
+                if tier == "baseline_comparison":
+                    if details.get("baseline_passed") is True:
+                        baseline_passes += 1
+                break
+        row_out: dict[str, Any] = {
+            "tier_name": tier,
+            "n_observed": n_observed,
+            "n_passed": n_passed,
+            "n_skipped": n_skipped,
+            "pass_rate": (
+                round(n_passed / n_observed, 6) if n_observed > 0 else None
+            ),
+        }
+        if tier == "diff_minimality":
+            row_out["mean_diff_size_ratio"] = (
+                round(sum(ratios) / len(ratios), 6) if ratios else None
+            )
+            row_out["mean_over_edit_pct"] = (
+                round(sum(over_edits) / len(over_edits), 6)
+                if over_edits else None
+            )
+            row_out["mean_touched_files_overlap"] = (
+                round(sum(overlaps) / len(overlaps), 6)
+                if overlaps else None
+            )
+        if tier == "baseline_comparison":
+            row_out["baseline_passed_rate"] = (
+                round(baseline_passes / n_observed, 6)
+                if n_observed > 0 else None
+            )
+        rows.append(row_out)
+    return rows
+
+
 def _failure_class_counts(results: Sequence[Mapping[str, Any]]) -> dict[str, int]:
     counts: dict[str, int] = {}
     for row in results:
@@ -215,6 +311,58 @@ def _format_stamps(stamps: Mapping[str, str]) -> str:
     )
 
 
+def _format_quality_table(rows: Sequence[Mapping[str, Any]]) -> str:
+    """Render the dsm 'Batch-change quality' section.
+
+    The columns are deliberately wide enough to surface both the headline
+    pass-rate and the underlying numerator, so a reader can tell whether
+    a 0% pass-rate means "0 of 200 trials passed" or "0 of 0 observed".
+    """
+    if not rows or all(r["n_observed"] == 0 for r in rows):
+        return "- (no quality verdicts emitted; recipe declares no `quality:` block)"
+    lines: list[str] = []
+    for row in rows:
+        n_obs = row["n_observed"]
+        if n_obs == 0:
+            lines.append(f"- **{row['tier_name']}**: not observed")
+            continue
+        skipped_note = (
+            f" (skipped: {row['n_skipped']})" if row["n_skipped"] else ""
+        )
+        pass_rate = row.get("pass_rate")
+        pass_str = (
+            f"{pass_rate:.4f}" if pass_rate is not None else "n/a"
+        )
+        lines.append(
+            f"- **{row['tier_name']}**: pass {row['n_passed']}/{n_obs} "
+            f"({pass_str}){skipped_note}"
+        )
+        if row["tier_name"] == "diff_minimality":
+            mean_ratio = row.get("mean_diff_size_ratio")
+            mean_over = row.get("mean_over_edit_pct")
+            mean_overlap = row.get("mean_touched_files_overlap")
+            if mean_ratio is not None:
+                lines.append(
+                    f"  - mean diff_size_ratio: {mean_ratio:.4f}"
+                )
+            if mean_over is not None:
+                lines.append(
+                    f"  - mean over_edit_pct: {mean_over:.4f}"
+                )
+            if mean_overlap is not None:
+                lines.append(
+                    f"  - mean touched_files_overlap: {mean_overlap:.4f}"
+                )
+        if row["tier_name"] == "baseline_comparison":
+            baseline_rate = row.get("baseline_passed_rate")
+            if baseline_rate is not None:
+                lines.append(
+                    f"  - baseline_passed rate: {baseline_rate:.4f} "
+                    "(1.0 means baseline ≡ agent on every trial)"
+                )
+    return "\n".join(lines)
+
+
 def _format_failure_classes(counts: Mapping[str, int]) -> str:
     if not counts:
         return "- (no failures)"
@@ -241,6 +389,7 @@ def format_report(data: Mapping[str, Any]) -> str:
     gold_md = _format_gold_section(data.get("gold_anchor"))
     stamps_md = _format_stamps(data["stamps"])
     failure_md = _format_failure_classes(data["failure_classes"])
+    quality_md = _format_quality_table(data.get("quality") or [])
 
     parts = [
         "# Migration Eval Funnel Report",
@@ -274,6 +423,10 @@ def format_report(data: Mapping[str, Any]) -> str:
                 "",
                 failure_md,
                 "",
+                "## 6. Batch-change quality",
+                "",
+                quality_md,
+                "",
             ]
         )
     else:
@@ -286,6 +439,10 @@ def format_report(data: Mapping[str, Any]) -> str:
                 "## 4. Failure Class Breakdown",
                 "",
                 failure_md,
+                "",
+                "## 5. Batch-change quality",
+                "",
+                quality_md,
                 "",
             ]
         )
@@ -332,6 +489,7 @@ def build_report_data(
         "gold_anchor": gold_report,
         "stamps": stamps,
         "failure_classes": failure_classes,
+        "quality": _quality_aggregate(results),
     }
 
 

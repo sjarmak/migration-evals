@@ -39,6 +39,7 @@ from migration_evals.cli import (
 )
 from migration_evals.failure_class import classify as classify_failure
 from migration_evals.funnel import run_funnel
+from migration_evals.quality_spec import QualitySpec
 from migration_evals.pre_reg import stamp_result
 from migration_evals.types import FailureClass
 
@@ -250,6 +251,8 @@ def run_from_config(config_path: Path) -> int:
     adapters_cfg = raw_cfg.get("adapters") or {}
     sandbox_cassette_dir = _as_path(adapters_cfg.get("sandbox_cassette_dir"))
     anthropic_cassette_dir = _as_path(adapters_cfg.get("anthropic_cassette_dir"))
+    quality_cfg = raw_cfg.get("quality") or {}
+    quality_spec = QualitySpec.from_dict(quality_cfg)
 
     stamps_cfg = raw_cfg.get("stamps") or {}
     oracle_spec = _as_path(stamps_cfg.get("oracle_spec"))
@@ -287,6 +290,7 @@ def run_from_config(config_path: Path) -> int:
                 cassette_dir=anthropic_cassette_dir,
             ),
             "enable_daikon": False,
+            "quality_spec": quality_spec,
         }
         trial_started_at = datetime.now(tz=timezone.utc).isoformat()
         funnel_result = run_funnel(
