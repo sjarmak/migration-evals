@@ -1,0 +1,112 @@
+"""Sandbox-hardening policy for the Docker adapter (7gu).
+
+Codex review #3 surfaced that ``adapters_docker.py`` was running the
+trial repo read-write, with a default network namespace, no dropped
+capabilities, ``no-new-privileges`` off, and the container running as
+root. For a system that executes arbitrary repo code (recipe
+``build_cmd`` / ``test_cmd``), that is a real exfiltration and host-
+interaction surface.
+
+This module ships the policy. :class:`SandboxPolicy` holds the knobs
+the docker adapter consults; the defaults are deliberately the most
+restrictive useful set:
+
+- ``network = "none"`` — no network namespace; recipes that legitimately
+  need a registry pull opt in via ``network = "pull"`` plus an explicit
+  ``network_allowlist``.
+- ``cap_drop = ("ALL",)`` plus an empty ``cap_add`` — recipes opt back
+  in to a specific capability if the build genuinely needs it.
+- ``no_new_privileges = True`` — no setuid escalation inside the
+  container.
+- ``user = "1000:1000"`` — rootless inside the container.
+- ``repo_mount_readonly = True`` — the source tree is mounted ``ro``;
+  build output writes go to ``scratch_dir`` (a separate writable mount).
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Any, Mapping, Optional, Tuple
+
+ALLOWED_NETWORK_MODES = ("none", "pull")
+DEFAULT_USER = "1000:1000"
+DEFAULT_SCRATCH = "/scratch"
+
+
+@dataclass(frozen=True)
+class SandboxPolicy:
+    """Per-trial sandbox-hardening configuration.
+
+    Construct from a YAML block under ``adapters.sandbox_policy:`` (or
+    inside a recipe template) via :meth:`from_dict`. Defaults are
+    locked-down; opting in to a looser stance is always explicit.
+    """
+
+    network: str = "none"
+    network_allowlist: Tuple[str, ...] = ()
+    cap_drop: Tuple[str, ...] = ("ALL",)
+    cap_add: Tuple[str, ...] = ()
+    no_new_privileges: bool = True
+    user: Optional[str] = DEFAULT_USER
+    repo_mount_readonly: bool = True
+    scratch_dir: str = DEFAULT_SCRATCH
+
+    def __post_init__(self) -> None:
+        if self.network not in ALLOWED_NETWORK_MODES:
+            raise ValueError(
+                f"network must be one of {ALLOWED_NETWORK_MODES}; "
+                f"got {self.network!r}"
+            )
+        if self.network == "pull" and not self.network_allowlist:
+            raise ValueError(
+                "network='pull' requires a non-empty network_allowlist "
+                "(e.g. ['registry-1.docker.io', 'proxy.golang.org'])"
+            )
+        if self.network == "none" and self.network_allowlist:
+            raise ValueError(
+                "network_allowlist must be empty when network='none'"
+            )
+
+    @classmethod
+    def hardened_default(cls) -> "SandboxPolicy":
+        """The locked-down preset every trial gets unless overridden."""
+        return cls()
+
+    @classmethod
+    def from_dict(
+        cls, data: Mapping[str, Any] | None
+    ) -> "SandboxPolicy":
+        if not data:
+            return cls.hardened_default()
+        kwargs: dict[str, Any] = {}
+        if "network" in data:
+            kwargs["network"] = str(data["network"])
+        if "network_allowlist" in data:
+            allowlist = data["network_allowlist"] or ()
+            kwargs["network_allowlist"] = tuple(str(x) for x in allowlist)
+        if "cap_drop" in data:
+            kwargs["cap_drop"] = tuple(
+                str(x) for x in (data["cap_drop"] or ())
+            )
+        if "cap_add" in data:
+            kwargs["cap_add"] = tuple(
+                str(x) for x in (data["cap_add"] or ())
+            )
+        if "no_new_privileges" in data:
+            kwargs["no_new_privileges"] = bool(data["no_new_privileges"])
+        if "user" in data:
+            value = data["user"]
+            kwargs["user"] = str(value) if value else None
+        if "repo_mount_readonly" in data:
+            kwargs["repo_mount_readonly"] = bool(data["repo_mount_readonly"])
+        if "scratch_dir" in data:
+            kwargs["scratch_dir"] = str(data["scratch_dir"])
+        return cls(**kwargs)
+
+
+__all__ = [
+    "ALLOWED_NETWORK_MODES",
+    "DEFAULT_SCRATCH",
+    "DEFAULT_USER",
+    "SandboxPolicy",
+]

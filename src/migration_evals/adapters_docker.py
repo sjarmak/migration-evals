@@ -29,8 +29,11 @@ and :mod:`migration_evals.runner` share one decision point.
 from __future__ import annotations
 
 import subprocess
+import tempfile
 from pathlib import Path
 from typing import Any, Mapping, Optional
+
+from migration_evals.sandbox_policy import SandboxPolicy
 
 __all__ = ["DockerSandboxAdapter", "build_sandbox_adapter"]
 
@@ -42,18 +45,26 @@ DEFAULT_WORKDIR = "/work"
 class DockerSandboxAdapter:
     """SandboxAdapter that runs commands inside a real Docker container.
 
+    Hardened by default (7gu): ``--network none``, ``--cap-drop=ALL``,
+    ``--security-opt=no-new-privileges``, ``--user 1000:1000``, repo
+    mount ``ro``, and a writable scratch volume that build commands use
+    for output. Override per-trial via ``SandboxPolicy``.
+
     Parameters
     ----------
     repo_path
-        Host path of the checked-out repo; mounted read-write at
-        ``workdir`` inside the container so build artefacts (``target/``,
-        ``node_modules/``, etc.) persist for the duration of the run.
+        Host path of the checked-out repo. Mounted read-only at
+        ``workdir`` by default (writes redirected to the per-sandbox
+        scratch volume). Set ``policy.repo_mount_readonly = False`` to
+        restore the legacy read-write mount.
     docker_bin
-        Name of the docker CLI on ``$PATH``. Override for test doubles
-        (``docker.io``, ``podman``, etc.).
+        Name of the docker CLI on ``$PATH``.
     workdir
         Absolute path inside the container used as the mount point and
         the working directory for every ``exec`` call.
+    policy
+        :class:`SandboxPolicy` controlling the security flags. Defaults
+        to :meth:`SandboxPolicy.hardened_default`.
     """
 
     def __init__(
@@ -62,11 +73,17 @@ class DockerSandboxAdapter:
         *,
         docker_bin: str = DEFAULT_DOCKER_BIN,
         workdir: str = DEFAULT_WORKDIR,
+        policy: Optional[SandboxPolicy] = None,
     ) -> None:
         self._repo_path = Path(repo_path).resolve()
         self._docker_bin = docker_bin
         self._workdir = workdir
+        self._policy = policy or SandboxPolicy.hardened_default()
+        # Per-sandbox scratch directories (host path) so writes from a
+        # read-only repo mount have somewhere to land. Cleaned up in
+        # destroy_sandbox.
         self._containers: dict[str, str] = {}
+        self._scratch_dirs: dict[str, Path] = {}
 
     # ------------------------------------------------------------------
     # SandboxAdapter Protocol
@@ -79,17 +96,48 @@ class DockerSandboxAdapter:
         env: Optional[Mapping[str, str]] = None,
         cassette: Optional[Any] = None,
     ) -> str:
-        """Start a detached container and return its id."""
+        """Start a detached, hardened container and return its id."""
+        scratch_host = Path(tempfile.mkdtemp(prefix="mig-eval-scratch-"))
+        repo_mount_flag = (
+            f"{self._repo_path}:{self._workdir}:ro"
+            if self._policy.repo_mount_readonly
+            else f"{self._repo_path}:{self._workdir}"
+        )
         args = [
             self._docker_bin,
             "run",
             "-d",
             "--rm",
             "-v",
-            f"{self._repo_path}:{self._workdir}",
+            repo_mount_flag,
+            "-v",
+            f"{scratch_host}:{self._policy.scratch_dir}",
             "-w",
             self._workdir,
         ]
+        # Network isolation - 'none' means no network namespace; 'pull'
+        # means default bridge with the recipe's allowlist enforced
+        # outside the container (DNS / proxy config), so this layer
+        # records the allowlist on the container as a label for
+        # auditability.
+        if self._policy.network == "none":
+            args.extend(["--network", "none"])
+        elif self._policy.network == "pull":
+            for host in self._policy.network_allowlist:
+                args.extend(
+                    ["--label", f"migration-eval.network-allowlist={host}"]
+                )
+        # Privilege isolation.
+        if self._policy.no_new_privileges:
+            args.extend(["--security-opt", "no-new-privileges:true"])
+        # Capability set: drop everything by default, optionally add
+        # back the specific capabilities the recipe needs.
+        for cap in self._policy.cap_drop:
+            args.extend(["--cap-drop", cap])
+        for cap in self._policy.cap_add:
+            args.extend(["--cap-add", cap])
+        if self._policy.user:
+            args.extend(["--user", self._policy.user])
         for key, value in (env or {}).items():
             args.extend(["-e", f"{key}={value}"])
         args.extend([image, "tail", "-f", "/dev/null"])
@@ -99,15 +147,29 @@ class DockerSandboxAdapter:
                 args, check=True, capture_output=True, text=True
             )
         except subprocess.CalledProcessError as exc:
+            # Don't leak the scratch dir if docker run failed before
+            # the container ever started.
+            self._cleanup_scratch(scratch_host)
             raise RuntimeError(
                 f"docker run failed (exit={exc.returncode}): {exc.stderr.strip()}"
             ) from exc
 
         container_id = completed.stdout.strip()
         if not container_id:
+            self._cleanup_scratch(scratch_host)
             raise RuntimeError("docker run produced empty container id")
         self._containers[container_id] = container_id
+        self._scratch_dirs[container_id] = scratch_host
         return container_id
+
+    @staticmethod
+    def _cleanup_scratch(path: Path) -> None:
+        """Best-effort recursive removal of a scratch directory."""
+        try:
+            import shutil
+            shutil.rmtree(path, ignore_errors=True)
+        except Exception:  # pragma: no cover - defensive
+            pass
 
     def exec(
         self,
@@ -151,9 +213,12 @@ class DockerSandboxAdapter:
         }
 
     def destroy_sandbox(self, sandbox_id: str) -> None:
-        """Force-remove the container; a best-effort operation."""
+        """Force-remove the container and clean up scratch."""
         container_id = self._containers.pop(sandbox_id, None)
+        scratch = self._scratch_dirs.pop(sandbox_id, None)
         if container_id is None:
+            if scratch is not None:
+                self._cleanup_scratch(scratch)
             return
         # check=False: a missing-container error from Docker should not
         # mask the caller's real outcome.
@@ -162,6 +227,8 @@ class DockerSandboxAdapter:
             capture_output=True,
             check=False,
         )
+        if scratch is not None:
+            self._cleanup_scratch(scratch)
 
 
 # ---------------------------------------------------------------------------
@@ -199,10 +266,13 @@ def build_sandbox_adapter(
         return _CassetteSandboxAdapter(Path(repo_path).name, cassette_dir)
 
     if provider == "docker":
+        policy_cfg = adapters_cfg.get("sandbox_policy")
+        policy = SandboxPolicy.from_dict(policy_cfg)
         return DockerSandboxAdapter(
             repo_path,
             docker_bin=adapters_cfg.get("docker_bin", DEFAULT_DOCKER_BIN),
             workdir=adapters_cfg.get("docker_workdir", DEFAULT_WORKDIR),
+            policy=policy,
         )
 
     raise ValueError(
