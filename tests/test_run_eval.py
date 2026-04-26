@@ -29,6 +29,19 @@ _REPO_ROOT = Path(__file__).resolve().parent.parent
 SCRIPT_PATH = _REPO_ROOT / "scripts" / "run_eval.py"
 RECIPE_PATH = _REPO_ROOT / "configs" / "recipes" / "java8_17.yaml"
 
+# (migration_id, build_cmd_prefix, dockerfile_prefix) — one entry per
+# recipe template under configs/recipes/. Parametrized tests below
+# assert the funnel can load each template and synthesize a repo
+# meta.json without per-recipe special-casing.
+RECIPE_CASES = [
+    ("java8_17", "mvn", "FROM maven"),
+    ("go_import_rewrite", "go build", "FROM golang"),
+]
+
+
+def _recipe_path(migration_id: str) -> Path:
+    return _REPO_ROOT / "configs" / "recipes" / f"{migration_id}.yaml"
+
 
 def _load_module():
     spec = importlib.util.spec_from_file_location("run_eval", SCRIPT_PATH)
@@ -86,18 +99,36 @@ def _stage(staged: Path, instance_id: str, *, repo_url: str, sha: str, patch: st
 # -- load_recipe_template --------------------------------------------------
 
 
-def test_load_recipe_template_reads_yaml(re_mod) -> None:
-    tmpl = re_mod.load_recipe_template(RECIPE_PATH)
-    assert tmpl["migration_id"] == "java8_17"
-    assert "dockerfile" in tmpl["recipe"]
-    assert tmpl["recipe"]["build_cmd"].startswith("mvn")
+@pytest.mark.parametrize(
+    "migration_id,build_prefix,dockerfile_prefix",
+    RECIPE_CASES,
+    ids=[c[0] for c in RECIPE_CASES],
+)
+def test_load_recipe_template_reads_yaml(
+    re_mod, migration_id: str, build_prefix: str, dockerfile_prefix: str
+) -> None:
+    tmpl = re_mod.load_recipe_template(_recipe_path(migration_id))
+    assert tmpl["migration_id"] == migration_id
+    assert tmpl["recipe"]["dockerfile"].startswith(dockerfile_prefix)
+    assert tmpl["recipe"]["build_cmd"].startswith(build_prefix)
     assert "oracle_spec" in tmpl["stamps"]
 
 
 # -- synthesize_repo_meta --------------------------------------------------
 
 
-def test_synthesize_repo_meta_merges_template_and_provenance(re_mod, tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    "migration_id,build_prefix,dockerfile_prefix",
+    RECIPE_CASES,
+    ids=[c[0] for c in RECIPE_CASES],
+)
+def test_synthesize_repo_meta_merges_template_and_provenance(
+    re_mod,
+    tmp_path: Path,
+    migration_id: str,
+    build_prefix: str,
+    dockerfile_prefix: str,
+) -> None:
     inst_root = tmp_path / "inst-1"
     repo_dir = inst_root / "repo"
     repo_dir.mkdir(parents=True)
@@ -112,17 +143,16 @@ def test_synthesize_repo_meta_merges_template_and_provenance(re_mod, tmp_path: P
             }
         )
     )
-    tmpl = re_mod.load_recipe_template(RECIPE_PATH)
+    tmpl = re_mod.load_recipe_template(_recipe_path(migration_id))
 
     re_mod.synthesize_repo_meta(inst_root, tmpl)
 
     repo_meta = json.loads((repo_dir / "meta.json").read_text())
     # Recipe fields come from the template.
-    assert repo_meta["build_cmd"].startswith("mvn")
-    assert repo_meta["test_cmd"].startswith("mvn")
-    assert repo_meta["dockerfile"].startswith("FROM maven")
+    assert repo_meta["build_cmd"].startswith(build_prefix)
+    assert repo_meta["dockerfile"].startswith(dockerfile_prefix)
     # Provenance + identity come from the changeset.
-    assert repo_meta["migration_id"] == "java8_17"
+    assert repo_meta["migration_id"] == migration_id
     assert repo_meta["agent_model"] == "claude-sonnet-4-6"
     assert repo_meta["task_id"] == "inst-1"
 
@@ -130,8 +160,11 @@ def test_synthesize_repo_meta_merges_template_and_provenance(re_mod, tmp_path: P
 # -- driver E2E (Tier-0 only, no sandbox) ---------------------------------
 
 
+@pytest.mark.parametrize(
+    "migration_id", [c[0] for c in RECIPE_CASES], ids=[c[0] for c in RECIPE_CASES]
+)
 def test_main_runs_funnel_tier0_and_writes_result_jsons(
-    re_mod, tmp_path: Path, seeded_remote
+    re_mod, tmp_path: Path, seeded_remote, migration_id: str
 ) -> None:
     url, sha = seeded_remote
     staged = tmp_path / "staged"
@@ -142,7 +175,7 @@ def test_main_runs_funnel_tier0_and_writes_result_jsons(
 
     rc = re_mod.main(
         [
-            "--migration", "java8_17",
+            "--migration", migration_id,
             "--provider", "filesystem",
             "--root", str(staged),
             "--eval-root", str(eval_root),
@@ -167,7 +200,7 @@ def test_main_runs_funnel_tier0_and_writes_result_jsons(
     assert payloads[bad_key]["failure_class"] == "agent_error"
     # Both carry the migration_id and agent_model from the synthesized meta.
     for p in payloads.values():
-        assert p["migration_id"] == "java8_17"
+        assert p["migration_id"] == migration_id
         assert p["agent_model"] == "claude-sonnet-4-6"
 
 

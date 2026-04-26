@@ -1,0 +1,34 @@
+# Recipe template for the go_import_rewrite migration.
+#
+# Covers the most common shape of mechanical Go transformations: the
+# agent rewrites import paths across the module (deprecated library
+# swap, vanity URL change, vendored-module relocation). Tier signal is
+# high because import surgery commonly breaks compilation in non-obvious
+# ways (transitive imports, type assertions across packages, vendored
+# copies that no longer match the rewritten path).
+#
+# scripts/run_eval.py reads this template and synthesizes a per-instance
+# <repo>/meta.json from the union of these recipe fields and the
+# changeset-provider provenance (repo_url, commit_sha, workflow_id,
+# agent_runner, agent_model). The funnel's runner then loads that
+# meta.json and constructs a Recipe(dockerfile, build_cmd, test_cmd)
+# for the trial.
+#
+# Update the dockerfile / build_cmd / test_cmd here when the migration's
+# canonical build harness changes.
+
+migration_id: go_import_rewrite
+model_cutoff_date: "2025-01-01"
+
+recipe:
+  dockerfile: |
+    FROM golang:1.22
+    WORKDIR /work
+    COPY . .
+  build_cmd: "go build ./..."
+  test_cmd: "go test ./..."
+
+stamps:
+  oracle_spec: docs/hypotheses_and_thresholds.md
+  recipe_spec: docs/hypotheses_and_thresholds.md
+  hypotheses: docs/hypotheses_and_thresholds.md
