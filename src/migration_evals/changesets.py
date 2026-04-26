@@ -36,7 +36,13 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Mapping, Protocol, runtime_checkable
 from urllib.error import HTTPError, URLError
-from urllib.request import Request, urlopen
+from urllib.parse import urlsplit
+from urllib.request import (
+    HTTPRedirectHandler,
+    OpenerDirector,
+    Request,
+    build_opener,
+)
 
 _REQUIRED_META_KEYS: tuple[str, ...] = (
     "repo_url",
@@ -158,6 +164,41 @@ class FilesystemChangesetProvider:
         )
 
 
+_HTTP_DEFAULT_MAX_BYTES = 64 * 1024 * 1024
+
+
+class _SameOriginRedirectHandler(HTTPRedirectHandler):
+    """Reject redirects that change scheme or host.
+
+    Default urllib follows http(s) redirects across hosts, which would
+    leak the operator's request headers (potentially including auth
+    tokens) to whatever host the redirect points at. The reference HTTP
+    provider does not need redirect support for its layout, so we
+    refuse them outright.
+    """
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):  # type: ignore[no-untyped-def]
+        old_split = urlsplit(req.full_url)
+        new_split = urlsplit(newurl)
+        if (old_split.scheme, old_split.hostname, old_split.port) != (
+            new_split.scheme,
+            new_split.hostname,
+            new_split.port,
+        ):
+            raise HTTPError(
+                req.full_url,
+                code,
+                f"refusing redirect to different origin: {newurl}",
+                headers,
+                fp,
+            )
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+def _build_http_opener() -> OpenerDirector:
+    return build_opener(_SameOriginRedirectHandler())
+
+
 class HTTPChangesetProvider:
     """Reference HTTP ``ChangesetProvider``.
 
@@ -176,7 +217,10 @@ class HTTPChangesetProvider:
     fork this class and override :meth:`_get_text` to plug in a session
     library (``requests``, ``httpx``) with cookies, OAuth tokens, etc.
 
-    Standard library only — no new dependencies.
+    Hardening: cross-origin redirects are refused (would otherwise leak
+    headers to a different host) and per-response reads are capped at
+    ``max_bytes`` (default 64 MiB) to defend against accidental or
+    hostile unbounded payloads. Standard library only.
     """
 
     def __init__(
@@ -185,10 +229,13 @@ class HTTPChangesetProvider:
         *,
         timeout_s: float = 30.0,
         headers: Mapping[str, str] | None = None,
+        max_bytes: int = _HTTP_DEFAULT_MAX_BYTES,
     ) -> None:
         self._base_url = base_url.rstrip("/")
         self._timeout_s = timeout_s
         self._headers = dict(headers or {})
+        self._max_bytes = max_bytes
+        self._opener = _build_http_opener()
 
     def fetch(self, instance_id: str) -> Changeset:
         validate_instance_id(instance_id)
@@ -204,8 +251,11 @@ class HTTPChangesetProvider:
     def _get_text(self, url: str, *, what: str) -> str:
         req = Request(url, headers=self._headers)
         try:
-            with urlopen(req, timeout=self._timeout_s) as resp:  # noqa: S310
-                return resp.read().decode("utf-8")
+            with self._opener.open(req, timeout=self._timeout_s) as resp:  # noqa: S310
+                # Read one byte beyond the cap so we can tell whether
+                # the response was truncated rather than silently
+                # returning a truncated body.
+                data = resp.read(self._max_bytes + 1)
         except HTTPError as exc:
             if exc.code == 404:
                 raise FileNotFoundError(
@@ -216,6 +266,11 @@ class HTTPChangesetProvider:
             raise ConnectionError(
                 f"could not fetch {what} at {url}: {exc.reason}"
             ) from exc
+        if len(data) > self._max_bytes:
+            raise ValueError(
+                f"{what} at {url} exceeded max_bytes={self._max_bytes}"
+            )
+        return data.decode("utf-8")
 
 
 # Provider registry. Built-ins are registered at module import; external
@@ -264,10 +319,12 @@ def _http_factory(config: Mapping[str, Any]) -> ChangesetProvider:
     headers = config.get("headers")
     if headers is not None and not isinstance(headers, Mapping):
         raise TypeError("http provider 'headers' must be a mapping if supplied")
+    max_bytes = int(config.get("max_bytes", _HTTP_DEFAULT_MAX_BYTES))
     return HTTPChangesetProvider(
         config["base_url"],
         timeout_s=timeout_s,
         headers=headers,
+        max_bytes=max_bytes,
     )
 
 

@@ -44,10 +44,17 @@ jobs:
 
       - name: Run publication gate on each changed run
         if: steps.runs.outputs.runs != ''
+        env:
+          # Route the step output through an env var so its content is
+          # never interpolated by GitHub's expression engine into the
+          # bash script body. A PR that adds a path with shell
+          # metacharacters (the run-dir grep matches anything except
+          # '/') would otherwise inject into this script.
+          CHANGED_RUNS: ${{ steps.runs.outputs.runs }}
         run: |
           while IFS= read -r run_dir; do
             [ -z "$run_dir" ] && continue
             echo "::group::gate: $run_dir"
             python -m migration_evals.publication_gate --check-run "$run_dir"
             echo "::endgroup::"
-          done <<< "${{ steps.runs.outputs.runs }}"
+          done <<< "$CHANGED_RUNS"

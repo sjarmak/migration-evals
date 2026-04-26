@@ -292,6 +292,110 @@ def test_get_provider_returns_http_impl() -> None:
     assert isinstance(provider, HTTPChangesetProvider)
 
 
+# -- HTTP hardening: size cap + cross-origin redirects ----------------------
+
+
+def test_http_provider_response_size_cap_rejects_oversized(tmp_path: Path) -> None:
+    """A response larger than max_bytes raises ValueError, not silent truncation."""
+    inst_dir = tmp_path / "inst-big"
+    inst_dir.mkdir()
+    (inst_dir / "meta.json").write_text(json.dumps(_META_FIXTURE))
+    # patch.diff bigger than the small cap we configure below.
+    (inst_dir / "patch.diff").write_text("X" * 8192)
+
+    with _serve_directory(tmp_path) as base_url:
+        provider = HTTPChangesetProvider(
+            base_url, timeout_s=5.0, max_bytes=4096
+        )
+        with pytest.raises(ValueError, match="exceeded max_bytes=4096"):
+            provider.fetch("inst-big")
+
+
+def test_http_provider_response_size_cap_accepts_at_boundary(tmp_path: Path) -> None:
+    """A response exactly at the cap succeeds (off-by-one guard)."""
+    inst_dir = tmp_path / "inst-tight"
+    inst_dir.mkdir()
+    (inst_dir / "meta.json").write_text(json.dumps(_META_FIXTURE))
+    body = "X" * 4096
+    (inst_dir / "patch.diff").write_text(body)
+
+    with _serve_directory(tmp_path) as base_url:
+        provider = HTTPChangesetProvider(
+            base_url, timeout_s=5.0, max_bytes=4096
+        )
+        cs = provider.fetch("inst-tight")
+    assert cs.patch_diff == body
+
+
+def _serve_redirect_to(target_url: str) -> "tuple[str, threading.Event]":
+    """Start an http.server that 302-redirects every GET to target_url.
+
+    Returns ``(base_url, shutdown_event)``. Caller sets shutdown_event
+    after the test to stop the server.
+    """
+    shutdown = threading.Event()
+
+    class _Redirector(SimpleHTTPRequestHandler):
+        def do_GET(self) -> None:  # noqa: N802
+            self.send_response(302)
+            self.send_header("Location", target_url)
+            self.end_headers()
+
+        def log_message(self, format: str, *args) -> None:  # noqa: A002
+            return
+
+    server = HTTPServer(("127.0.0.1", 0), _Redirector)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    host, port = server.server_address[:2]
+
+    def _stop() -> None:
+        shutdown.wait()
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+
+    threading.Thread(target=_stop, daemon=True).start()
+    return f"http://{host}:{port}", shutdown
+
+
+def test_http_provider_refuses_cross_origin_redirect(tmp_path: Path) -> None:
+    """A redirect that changes host must be refused, not silently followed.
+
+    Default urllib follows http(s) redirects across hosts; the
+    reference provider blocks that to prevent leaking operator-supplied
+    headers (auth tokens, etc.) to a different origin.
+    """
+    # Stand up a real upstream the redirector points at, but on a
+    # different port so it counts as a different origin.
+    upstream_root = tmp_path / "upstream"
+    upstream_root.mkdir()
+    _stage_instance(upstream_root, "inst-target")
+    with _serve_directory(upstream_root) as upstream_base:
+        redirector_base, shutdown = _serve_redirect_to(
+            f"{upstream_base}/inst-target/meta.json"
+        )
+        try:
+            provider = HTTPChangesetProvider(redirector_base, timeout_s=5.0)
+            # The redirect handler raises HTTPError, which urllib
+            # bubbles up; we don't translate it specifically because
+            # cross-origin redirects are an integration mistake, not a
+            # user-recoverable runtime condition.
+            with pytest.raises(Exception):
+                provider.fetch("inst-target")
+        finally:
+            shutdown.set()
+
+
+def test_http_factory_threads_max_bytes_through_config() -> None:
+    """get_provider('http', {'max_bytes': N}) must reach the provider."""
+    provider = get_provider(
+        "http", {"base_url": "http://example.invalid", "max_bytes": 1024}
+    )
+    assert isinstance(provider, HTTPChangesetProvider)
+    assert provider._max_bytes == 1024  # noqa: SLF001 — test-only inspection
+
+
 # -- register_provider registry --------------------------------------------
 
 
