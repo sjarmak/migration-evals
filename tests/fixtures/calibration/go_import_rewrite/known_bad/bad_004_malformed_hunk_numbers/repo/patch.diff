@@ -1,0 +1,9 @@
+--- a/main.go
++++ b/main.go
+@@ -abc,5 +xyz,5 @@
+ import (
+ 	"fmt"
+ 
+-	"github.com/foo/oldpkg"
++	"github.com/foo/newpkg"
+ )

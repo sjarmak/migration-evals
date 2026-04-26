@@ -1,0 +1,8 @@
++++ b/main.go
+@@ -3,5 +3,5 @@
+ import (
+ 	"fmt"
+ 
+-	"github.com/foo/oldpkg"
++	"github.com/foo/newpkg"
+ )

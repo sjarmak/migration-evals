@@ -1,0 +1,6 @@
+{
+  "fixture_id": "bad_002_line_count_mismatch",
+  "expected_outcome": "reject",
+  "expected_reject_tier": "diff_valid",
+  "notes": "Hunk @@ count claims 3 lines but body contains 4"
+}

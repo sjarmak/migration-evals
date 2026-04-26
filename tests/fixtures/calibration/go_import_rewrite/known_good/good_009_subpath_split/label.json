@@ -1,0 +1,5 @@
+{
+  "fixture_id": "good_009_subpath_split",
+  "expected_outcome": "pass_all",
+  "notes": "Subpackage promoted to its own module"
+}

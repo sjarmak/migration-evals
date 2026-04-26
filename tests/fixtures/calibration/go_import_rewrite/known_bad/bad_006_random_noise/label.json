@@ -1,0 +1,6 @@
+{
+  "fixture_id": "bad_006_random_noise",
+  "expected_outcome": "reject",
+  "expected_reject_tier": "diff_valid",
+  "notes": "Plain text, no diff structure"
+}

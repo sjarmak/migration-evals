@@ -1,0 +1,5 @@
+{
+  "fixture_id": "good_010_dash_to_underscore",
+  "expected_outcome": "pass_all",
+  "notes": "Conventional dash replaced with underscore"
+}

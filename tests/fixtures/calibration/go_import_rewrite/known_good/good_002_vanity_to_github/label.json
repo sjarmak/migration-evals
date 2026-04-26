@@ -1,0 +1,5 @@
+{
+  "fixture_id": "good_002_vanity_to_github",
+  "expected_outcome": "pass_all",
+  "notes": "Vanity URL replaced with explicit github source"
+}

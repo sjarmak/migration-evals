@@ -30,6 +30,26 @@ metric defined below, and state a direction of effect.
 | failure_classifier_precision | >=        | 0.90  | 2026-04-24   |
 | infra_error_rate_delta       | >=        | 0.05  | 2026-04-24   |
 
+## Calibration thresholds (per tier)
+
+Per-tier maximum false-positive / false-negative rates for the oracle
+funnel. A published headline rate must come from a recipe whose committed
+`calibration.json` (produced by `scripts/calibrate.py` against the corpus
+under `tests/fixtures/calibration/<migration_id>/{known_good,known_bad}/`)
+satisfies every threshold listed here. The publication gate enforces this
+under `--require-calibration` (m1w).
+
+A numeric `max_fpr` / `max_fnr` requires the calibration's actual rate to
+be `<=` the threshold; a `null` actual rate (no observations for that
+tier) does not satisfy a numeric threshold. An empty cell means no
+constraint for that rate. Tier-1 / tier-2 calibration requires Docker and
+is deferred to a follow-up bead; the table currently constrains tier 0
+only.
+
+| tier         | max_fpr | max_fnr |
+|--------------|---------|---------|
+| diff_valid   | 0.05    | 0.10    |
+
 ## Post-hoc changes
 
 Post-hoc changes to hypotheses or thresholds are **not permitted** as

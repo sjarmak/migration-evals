@@ -1,0 +1,5 @@
+{
+  "fixture_id": "good_001_simple_rename",
+  "expected_outcome": "pass_all",
+  "notes": "Simple package rename within the same org"
+}

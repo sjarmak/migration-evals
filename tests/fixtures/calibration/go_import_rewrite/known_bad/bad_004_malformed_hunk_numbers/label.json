@@ -1,0 +1,6 @@
+{
+  "fixture_id": "bad_004_malformed_hunk_numbers",
+  "expected_outcome": "reject",
+  "expected_reject_tier": "diff_valid",
+  "notes": "Hunk numbers are non-numeric (abc / xyz)"
+}

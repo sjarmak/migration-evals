@@ -1,0 +1,5 @@
+{
+  "fixture_id": "good_004_host_change",
+  "expected_outcome": "pass_all",
+  "notes": "Project moved from GitHub to GitLab hosting"
+}

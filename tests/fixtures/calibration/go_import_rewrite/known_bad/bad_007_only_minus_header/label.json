@@ -1,0 +1,6 @@
+{
+  "fixture_id": "bad_007_only_minus_header",
+  "expected_outcome": "reject",
+  "expected_reject_tier": "diff_valid",
+  "notes": "Has --- but missing +++ header"
+}

@@ -1,0 +1,6 @@
+{
+  "fixture_id": "bad_009_broken_context_prefix",
+  "expected_outcome": "reject",
+  "expected_reject_tier": "diff_valid",
+  "notes": "Hunk body line missing the +/-/space prefix"
+}

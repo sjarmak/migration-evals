@@ -32,3 +32,8 @@ stamps:
   oracle_spec: configs/oracle_spec.yaml
   recipe_spec: configs/recipes/go_import_rewrite.yaml
   hypotheses: docs/hypotheses_and_thresholds.md
+  # Per-recipe oracle calibration (m1w). Produced by
+  # `scripts/calibrate.py` against
+  # `tests/fixtures/calibration/go_import_rewrite/`. Required by the
+  # publication gate under `--require-calibration`.
+  calibration_report: configs/recipes/go_import_rewrite.calibration.json

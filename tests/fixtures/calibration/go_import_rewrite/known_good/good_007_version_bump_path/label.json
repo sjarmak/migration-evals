@@ -1,0 +1,5 @@
+{
+  "fixture_id": "good_007_version_bump_path",
+  "expected_outcome": "pass_all",
+  "notes": "Major version bump encoded in path (semver imports)"
+}

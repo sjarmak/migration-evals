@@ -4,14 +4,18 @@
 Fails CI if any ``result.json`` under a run directory is missing an
 ``oracle_spec_sha`` / ``recipe_spec_sha`` / ``pre_reg_sha`` stamp, or if any
 stored stamp does not match the sha256 of the committed spec file it refers
-to.
+to. With ``--require-calibration``, the gate also refuses runs whose
+recipe lacks a committed ``calibration.json`` or whose per-tier FPR / FNR
+exceeds the thresholds declared in ``docs/hypotheses_and_thresholds.md``.
 
 Manifest contract
 -----------------
 Each run directory must contain a ``manifest.json`` with the keys
 ``oracle_spec``, ``recipe_spec``, and ``hypotheses``. Values are filesystem
 paths (absolute, or relative to the run directory) pointing at the committed
-files whose SHAs must match the per-trial stamps.
+files whose SHAs must match the per-trial stamps. The manifest may also
+declare ``calibration_report`` (path to the per-recipe calibration.json);
+the gate enforces it under ``--require-calibration``.
 
 Usage
 -----
@@ -31,14 +35,21 @@ import json
 import sys
 from pathlib import Path
 
+from migration_evals.calibration import (
+    CalibrationReport,
+    load_calibration_thresholds,
+    validate_against_thresholds,
+)
 from migration_evals.pre_reg import compute_spec_sha
 
 REQUIRED_MANIFEST_KEYS = ("oracle_spec", "recipe_spec", "hypotheses")
 # Optional manifest keys: enforced as a stamp only when present in the
 # manifest.json. ``prompt_spec`` is the canonical artifact for a
 # prompt-defined migration (the migration target lives in the agent prompt
-# rather than a hand-authored recipe).
-OPTIONAL_MANIFEST_KEYS = ("prompt_spec",)
+# rather than a hand-authored recipe). ``calibration_report`` points at
+# the per-recipe calibration.json produced by ``scripts/calibrate.py``;
+# the gate consults it whenever ``--require-calibration`` is set.
+OPTIONAL_MANIFEST_KEYS = ("prompt_spec", "calibration_report")
 STAMP_FIELDS = {
     "oracle_spec_sha": "oracle_spec",
     "recipe_spec_sha": "recipe_spec",
@@ -143,7 +154,65 @@ def _check_gold_anchor(
     return None
 
 
-def check_run(run_dir: Path, *, require_gold_anchor: bool = False) -> int:
+def _check_calibration(
+    run_dir: Path, manifest: dict, *, require: bool
+) -> int | None:
+    """Enforce the per-recipe calibration contract (m1w).
+
+    When ``--require-calibration`` is set, the manifest must declare a
+    ``calibration_report`` path, the file must be loadable as a
+    :class:`CalibrationReport`, and its per-tier rates must satisfy the
+    thresholds parsed from ``hypotheses_and_thresholds.md`` (the file the
+    manifest already references via ``hypotheses``).
+
+    Returns ``None`` on success or skip; ``1`` on failure.
+    """
+    if not require:
+        return None
+    raw = manifest.get("calibration_report")
+    if not raw:
+        return _fail(
+            f"manifest.json missing 'calibration_report' "
+            f"(required by --require-calibration) under {run_dir}"
+        )
+    calibration_path = _resolve_spec_path(run_dir, raw)
+    if not calibration_path.is_file():
+        return _fail(
+            f"calibration_report file missing: {calibration_path}"
+        )
+    try:
+        report = CalibrationReport.from_path(calibration_path)
+    except (ValueError, KeyError, json.JSONDecodeError) as exc:
+        return _fail(
+            f"{calibration_path}: cannot load calibration report ({exc})"
+        )
+
+    hypotheses_path = _resolve_spec_path(run_dir, manifest["hypotheses"])
+    if not hypotheses_path.is_file():
+        # The required-stamp check below will surface this; bail early to
+        # avoid a confusing trace.
+        return None
+    thresholds = load_calibration_thresholds(hypotheses_path)
+    if not thresholds.per_tier:
+        return _fail(
+            f"{hypotheses_path}: --require-calibration set but the doc "
+            "declares no '## Calibration thresholds (per tier)' table"
+        )
+    violations = validate_against_thresholds(report, thresholds)
+    if violations:
+        return _fail(
+            f"{calibration_path}: calibration violates thresholds: "
+            + "; ".join(violations)
+        )
+    return None
+
+
+def check_run(
+    run_dir: Path,
+    *,
+    require_gold_anchor: bool = False,
+    require_calibration: bool = False,
+) -> int:
     """Return 0 if the run passes the gate, 1 otherwise."""
     if not run_dir.is_dir():
         return _fail(f"run dir does not exist: {run_dir}")
@@ -154,6 +223,12 @@ def check_run(run_dir: Path, *, require_gold_anchor: bool = False) -> int:
         return _fail(str(exc))
     if manifest is None:
         return _fail(f"manifest.json missing under {run_dir}")
+
+    calibration_failure = _check_calibration(
+        run_dir, manifest, require=require_calibration
+    )
+    if calibration_failure is not None:
+        return calibration_failure
 
     # Precompute expected SHAs from the committed files referenced in the
     # manifest. Required stamps are always enforced; optional stamps
@@ -237,13 +312,25 @@ def _build_parser() -> argparse.ArgumentParser:
             "gold-anchor correctness when summary.json is present."
         ),
     )
+    parser.add_argument(
+        "--require-calibration",
+        action="store_true",
+        help=(
+            "Require manifest.json to declare a 'calibration_report' "
+            "path; load it and refuse the run if any tier's FPR / FNR "
+            "exceeds the thresholds in hypotheses_and_thresholds.md "
+            "under '## Calibration thresholds (per tier)'."
+        ),
+    )
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
     args = _build_parser().parse_args(argv)
     return check_run(
-        args.check_run, require_gold_anchor=args.require_gold_anchor
+        args.check_run,
+        require_gold_anchor=args.require_gold_anchor,
+        require_calibration=args.require_calibration,
     )
 
 

@@ -1,0 +1,6 @@
+{
+  "fixture_id": "bad_008_empty_diff",
+  "expected_outcome": "reject",
+  "expected_reject_tier": "diff_valid",
+  "notes": "Headers present but zero hunks"
+}

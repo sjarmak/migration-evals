@@ -1,0 +1,4 @@
+--- a/main.go
++++ b/main.go
+-	"github.com/foo/oldpkg"
++	"github.com/foo/newpkg"

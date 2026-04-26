@@ -1,0 +1,5 @@
+{
+  "fixture_id": "good_003_internal_rename",
+  "expected_outcome": "pass_all",
+  "notes": "Internal package renamed in monorepo"
+}

@@ -1,0 +1,6 @@
+{
+  "fixture_id": "bad_010_truncated_after_header",
+  "expected_outcome": "reject",
+  "expected_reject_tier": "diff_valid",
+  "notes": "Hunk header promises 5,5 but body is empty"
+}

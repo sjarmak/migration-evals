@@ -1,0 +1,5 @@
+{
+  "fixture_id": "good_008_case_normalisation",
+  "expected_outcome": "pass_all",
+  "notes": "Mixed case path corrected to canonical lowercase"
+}

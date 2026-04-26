@@ -1,0 +1,75 @@
+{
+  "migration_id": "go_import_rewrite",
+  "n_known_bad": 10,
+  "n_known_good": 10,
+  "notes": "tier-0 only; tier-1/tier-2 calibration deferred (Docker corpus follow-up)",
+  "per_tier": [
+    {
+      "fn": 0,
+      "fnr": 0.0,
+      "fp": 0,
+      "fpr": 0.0,
+      "n_known_bad_targeted_observed": 10,
+      "n_known_good_observed": 10,
+      "tier": "diff_valid",
+      "tn": 10,
+      "tp": 10
+    },
+    {
+      "fn": 0,
+      "fnr": null,
+      "fp": 0,
+      "fpr": null,
+      "n_known_bad_targeted_observed": 0,
+      "n_known_good_observed": 0,
+      "tier": "compile_only",
+      "tn": 0,
+      "tp": 0
+    },
+    {
+      "fn": 0,
+      "fnr": null,
+      "fp": 0,
+      "fpr": null,
+      "n_known_bad_targeted_observed": 0,
+      "n_known_good_observed": 0,
+      "tier": "tests",
+      "tn": 0,
+      "tp": 0
+    },
+    {
+      "fn": 0,
+      "fnr": null,
+      "fp": 0,
+      "fpr": null,
+      "n_known_bad_targeted_observed": 0,
+      "n_known_good_observed": 0,
+      "tier": "ast_conformance",
+      "tn": 0,
+      "tp": 0
+    },
+    {
+      "fn": 0,
+      "fnr": null,
+      "fp": 0,
+      "fpr": null,
+      "n_known_bad_targeted_observed": 0,
+      "n_known_good_observed": 0,
+      "tier": "judge",
+      "tn": 0,
+      "tp": 0
+    },
+    {
+      "fn": 0,
+      "fnr": null,
+      "fp": 0,
+      "fpr": null,
+      "n_known_bad_targeted_observed": 0,
+      "n_known_good_observed": 0,
+      "tier": "daikon",
+      "tn": 0,
+      "tp": 0
+    }
+  ],
+  "schema_version": "v1"
+}

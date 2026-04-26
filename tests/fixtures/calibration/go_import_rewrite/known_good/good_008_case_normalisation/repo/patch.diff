@@ -1,0 +1,9 @@
+--- a/main.go
++++ b/main.go
+@@ -3,5 +3,5 @@ package main
+ import (
+ 	"fmt"
+
+-	"github.com/Foo/Bar"
++	"github.com/foo/bar"
+ )
