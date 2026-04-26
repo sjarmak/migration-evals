@@ -3,6 +3,9 @@
 This document describes the cascading oracle funnel used by the automated code
 migration eval framework to score per-repo migration outcomes (PRD M1).
 
+For guidance on which migration recipes to calibrate the funnel against
+first, see [`docs/calibration_starters.md`](calibration_starters.md).
+
 ## Tier ordering
 
 The funnel runs the cheapest, highest-precision tiers first and only
