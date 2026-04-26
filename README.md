@@ -31,6 +31,7 @@ revert.
 | [`docs/PRD.md`](docs/PRD.md) | Risk-annotated v0.3 PRD - goals, non-goals, MVP/M1–M9, Should/Nice tiers, metrics, capacity plan. |
 | [`docs/premortem.md`](docs/premortem.md) | Top-15 failure modes (R1–R15) - reviewer-disagreement, contamination, harness-synth, ecosystem generalization, infra blast-radius. Drives the M-list. |
 | [`docs/README.md`](docs/README.md) | Per-component design notes (oracle funnel, harness synth, gold-anchor, publication gate, python23 probe). |
+| [`docs/integration_guide.md`](docs/integration_guide.md) | End-to-end walkthrough for plugging your agent pipeline into the funnel — from clone to first stamped report. Start here if you are integrating an external pipeline. |
 | [`docs/usage.md`](docs/usage.md) | CLI quickstart for `run`/`report`/`iterator-report`/`regression`/`harness`/`probe`. |
 | [`docs/oracle_funnel.md`](docs/oracle_funnel.md) | Funnel design + sandbox/Anthropic backend selection. |
 | [`docs/tier0_skip.md`](docs/tier0_skip.md) | Why tier 0 is skipped today and the three conditions that re-open it. |
@@ -40,8 +41,9 @@ revert.
 | [`schemas/`](schemas/) | JSON Schemas for `result.json` and gold-anchor entries. |
 | [`configs/java8_17_smoke.yaml`](configs/java8_17_smoke.yaml) | End-to-end smoke config: 3 fixture repos, all non-network tiers, replay cassettes - no API keys required. |
 | [`scripts/mine_gold_anchor.py`](scripts/mine_gold_anchor.py) | Automated gold-anchor harvester - builds `data/gold_anchor.json` from merged-PR survival via the `gh` CLI. Two sources: OSS search (default) or a CSV of agent-generated changeset URLs. |
-| [`tests/`](tests/) | 246 pytest cases (2 opt-in live-integration skips): schema validation, funnel cascade, AST oracle, gold-anchor correlation + bootstrap CI, ledger diff, contamination split, publication gate, iterator-batch report, mine_gold_anchor, Tier-0 diff validity, Docker / Anthropic adapter unit tests. |
+| [`tests/`](tests/) | Pytest suite (3 opt-in live-integration skips): schema validation, funnel cascade, AST oracle, gold-anchor correlation + bootstrap CI, ledger diff, contamination split, publication gate, iterator-batch report, mine_gold_anchor, Tier-0 diff validity, run_eval driver smoke, Docker / Anthropic / Claude-Code / HTTP-changeset adapter unit tests, batch-change-canonical fixture exercises (Go import rewrite, Dockerfile base-image bump). |
 | [`examples/runs/`](examples/runs/) | Committed example outputs from the smoke config and the Python 2→3 probe. |
+| [`tests/fixtures/changeset_examples/`](tests/fixtures/changeset_examples/) | Batch-change-canonical worked examples — Go import rewrite (`ghodss/yaml` → `sigs.k8s.io/yaml`), Dockerfile base-image bump (`alpine` → `debian`). Each is a `repo_state/` + `patch.diff` + `meta.json` + per-tier explainer; exercised through the driver in `tests/test_run_eval.py`. |
 | [`data/gold_anchor_template.json`](data/gold_anchor_template.json) | Empty seed - populated by `scripts/mine_gold_anchor.py`. |
 
 ---

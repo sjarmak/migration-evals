@@ -1,16 +1,22 @@
-"""Unit tests for the ChangesetProvider interface and FilesystemChangesetProvider.
+"""Unit tests for the ChangesetProvider interface, the registry, and the
+shipped reference providers (``FilesystemChangesetProvider``,
+``HTTPChangesetProvider``).
 
 The provider abstraction lets the funnel pull agent-produced diffs from
-any artifact-storage backend (filesystem, S3-compatible object store,
-blob storage, ...) behind a single :func:`fetch` call. Only the
-filesystem implementation ships in-repo; it is the reference provider
-used by tests and by pre-staged fixture runs.
+any artifact-storage backend (filesystem, HTTP artifact server,
+S3-compatible object store, blob storage, ...) behind a single
+:func:`fetch` call. The two implementations that ship in-repo are
+reference templates that production backends can copy-modify.
 """
 
 from __future__ import annotations
 
+import contextlib
 import json
+import threading
+from http.server import HTTPServer, SimpleHTTPRequestHandler
 from pathlib import Path
+from typing import Iterator
 
 import pytest
 
@@ -18,7 +24,9 @@ from migration_evals.changesets import (
     Changeset,
     ChangesetProvider,
     FilesystemChangesetProvider,
+    HTTPChangesetProvider,
     get_provider,
+    register_provider,
     validate_commit_sha,
     validate_instance_id,
 )
@@ -178,3 +186,150 @@ def test_filesystem_provider_rejects_non_sha_meta(tmp_path: Path) -> None:
     provider = FilesystemChangesetProvider(tmp_path)
     with pytest.raises(ValueError, match="40-char lowercase hex SHA-1"):
         provider.fetch("inst-bad-sha")
+
+
+# -- HTTPChangesetProvider --------------------------------------------------
+
+
+@contextlib.contextmanager
+def _serve_directory(root: Path) -> Iterator[str]:
+    """Yield a base URL for a stdlib http.server rooted at ``root``.
+
+    Binds to port 0 so concurrent test invocations do not collide. The
+    server thread is shut down on context exit.
+    """
+
+    class _RootedHandler(SimpleHTTPRequestHandler):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, directory=str(root), **kwargs)
+
+        def log_message(self, format: str, *args) -> None:  # noqa: A002
+            # Silence stdlib's per-request stderr noise during tests.
+            return
+
+    server = HTTPServer(("127.0.0.1", 0), _RootedHandler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        host, port = server.server_address[:2]
+        yield f"http://{host}:{port}"
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+
+
+def test_http_provider_fetch_round_trip(tmp_path: Path) -> None:
+    """Serve a staged corpus over stdlib http.server and fetch it back.
+
+    Mirrors the FilesystemChangesetProvider round-trip test: the same
+    corpus on disk should be retrievable via either provider with no
+    behavioural difference beyond transport.
+    """
+    _stage_instance(tmp_path, "inst-http-1")
+    with _serve_directory(tmp_path) as base_url:
+        provider = HTTPChangesetProvider(base_url, timeout_s=5.0)
+        cs = provider.fetch("inst-http-1")
+    assert isinstance(cs, Changeset)
+    assert cs.instance_id == "inst-http-1"
+    assert cs.repo_url == _META_FIXTURE["repo_url"]
+    assert cs.commit_sha == _META_FIXTURE["commit_sha"]
+    assert cs.workflow_id == _META_FIXTURE["workflow_id"]
+    assert cs.agent_runner == _META_FIXTURE["agent_runner"]
+    assert cs.agent_model == _META_FIXTURE["agent_model"]
+    assert cs.patch_diff == _PATCH_FIXTURE
+
+
+def test_http_provider_missing_instance_raises_file_not_found(tmp_path: Path) -> None:
+    """HTTP 404 must surface as FileNotFoundError to mirror the FS provider's contract."""
+    with _serve_directory(tmp_path) as base_url:
+        provider = HTTPChangesetProvider(base_url, timeout_s=5.0)
+        with pytest.raises(FileNotFoundError, match="meta.json not found"):
+            provider.fetch("missing-id")
+
+
+def test_http_provider_invalid_meta_raises(tmp_path: Path) -> None:
+    bad_meta = {k: v for k, v in _META_FIXTURE.items() if k != "agent_model"}
+    _stage_instance(tmp_path, "inst-bad-meta", meta=bad_meta)
+    with _serve_directory(tmp_path) as base_url:
+        provider = HTTPChangesetProvider(base_url, timeout_s=5.0)
+        with pytest.raises(KeyError, match="agent_model"):
+            provider.fetch("inst-bad-meta")
+
+
+def test_http_provider_rejects_traversal_instance_id() -> None:
+    provider = HTTPChangesetProvider("http://127.0.0.1:1", timeout_s=1.0)
+    with pytest.raises(ValueError, match="unsafe instance_id"):
+        provider.fetch("../escape")
+
+
+def test_http_provider_satisfies_protocol() -> None:
+    provider = HTTPChangesetProvider("http://127.0.0.1:1")
+    assert isinstance(provider, ChangesetProvider)
+
+
+def test_http_provider_unreachable_host_raises_connection_error() -> None:
+    """Network failure must propagate as ConnectionError, not silently succeed.
+
+    Bound a tight timeout against an unroutable port so the test does
+    not hang the suite on misconfigured DNS.
+    """
+    provider = HTTPChangesetProvider(
+        "http://127.0.0.1:1", timeout_s=0.5
+    )
+    with pytest.raises((ConnectionError, OSError)):
+        provider.fetch("anything")
+
+
+def test_get_provider_http_requires_base_url() -> None:
+    with pytest.raises(KeyError, match="base_url"):
+        get_provider("http", {})
+
+
+def test_get_provider_returns_http_impl() -> None:
+    provider = get_provider("http", {"base_url": "http://example.invalid"})
+    assert isinstance(provider, HTTPChangesetProvider)
+
+
+# -- register_provider registry --------------------------------------------
+
+
+def test_register_provider_round_trip() -> None:
+    """A custom factory registered under a fresh name must be reachable
+    via get_provider with the config it expects."""
+    sentinel_root: list[str] = []
+
+    class _Stub:
+        def __init__(self, root: str) -> None:
+            sentinel_root.append(root)
+
+        def fetch(self, instance_id: str) -> Changeset:  # pragma: no cover
+            raise NotImplementedError
+
+    def _factory(config):
+        return _Stub(config["root"])
+
+    register_provider("test_stub_provider", _factory)
+    try:
+        provider = get_provider(
+            "test_stub_provider", {"root": "/tmp/whatever"}
+        )
+        assert isinstance(provider, _Stub)
+        assert sentinel_root == ["/tmp/whatever"]
+    finally:
+        # Pop the registration so other tests see a clean registry. The
+        # test suite must not leak side effects between modules.
+        from migration_evals.changesets import _PROVIDER_FACTORIES
+        _PROVIDER_FACTORIES.pop("test_stub_provider", None)
+
+
+def test_register_provider_rejects_empty_name() -> None:
+    with pytest.raises(ValueError, match="non-empty string"):
+        register_provider("", lambda cfg: FilesystemChangesetProvider("/"))
+
+
+def test_get_provider_unknown_name_lists_known_providers() -> None:
+    """Error message names every currently-registered provider so the
+    operator can self-diagnose a typo without reading the source."""
+    with pytest.raises(ValueError, match="known providers:"):
+        get_provider("definitely-not-real", {})

@@ -1,0 +1,9 @@
+diff --git a/Dockerfile b/Dockerfile
+--- a/Dockerfile
++++ b/Dockerfile
+@@ -1,4 +1,4 @@
+-FROM alpine:3.18
++FROM debian:bookworm-slim
+
+ RUN apk add --no-cache curl ca-certificates
+

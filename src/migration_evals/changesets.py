@@ -6,20 +6,26 @@ the job of a :class:`ChangesetProvider`: given an instance id, return a
 :class:`Changeset` carrying the base commit, the unified diff, and
 provenance (agent runner, agent model, workflow id).
 
-Only the :class:`FilesystemChangesetProvider` implementation ships
-in-repo. It reads from a local directory laid out as::
+Two implementations ship in-repo:
 
-    <root>/<instance_id>/meta.json
-    <root>/<instance_id>/patch.diff
+* :class:`FilesystemChangesetProvider` reads from a local directory tree
+  laid out as ``<root>/<instance_id>/{meta.json, patch.diff}``. Used by
+  fixtures, tests, and pre-staged corpora.
+* :class:`HTTPChangesetProvider` reads the same layout from an HTTP
+  artifact server (``GET <base_url>/<instance_id>/meta.json`` and
+  ``GET <base_url>/<instance_id>/patch.diff``). Reference template for
+  teams whose artifacts live behind an HTTP endpoint; copy-modify for
+  authenticated or non-public stores.
 
 ``meta.json`` must contain the keys listed in
 :data:`_REQUIRED_META_KEYS`. The format is intentionally minimal so any
 backend (S3-compatible object store, blob storage, HTTP artifact server)
 can stage a directory on disk and hand the path to this provider.
 
-Production backends that pull from non-filesystem storage implement
-:class:`ChangesetProvider` alongside the consuming pipeline; extend
-:func:`get_provider` to wire them in.
+Production backends that pull from non-filesystem storage implement the
+:class:`ChangesetProvider` Protocol alongside the consuming pipeline and
+register a factory via :func:`register_provider` before calling
+:func:`get_provider`.
 """
 
 from __future__ import annotations
@@ -28,7 +34,7 @@ import json
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Mapping, Protocol, runtime_checkable
+from typing import Any, Callable, Mapping, Protocol, runtime_checkable
 
 _REQUIRED_META_KEYS: tuple[str, ...] = (
     "repo_url",
@@ -127,20 +133,149 @@ class FilesystemChangesetProvider:
         )
 
 
-_KNOWN_PROVIDERS: tuple[str, ...] = ("filesystem",)
+class HTTPChangesetProvider:
+    """Reference HTTP ``ChangesetProvider``.
+
+    Fetches changesets from an HTTP artifact server using the same
+    layout as :class:`FilesystemChangesetProvider`::
+
+        GET <base_url>/<instance_id>/meta.json   -> JSON blob
+        GET <base_url>/<instance_id>/patch.diff  -> unified diff
+
+    The route shape mirrors the filesystem provider so a corpus staged
+    on disk can be served verbatim by ``python -m http.server`` for a
+    smoke run, then replaced by a real artifact server in production.
+
+    Authentication is intentionally out of scope for the reference
+    implementation: pass static request headers via ``headers=``, or
+    fork this class and override :meth:`_get_text` to plug in a session
+    library (``requests``, ``httpx``) with cookies, OAuth tokens, etc.
+
+    Standard library only — no new dependencies.
+    """
+
+    def __init__(
+        self,
+        base_url: str,
+        *,
+        timeout_s: float = 30.0,
+        headers: Mapping[str, str] | None = None,
+    ) -> None:
+        self._base_url = base_url.rstrip("/")
+        self._timeout_s = timeout_s
+        self._headers = dict(headers or {})
+
+    def fetch(self, instance_id: str) -> Changeset:
+        validate_instance_id(instance_id)
+        meta_url = f"{self._base_url}/{instance_id}/meta.json"
+        patch_url = f"{self._base_url}/{instance_id}/patch.diff"
+
+        meta_text = self._get_text(meta_url, what="meta.json")
+        try:
+            meta = json.loads(meta_text)
+        except json.JSONDecodeError as exc:
+            raise ValueError(
+                f"meta.json for {instance_id!r} at {meta_url} is not valid JSON: {exc}"
+            ) from exc
+        for key in _REQUIRED_META_KEYS:
+            if key not in meta:
+                raise KeyError(
+                    f"meta.json for {instance_id!r} is missing required key {key!r}"
+                )
+        commit_sha = str(meta["commit_sha"])
+        validate_commit_sha(commit_sha)
+        patch_diff = self._get_text(patch_url, what="patch.diff")
+        return Changeset(
+            instance_id=instance_id,
+            repo_url=str(meta["repo_url"]),
+            commit_sha=commit_sha,
+            patch_diff=patch_diff,
+            workflow_id=str(meta["workflow_id"]),
+            agent_runner=str(meta["agent_runner"]),
+            agent_model=str(meta["agent_model"]),
+        )
+
+    def _get_text(self, url: str, *, what: str) -> str:
+        # Local imports keep the module importable on environments where
+        # urllib is unavailable (vanishingly rare but free defensive
+        # win) and signal that HTTP is not used by the filesystem path.
+        from urllib.error import HTTPError, URLError
+        from urllib.request import Request, urlopen
+
+        req = Request(url, headers=self._headers)
+        try:
+            with urlopen(req, timeout=self._timeout_s) as resp:  # noqa: S310
+                return resp.read().decode("utf-8")
+        except HTTPError as exc:
+            if exc.code == 404:
+                raise FileNotFoundError(
+                    f"{what} not found at {url} (HTTP 404)"
+                ) from exc
+            raise
+        except URLError as exc:
+            raise ConnectionError(
+                f"could not fetch {what} at {url}: {exc.reason}"
+            ) from exc
+
+
+# Provider registry. Built-ins are registered at module import; external
+# pipelines plug in their own factories via register_provider() before
+# calling get_provider().
+_PROVIDER_FACTORIES: dict[
+    str, Callable[[Mapping[str, Any]], ChangesetProvider]
+] = {}
+
+
+def register_provider(
+    name: str,
+    factory: Callable[[Mapping[str, Any]], ChangesetProvider],
+) -> None:
+    """Register a ``ChangesetProvider`` factory under ``name``.
+
+    The factory takes a config mapping (the same one ``--config`` parses
+    on the CLI) and returns a provider instance. Registering the same
+    name twice replaces the prior factory.
+    """
+    if not isinstance(name, str) or not name:
+        raise ValueError("provider name must be a non-empty string")
+    _PROVIDER_FACTORIES[name] = factory
+
+
+def _filesystem_factory(config: Mapping[str, Any]) -> ChangesetProvider:
+    if "root" not in config:
+        raise KeyError("filesystem provider requires config key 'root'")
+    return FilesystemChangesetProvider(config["root"])
+
+
+def _http_factory(config: Mapping[str, Any]) -> ChangesetProvider:
+    if "base_url" not in config:
+        raise KeyError("http provider requires config key 'base_url'")
+    timeout_s = float(config.get("timeout_s", 30.0))
+    headers = config.get("headers")
+    if headers is not None and not isinstance(headers, Mapping):
+        raise TypeError("http provider 'headers' must be a mapping if supplied")
+    return HTTPChangesetProvider(
+        config["base_url"],
+        timeout_s=timeout_s,
+        headers=headers,
+    )
+
+
+register_provider("filesystem", _filesystem_factory)
+register_provider("http", _http_factory)
 
 
 def get_provider(name: str, config: Mapping[str, Any]) -> ChangesetProvider:
     """Return a provider instance for ``name`` with ``config``.
 
-    Raises :class:`ValueError` for an unknown provider; raises
-    :class:`KeyError` if the named provider's required config keys are
-    missing.
+    Raises :class:`ValueError` for an unknown provider; the underlying
+    factory may raise :class:`KeyError` (missing required config key)
+    or :class:`TypeError` (wrong-typed config value).
     """
-    if name == "filesystem":
-        if "root" not in config:
-            raise KeyError("filesystem provider requires config key 'root'")
-        return FilesystemChangesetProvider(config["root"])
-    raise ValueError(
-        f"unknown provider {name!r}; known providers: {', '.join(_KNOWN_PROVIDERS)}"
-    )
+    factory = _PROVIDER_FACTORIES.get(name)
+    if factory is None:
+        known = ", ".join(sorted(_PROVIDER_FACTORIES))
+        raise ValueError(
+            f"unknown provider {name!r}; known providers: {known}"
+        )
+    return factory(config)

@@ -300,6 +300,133 @@ def test_main_skips_pull_failures_and_returns_partial_exit(
     assert (list(out_root.glob("good_*/result.json"))), "good instance must still produce result.json"
 
 
+# -- batch-change-canonical fixtures --------------------------------------
+#
+# The two examples below mirror the most-cited shapes in public batch-
+# changes documentation: a Go import-path rewrite (deprecated library
+# replaced) and a Dockerfile base-image bump (alpine -> debian). They
+# exercise the driver end-to-end with diff content that an external team
+# will recognise from their own pipeline, not synthetic content rename.
+# Higher tiers (compile / tests) require Go or Docker on PATH and are
+# documented in each fixture's README.md, but skipped here.
+
+_CANONICAL_EXAMPLES = _REPO_ROOT / "tests" / "fixtures" / "changeset_examples"
+
+
+def _stage_canonical(
+    staged: Path,
+    instance_id: str,
+    *,
+    example_dir: Path,
+    repo_url: str,
+    sha: str,
+) -> None:
+    """Stage a canonical example into filesystem-provider layout.
+
+    Reads patch.diff verbatim from the committed example and rewrites
+    meta.json's repo_url/commit_sha to point at the in-process seeded
+    remote so pull_changesets can clone it.
+    """
+    d = staged / instance_id
+    d.mkdir(parents=True, exist_ok=True)
+    meta = json.loads((example_dir / "meta.json").read_text(encoding="utf-8"))
+    meta["repo_url"] = repo_url
+    meta["commit_sha"] = sha
+    (d / "meta.json").write_text(json.dumps(meta), encoding="utf-8")
+    (d / "patch.diff").write_text(
+        (example_dir / "patch.diff").read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+
+
+def test_canonical_go_import_rewrite_passes_tier0(
+    re_mod, tmp_path: Path, seeded_go_import_remote
+) -> None:
+    """The committed ghodss/yaml -> sigs.k8s.io/yaml diff applies cleanly
+    through the funnel against the matching seeded remote.
+
+    Locks the contract that an external team's first batch-change-
+    canonical example does not regress on tier 0 (`git apply --check`).
+    """
+    url, sha = seeded_go_import_remote
+    example = _CANONICAL_EXAMPLES / "go_import_rewrite" / "ghodss_to_sigs"
+    staged = tmp_path / "staged"
+    _stage_canonical(
+        staged, "canonical-go-1",
+        example_dir=example, repo_url=url, sha=sha,
+    )
+    eval_root = tmp_path / "eval"
+    out_root = tmp_path / "out"
+
+    rc = re_mod.main(
+        [
+            "--migration", "go_import_rewrite",
+            "--provider", "filesystem",
+            "--root", str(staged),
+            "--eval-root", str(eval_root),
+            "--output-root", str(out_root),
+            "--variant", "canonical",
+            "--stages", "diff",
+            "canonical-go-1",
+        ]
+    )
+    assert rc == 0
+
+    written = sorted(out_root.glob("*/result.json"))
+    assert len(written) == 1
+    payload = json.loads(written[0].read_text())
+    assert payload["success"] is True, (
+        f"canonical Go import rewrite must pass tier 0; got {payload}"
+    )
+    assert payload["migration_id"] == "go_import_rewrite"
+
+
+def test_canonical_dockerfile_bump_passes_tier0(
+    re_mod, tmp_path: Path, seeded_dockerfile_bump_remote
+) -> None:
+    """The committed alpine -> debian Dockerfile bump applies cleanly at
+    tier 0. Tier 1 (`docker build .`) is the tier this example is
+    designed to fail at — but that requires a Docker daemon and is
+    intentionally not exercised in CI. The fixture's README.md
+    documents the failure mode.
+    """
+    url, sha = seeded_dockerfile_bump_remote
+    example = (
+        _CANONICAL_EXAMPLES
+        / "dockerfile_base_image_bump"
+        / "alpine_to_debian"
+    )
+    staged = tmp_path / "staged"
+    _stage_canonical(
+        staged, "canonical-dockerfile-1",
+        example_dir=example, repo_url=url, sha=sha,
+    )
+    eval_root = tmp_path / "eval"
+    out_root = tmp_path / "out"
+
+    rc = re_mod.main(
+        [
+            "--migration", "dockerfile_base_image_bump",
+            "--provider", "filesystem",
+            "--root", str(staged),
+            "--eval-root", str(eval_root),
+            "--output-root", str(out_root),
+            "--variant", "canonical",
+            "--stages", "diff",
+            "canonical-dockerfile-1",
+        ]
+    )
+    assert rc == 0
+
+    written = sorted(out_root.glob("*/result.json"))
+    assert len(written) == 1
+    payload = json.loads(written[0].read_text())
+    assert payload["success"] is True, (
+        f"canonical Dockerfile bump must pass tier 0; got {payload}"
+    )
+    assert payload["migration_id"] == "dockerfile_base_image_bump"
+
+
 def test_main_unknown_migration_returns_exit_1(re_mod, tmp_path: Path) -> None:
     rc = re_mod.main(
         [
