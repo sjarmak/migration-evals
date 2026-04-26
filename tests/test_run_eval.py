@@ -18,6 +18,8 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
+import subprocess
 import sys
 from pathlib import Path
 
@@ -203,6 +205,70 @@ def test_main_runs_funnel_tier0_and_writes_result_jsons(
     for p in payloads.values():
         assert p["migration_id"] == migration_id
         assert p["agent_model"] == "claude-sonnet-4-6"
+
+
+def test_main_emits_manifest_and_passes_publication_gate(
+    re_mod, tmp_path: Path, seeded_remote
+) -> None:
+    """Driver writes manifest.json next to result.json, and the gate
+    accepts the resulting run dir without further wiring.
+
+    This locks the contract that ``run_eval.py`` produces gate-clean
+    output by default: the publication gate has no work to do beyond
+    pointing it at ``--output-root``. A regression that drops the
+    manifest or breaks the stamps mapping is caught here.
+    """
+    url, sha = seeded_remote
+    staged = tmp_path / "staged"
+    _stage(staged, "good", repo_url=url, sha=sha, patch=_valid_patch())
+    eval_root = tmp_path / "eval"
+    out_root = tmp_path / "out"
+
+    rc = re_mod.main(
+        [
+            "--migration", "java8_17",
+            "--provider", "filesystem",
+            "--root", str(staged),
+            "--eval-root", str(eval_root),
+            "--output-root", str(out_root),
+            "--variant", "smoke",
+            "--stages", "diff",
+            "good",
+        ]
+    )
+    assert rc == 0
+
+    manifest_path = out_root / "manifest.json"
+    assert manifest_path.is_file(), "manifest.json must be emitted by the driver"
+    manifest = json.loads(manifest_path.read_text())
+    for key in ("oracle_spec", "recipe_spec", "hypotheses"):
+        assert key in manifest, f"manifest missing required key {key!r}"
+        # Paths are written relative to output_root and must resolve to
+        # a real committed file.
+        resolved = (out_root / manifest[key]).resolve()
+        assert resolved.is_file(), (
+            f"manifest[{key!r}] points at non-existent file: {resolved}"
+        )
+
+    # Publication gate must pass against the run dir straight from the
+    # driver - no manual stamping or post-processing.
+    proc = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "migration_evals.publication_gate",
+            "--check-run",
+            str(out_root),
+        ],
+        capture_output=True,
+        text=True,
+        cwd=str(_REPO_ROOT),
+        env={**os.environ, "PYTHONPATH": str(_REPO_ROOT / "src")},
+    )
+    assert proc.returncode == 0, (
+        f"gate failed on driver output: stdout={proc.stdout!r} "
+        f"stderr={proc.stderr!r}"
+    )
 
 
 def test_main_skips_pull_failures_and_returns_partial_exit(

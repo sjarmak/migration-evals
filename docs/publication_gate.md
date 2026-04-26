@@ -21,47 +21,37 @@ On any failure, the gate exits 1 and prints a specific diagnostic to stderr
 (missing stamp field, stale stamp, missing manifest, missing referenced file,
 or no `result.json` files found).
 
-## GitHub Actions workflow snippet
+## Canonical spec mapping
 
-Trigger the gate on any PR that touches `runs/analysis/mig_*/`.
+Each per-recipe template under `configs/recipes/<migration_id>.yaml`
+declares a `stamps:` block pointing at the three (or four) files whose
+sha256 is bound to every trial:
 
-```yaml
-name: migration-eval-publication-gate
+| stamp key      | typical file                           |
+|----------------|----------------------------------------|
+| `oracle_spec`  | `configs/oracle_spec.yaml`             |
+| `recipe_spec`  | `configs/recipes/<migration_id>.yaml`  |
+| `hypotheses`   | `docs/hypotheses_and_thresholds.md`    |
+| `prompt_spec`  | (optional) `configs/prompts/<id>.md`   |
 
-on:
-  pull_request:
-    paths:
-      - "runs/analysis/mig_*/**"
+When `scripts/run_eval.py` creates the run's `--output-root`, it emits
+`manifest.json` from this block (paths rewritten relative to the run
+directory so the committed manifest is portable). The runner then
+stamps each `result.json` from the same files via
+`migration_evals.pre_reg.stamp_result`. The gate later checks that
+every stamp matches the file the manifest still points at.
 
-jobs:
-  publication-gate:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-      - name: Enumerate migration runs in this PR
-        id: runs
-        run: |
-          git fetch origin "${{ github.base_ref }}" --depth=1
-          CHANGED_RUNS=$(git diff --name-only "origin/${{ github.base_ref }}"...HEAD \
-            | grep -E "^runs/analysis/mig_[^/]+/" \
-            | cut -d/ -f1-3 \
-            | sort -u)
-          echo "runs<<EOF" >> "$GITHUB_OUTPUT"
-          echo "$CHANGED_RUNS" >> "$GITHUB_OUTPUT"
-          echo "EOF" >> "$GITHUB_OUTPUT"
-      - name: Run publication gate on each changed run
-        if: steps.runs.outputs.runs != ''
-        run: |
-          echo "${{ steps.runs.outputs.runs }}" | while read -r run_dir; do
-            [ -z "$run_dir" ] && continue
-            echo "::group::gate: $run_dir"
-            python python -m migration_evals.publication_gate --check-run "$run_dir"
-            echo "::endgroup::"
-          done
-```
+## GitHub Actions workflow
+
+The committed workflow lives at
+[`.github/workflows/publication_gate.yml`](../.github/workflows/publication_gate.yml).
+It triggers on any PR that touches `runs/analysis/mig_*/`, enumerates
+changed run directories from the PR diff, and runs
+`python -m migration_evals.publication_gate --check-run <run_dir>` over
+each. The gate is intentionally invoked via `-m` rather than by direct
+script path so that Python's import machinery does not put
+`src/migration_evals/` on `sys.path[0]` (the package's `types.py` would
+otherwise shadow the stdlib `types` module and break `argparse`).
 
 ## CODEOWNERS pattern (governance - not applied here)
 

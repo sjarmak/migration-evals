@@ -71,6 +71,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -192,6 +193,34 @@ def build_runner_config(
     return cfg
 
 
+def emit_manifest(
+    output_root: Path, template: Mapping[str, Any], repo_root: Path
+) -> Path:
+    """Write ``<output_root>/manifest.json`` from the recipe's stamps block.
+
+    The publication gate (``migration_evals.publication_gate``) reads this
+    file to look up the committed spec files whose sha256 must match each
+    trial's stored stamps. Stamp paths in the recipe yaml are expected to
+    be repo-root-relative (e.g. ``configs/oracle_spec.yaml``); the manifest
+    rewrites them as paths relative to ``output_root`` so the committed
+    manifest stays portable across machines.
+    """
+    stamps = template["stamps"]
+    keys = ["oracle_spec", "recipe_spec", "hypotheses"]
+    if "prompt_spec" in stamps:
+        keys.append("prompt_spec")
+    manifest: dict[str, str] = {}
+    for key in keys:
+        spec_abs = (repo_root / stamps[key]).resolve()
+        manifest[key] = os.path.relpath(spec_abs, output_root.resolve())
+    manifest_path = output_root / "manifest.json"
+    manifest_path.write_text(
+        json.dumps(manifest, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    return manifest_path
+
+
 def _parse_stages(raw: str) -> list[str]:
     """Parse a comma-separated --stages value, validate against the runner's
     canonical stage map."""
@@ -301,6 +330,8 @@ def main(argv: list[str] | None = None) -> int:
     funnel_input_paths = _build_funnel_input_layout(pulled_ok, eval_root)
 
     output_root.mkdir(parents=True, exist_ok=True)
+    manifest_path = emit_manifest(output_root, template, _REPO_ROOT)
+    print(f"wrote manifest: {manifest_path}")
     cfg = build_runner_config(
         template=template,
         funnel_input_paths=funnel_input_paths,

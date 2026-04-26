@@ -114,8 +114,17 @@ def _stage_minimal_run(tmp_path: Path, *, with_prompt_spec: bool) -> Path:
 
 
 def _run_gate(run_dir: Path) -> subprocess.CompletedProcess[str]:
+    # Invoke via -m so Python's import machinery does not put
+    # src/migration_evals/ on sys.path[0]; otherwise this package's
+    # types.py shadows the stdlib types module and breaks argparse.
     return subprocess.run(
-        [sys.executable, str(GATE_SCRIPT), "--check-run", str(run_dir)],
+        [
+            sys.executable,
+            "-m",
+            "migration_evals.publication_gate",
+            "--check-run",
+            str(run_dir),
+        ],
         capture_output=True,
         text=True,
         env={**os.environ, "PYTHONPATH": str(_REPO_ROOT / "src")},

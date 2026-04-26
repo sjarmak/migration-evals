@@ -1,0 +1,67 @@
+# Migration eval oracle spec (v1).
+#
+# Defines which oracle tiers are enabled, what each tier asserts, and
+# the failure-class taxonomy. The sha256 of this file is stamped into
+# every result.json as `oracle_spec_sha`. Any change to this file
+# invalidates prior stamps; the publication gate then fails until
+# affected runs are rescored.
+#
+# See docs/oracle_funnel.md for tier definitions and cost math.
+
+version: v1
+pre_reg_date: "2026-04-26"
+
+tiers:
+  - name: diff_valid
+    tier: 0
+    enabled: true
+    description: |
+      The agent's patch.diff parses and applies cleanly to the base
+      commit. Failure mode: malformed unified diff, line offsets that
+      no longer match, mid-hunk corruption, missing trailing newline.
+    pass_condition: "git apply --check succeeds against base commit_sha"
+
+  - name: compile_only
+    tier: 1
+    enabled: true
+    description: |
+      After applying the patch, the project's recipe.build_cmd exits
+      with status 0 inside the per-recipe sandbox container. The high-
+      signal tier for mechanical transformations (catches transitive
+      breakage that diff-validity misses).
+    pass_condition: "recipe.build_cmd exit code == 0"
+
+  - name: tests
+    tier: 2
+    enabled: true
+    description: |
+      After applying the patch, the project's recipe.test_cmd exits
+      with status 0. May be intentionally disabled per-recipe when the
+      target's test surface is non-canonical (e.g. dockerfile_base_image
+      _bump skips tier 2 because per-target test commands vary).
+    pass_condition: "recipe.test_cmd exit code == 0"
+
+  - name: judge
+    tier: 3
+    enabled: false
+    description: |
+      An LLM judge scores the patched diff for migration correctness
+      against a per-recipe rubric. Disabled by default so the funnel
+      can publish end-to-end on offline / OAuth-only configurations.
+      Enable per-run via the YAML config when an AnthropicAdapter is
+      configured (cassette / claude_code / sdk).
+    pass_condition: "judge.score >= 0.7 (rubric and threshold per-recipe)"
+
+# Failure-class taxonomy stamped on every failing trial. Tracked by
+# src/migration_evals/failure_class.py; any change here must be
+# accompanied by a matching change there (the gate detects drift via
+# oracle_spec_sha).
+failure_classes:
+  - name: agent_error
+    description: "Patch malformed or fails to apply (Tier 0 verdict)."
+  - name: infra_error
+    description: "Sandbox / build harness / network failed unrelated to the diff."
+  - name: migration_error
+    description: "Patch applies but compile or tests fail (the real signal)."
+  - name: judge_disagreed
+    description: "Tier 3 only: judge scored below threshold."

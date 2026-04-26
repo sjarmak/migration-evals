@@ -42,10 +42,14 @@ HYPOTHESES_PATH = REPO_ROOT / "docs" / "hypotheses_and_thresholds.md"
 def _run_gate(
     run_dir: Path, *extra_args: str
 ) -> subprocess.CompletedProcess[str]:
+    # Invoke via -m so Python's import machinery does not put
+    # src/migration_evals/ on sys.path[0]; otherwise this package's
+    # types.py shadows the stdlib types module and breaks argparse.
     return subprocess.run(
         [
             sys.executable,
-            str(GATE_SCRIPT),
+            "-m",
+            "migration_evals.publication_gate",
             "--check-run",
             str(run_dir),
             *extra_args,

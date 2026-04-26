@@ -1,0 +1,53 @@
+name: migration-eval-publication-gate
+
+# Mechanical pre-merge gate: any PR that touches a committed run output
+# under runs/analysis/mig_*/ must carry valid oracle_spec_sha,
+# recipe_spec_sha, and pre_reg_sha stamps in every result.json. A stale
+# stamp (committed spec changed since the run was scored) blocks the PR
+# until the affected run is rescored.
+#
+# See docs/publication_gate.md for the contract this enforces and the
+# operator playbook for stale-stamp failures.
+
+on:
+  pull_request:
+    paths:
+      - "runs/analysis/mig_*/**"
+
+jobs:
+  publication-gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Editable install
+        run: pip install -e .
+
+      - name: Enumerate migration runs touched by this PR
+        id: runs
+        run: |
+          git fetch origin "${{ github.base_ref }}" --depth=1
+          CHANGED_RUNS=$(git diff --name-only \
+              "origin/${{ github.base_ref }}"...HEAD \
+            | grep -E "^runs/analysis/mig_[^/]+/" \
+            | cut -d/ -f1-3 \
+            | sort -u || true)
+          echo "runs<<EOF" >> "$GITHUB_OUTPUT"
+          echo "$CHANGED_RUNS" >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
+
+      - name: Run publication gate on each changed run
+        if: steps.runs.outputs.runs != ''
+        run: |
+          while IFS= read -r run_dir; do
+            [ -z "$run_dir" ] && continue
+            echo "::group::gate: $run_dir"
+            python -m migration_evals.publication_gate --check-run "$run_dir"
+            echo "::endgroup::"
+          done <<< "${{ steps.runs.outputs.runs }}"

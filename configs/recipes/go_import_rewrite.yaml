@@ -29,6 +29,6 @@ recipe:
   test_cmd: "go test ./..."
 
 stamps:
-  oracle_spec: docs/hypotheses_and_thresholds.md
-  recipe_spec: docs/hypotheses_and_thresholds.md
+  oracle_spec: configs/oracle_spec.yaml
+  recipe_spec: configs/recipes/go_import_rewrite.yaml
   hypotheses: docs/hypotheses_and_thresholds.md

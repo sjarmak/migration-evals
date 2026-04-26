@@ -32,10 +32,6 @@ adapters:
   sandbox_cassette_dir: tests/fixtures/funnel_repos
 
 stamps:
-  # Placeholder stamps for the smoke: the hypotheses document is the
-  # closest committed artifact we have, so all three SHAs reuse it. Real
-  # runs are expected to point oracle_spec/recipe_spec at their own
-  # committed spec files.
-  oracle_spec: docs/hypotheses_and_thresholds.md
-  recipe_spec: docs/hypotheses_and_thresholds.md
+  oracle_spec: configs/oracle_spec.yaml
+  recipe_spec: configs/recipes/java8_17.yaml
   hypotheses: docs/hypotheses_and_thresholds.md
