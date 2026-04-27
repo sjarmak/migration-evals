@@ -163,6 +163,7 @@ _QUALITY_ORACLE_ORDER: tuple[str, ...] = (
     "diff_minimality",
     "idempotency",
     "baseline_comparison",
+    "touched_paths",
 )
 
 

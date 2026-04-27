@@ -9,7 +9,12 @@ Covers:
 - baseline_comparison: sed pattern with zero substitutions on the
   post-state (agent and baseline agree), unsupported tools (skipped),
   no-pattern path.
-- run_quality_oracles: runs all three in fixed order.
+- touched_paths: warn-mode reports violations informationally,
+  enforce-mode flips passed=False on out-of-glob touches; recursive `**`
+  semantics; the literal `/dev/null` token is dropped from
+  ``touched_paths`` but the deletion's source path IS recorded so the
+  allowlist can gate deletions as well as edits/creates.
+- run_quality_oracles: runs all four in fixed order.
 - run_funnel: emits quality_verdicts when adapters supplies a
   quality_spec, leaves the field empty otherwise.
 """
@@ -20,6 +25,8 @@ import sys
 from pathlib import Path
 from textwrap import dedent
 
+import pytest
+
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_REPO_ROOT / "src"))
 
@@ -29,6 +36,7 @@ from migration_evals.oracles.quality import (  # noqa: E402
     diff_minimality,
     idempotency,
     run_quality_oracles,
+    touched_paths,
 )
 from migration_evals.quality_spec import (  # noqa: E402
     BaselinePattern,
@@ -357,11 +365,328 @@ def test_baseline_sed_disagrees_when_pattern_still_matches(
 
 
 # ---------------------------------------------------------------------------
+# touched_paths
+# ---------------------------------------------------------------------------
+
+
+def _agent_diff_with_md_file() -> str:
+    """Agent edits main.go AND a docs/README.md outside a Go-only allowlist."""
+    return dedent(
+        """\
+        --- a/main.go
+        +++ b/main.go
+        @@ -3,5 +3,5 @@
+        -\t"github.com/foo/oldpkg"
+        +\t"github.com/foo/newpkg"
+        --- a/docs/README.md
+        +++ b/docs/README.md
+        @@ -1,1 +1,1 @@
+        -old docs
+        +new docs
+        """
+    )
+
+
+def _agent_diff_nested_go() -> str:
+    """Agent touches a deeply-nested Go file (`internal/pkg/foo.go`)."""
+    return dedent(
+        """\
+        --- a/internal/pkg/foo.go
+        +++ b/internal/pkg/foo.go
+        @@ -1,1 +1,1 @@
+        -package foo
+        +package foo2
+        """
+    )
+
+
+def _agent_diff_with_deletion() -> str:
+    """Agent deletes ``legacy.go`` (in glob) and ``legacy.txt`` (out of glob).
+
+    Both deletions render as ``+++ /dev/null``; the source paths come
+    from the ``--- a/`` lines. The allowlist oracle should record both
+    source paths but never the literal ``/dev/null`` token.
+    """
+    return dedent(
+        """\
+        --- a/legacy.go
+        +++ /dev/null
+        @@ -1,1 +0,0 @@
+        -package legacy
+        --- a/legacy.txt
+        +++ /dev/null
+        @@ -1,1 +0,0 @@
+        -stale notes
+        --- a/main.go
+        +++ b/main.go
+        @@ -1,1 +1,1 @@
+        -old
+        +new
+        """
+    )
+
+
+def test_touched_paths_skipped_when_no_allowlist(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _write(repo, "patch.diff", _agent_diff_one_file())
+    verdict = touched_paths.run(repo, QualitySpec.empty())
+    assert verdict.passed is True
+    assert verdict.details["skipped"] is True
+
+
+def test_touched_paths_skipped_when_no_patch_artifact(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    spec = QualitySpec(touched_paths_allowlist=("**/*.go",))
+    verdict = touched_paths.run(repo, spec)
+    assert verdict.passed is True
+    assert verdict.details["skipped"] is True
+
+
+def test_touched_paths_warn_mode_passes_with_violations_listed(
+    tmp_path: Path,
+) -> None:
+    """Warn mode (default): violations land in details but passed stays True."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _write(repo, "patch.diff", _agent_diff_with_md_file())
+    spec = QualitySpec(
+        touched_paths_allowlist=("**/*.go", "*.go"),
+        touched_paths_allowlist_mode="warn",
+    )
+    verdict = touched_paths.run(repo, spec)
+    assert verdict.passed is True
+    assert verdict.details["mode"] == "warn"
+    assert "docs/README.md" in verdict.details["violations"]
+    assert "main.go" not in verdict.details["violations"]
+
+
+def test_touched_paths_enforce_mode_fails_on_out_of_glob(
+    tmp_path: Path,
+) -> None:
+    """Enforce mode flips passed=False when any touched path is out of glob."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _write(repo, "patch.diff", _agent_diff_with_md_file())
+    spec = QualitySpec(
+        touched_paths_allowlist=("**/*.go", "*.go"),
+        touched_paths_allowlist_mode="enforce",
+    )
+    verdict = touched_paths.run(repo, spec)
+    assert verdict.passed is False
+    assert verdict.details["mode"] == "enforce"
+    assert "docs/README.md" in verdict.details["violations"]
+
+
+def test_touched_paths_enforce_passes_when_all_in_glob(
+    tmp_path: Path,
+) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _write(repo, "patch.diff", _agent_diff_one_file())
+    spec = QualitySpec(
+        touched_paths_allowlist=("**/*.go", "*.go"),
+        touched_paths_allowlist_mode="enforce",
+    )
+    verdict = touched_paths.run(repo, spec)
+    assert verdict.passed is True
+    assert verdict.details["violations"] == []
+
+
+def test_touched_paths_recursive_glob_matches_nested(tmp_path: Path) -> None:
+    """`**/*.go` matches `internal/pkg/foo.go`.
+
+    fnmatch's translation of `**/*.go` requires at least one path
+    separator before the `.go` suffix, so a top-level `main.go` would
+    NOT match `**/*.go` alone — recipe authors who want both should
+    union with `*.go`. The test below uses ONLY `**/*.go` to prove the
+    recursive case is wired correctly without piggybacking on `*.go`.
+    """
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _write(repo, "patch.diff", _agent_diff_nested_go())
+    spec = QualitySpec(
+        touched_paths_allowlist=("**/*.go",),
+        touched_paths_allowlist_mode="enforce",
+    )
+    verdict = touched_paths.run(repo, spec)
+    assert verdict.passed is True
+    assert verdict.details["violations"] == []
+    assert "internal/pkg/foo.go" in verdict.details["touched_paths"]
+
+
+def test_touched_paths_top_level_glob_matches_root(tmp_path: Path) -> None:
+    """`*.go` matches a root-level `main.go` even though `**/*.go` requires
+    at least one path separator. Documents the fnmatch semantics so recipe
+    authors can pick the right glob."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _write(repo, "patch.diff", _agent_diff_one_file())  # touches `main.go`
+    spec = QualitySpec(
+        touched_paths_allowlist=("*.go",),
+        touched_paths_allowlist_mode="enforce",
+    )
+    verdict = touched_paths.run(repo, spec)
+    assert verdict.passed is True
+    assert verdict.details["violations"] == []
+    assert "main.go" in verdict.details["touched_paths"]
+
+
+def test_touched_paths_multiple_globs_union(tmp_path: Path) -> None:
+    """Both globs admit the diff: `main.go` via `*.go`, `docs/README.md`
+    via `docs/**`."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _write(repo, "patch.diff", _agent_diff_with_md_file())
+    spec = QualitySpec(
+        touched_paths_allowlist=("*.go", "docs/**"),
+        touched_paths_allowlist_mode="enforce",
+    )
+    verdict = touched_paths.run(repo, spec)
+    assert verdict.passed is True
+    assert verdict.details["violations"] == []
+
+
+def test_touched_paths_drops_literal_dev_null_token(tmp_path: Path) -> None:
+    """The literal ``/dev/null`` token must never appear in
+    ``touched_paths`` — it is the unified-diff sentinel for "this side
+    has no file", not a real path. The deletion's source path (from the
+    ``--- a/...`` line) IS recorded so the allowlist can gate deletions."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _write(repo, "patch.diff", _agent_diff_with_deletion())
+    spec = QualitySpec(
+        touched_paths_allowlist=("**/*.go", "*.go"),
+        touched_paths_allowlist_mode="warn",
+    )
+    verdict = touched_paths.run(repo, spec)
+    assert "/dev/null" not in verdict.details["touched_paths"]
+    # Both deletion sources are recorded.
+    assert "legacy.go" in verdict.details["touched_paths"]
+    assert "legacy.txt" in verdict.details["touched_paths"]
+    assert "main.go" in verdict.details["touched_paths"]
+
+
+def test_touched_paths_enforce_gates_deletions(tmp_path: Path) -> None:
+    """Deleting a file outside the allowlist is itself a violation.
+
+    The agent removed ``legacy.txt`` (out of glob) AND ``legacy.go`` (in
+    glob); enforce mode must flag legacy.txt as a violation while
+    leaving legacy.go alone. This pins the design that deletions DO
+    contribute their source path to the allowlist check, distinguishing
+    a correct implementation from one that simply skips any line
+    referencing ``/dev/null``."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _write(repo, "patch.diff", _agent_diff_with_deletion())
+    spec = QualitySpec(
+        touched_paths_allowlist=("**/*.go", "*.go"),
+        touched_paths_allowlist_mode="enforce",
+    )
+    verdict = touched_paths.run(repo, spec)
+    assert verdict.passed is False
+    assert "legacy.txt" in verdict.details["violations"]
+    assert "legacy.go" not in verdict.details["violations"]
+    assert "main.go" not in verdict.details["violations"]
+
+
+def test_quality_spec_rejects_invalid_mode() -> None:
+    """The `touched_paths_allowlist_mode` field validates against
+    ('warn', 'enforce')."""
+    with pytest.raises(ValueError, match="touched_paths_allowlist_mode"):
+        QualitySpec(touched_paths_allowlist_mode="strict")
+
+
+def test_touched_paths_records_both_sides_of_rename(tmp_path: Path) -> None:
+    """A rename has different `--- a/` and `+++ b/` paths. Both sides
+    contribute to ``touched_paths`` so an allowlist that admits one
+    side but not the other surfaces the violation."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    rename_diff = dedent(
+        """\
+        --- a/old_pkg/foo.go
+        +++ b/new_pkg/foo.go
+        @@ -1,1 +1,1 @@
+        -package old_pkg
+        +package new_pkg
+        """
+    )
+    _write(repo, "patch.diff", rename_diff)
+    spec = QualitySpec(
+        touched_paths_allowlist=("new_pkg/**",),
+        touched_paths_allowlist_mode="enforce",
+    )
+    verdict = touched_paths.run(repo, spec)
+    assert verdict.passed is False
+    assert "old_pkg/foo.go" in verdict.details["violations"]
+    assert "new_pkg/foo.go" not in verdict.details["violations"]
+
+
+def test_touched_paths_handles_path_with_space(tmp_path: Path) -> None:
+    """`\\S+` would truncate `path with space.go` at the first space.
+    Using `[^\\t\\r\\n]+` preserves the full path so the allowlist can
+    decide on the real value."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    diff = (
+        "--- a/path with space.go\n"
+        "+++ b/path with space.go\n"
+        "@@ -1,1 +1,1 @@\n"
+        "-old\n"
+        "+new\n"
+    )
+    _write(repo, "patch.diff", diff)
+    spec = QualitySpec(
+        touched_paths_allowlist=("**/*.go", "*.go"),
+        touched_paths_allowlist_mode="enforce",
+    )
+    verdict = touched_paths.run(repo, spec)
+    assert "path with space.go" in verdict.details["touched_paths"]
+    assert verdict.passed is True
+    assert verdict.details["violations"] == []
+
+
+def test_touched_paths_strips_git_metadata_after_tab(tmp_path: Path) -> None:
+    """Git diffs may carry a `\\t<timestamp>` suffix on file headers; it
+    must not become part of the recorded path."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    diff = (
+        "--- a/main.go\t2026-04-26 12:00:00\n"
+        "+++ b/main.go\t2026-04-26 12:00:01\n"
+        "@@ -1,1 +1,1 @@\n"
+        "-old\n"
+        "+new\n"
+    )
+    _write(repo, "patch.diff", diff)
+    spec = QualitySpec(touched_paths_allowlist=("*.go",))
+    verdict = touched_paths.run(repo, spec)
+    assert verdict.details["touched_paths"] == ["main.go"]
+
+
+def test_touched_paths_skipped_when_diff_exceeds_size_cap(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A hostile multi-megabyte diff must not OOM the host."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _write(repo, "patch.diff", _agent_diff_one_file())
+    monkeypatch.setattr(touched_paths, "MAX_DIFF_BYTES", 1)
+    spec = QualitySpec(touched_paths_allowlist=("*.go",))
+    verdict = touched_paths.run(repo, spec)
+    assert verdict.passed is True
+    assert verdict.details["skipped"] is True
+    assert "MAX_DIFF_BYTES" in verdict.details["reason"]
+
+
+# ---------------------------------------------------------------------------
 # run_quality_oracles + funnel integration
 # ---------------------------------------------------------------------------
 
 
-def test_run_quality_oracles_returns_all_three_in_order(
+def test_run_quality_oracles_returns_all_four_in_order(
     tmp_path: Path,
 ) -> None:
     repo = tmp_path / "repo"
@@ -369,7 +694,12 @@ def test_run_quality_oracles_returns_all_three_in_order(
     _write(repo, "patch.diff", _agent_diff_one_file())
     results = run_quality_oracles(repo, QualitySpec.empty())
     names = [name for name, _ in results]
-    assert names == ["diff_minimality", "idempotency", "baseline_comparison"]
+    assert names == [
+        "diff_minimality",
+        "idempotency",
+        "baseline_comparison",
+        "touched_paths",
+    ]
 
 
 def test_run_funnel_attaches_quality_verdicts(tmp_path: Path) -> None:
@@ -394,9 +724,14 @@ def test_run_funnel_attaches_quality_verdicts(tmp_path: Path) -> None:
         stages=("diff_valid",),
     )
     names = [n for n, _ in fr.quality_verdicts]
-    assert names == ["diff_minimality", "idempotency", "baseline_comparison"]
+    assert names == [
+        "diff_minimality",
+        "idempotency",
+        "baseline_comparison",
+        "touched_paths",
+    ]
     assert "quality_verdicts" in fr.to_dict()
-    assert len(fr.to_dict()["quality_verdicts"]) == 3
+    assert len(fr.to_dict()["quality_verdicts"]) == 4
 
 
 def test_calibration_corpus_exercises_quality_oracles() -> None:
@@ -431,13 +766,17 @@ def test_calibration_corpus_exercises_quality_oracles() -> None:
         "diff_minimality": 0,
         "idempotency": 0,
         "baseline_comparison": 0,
+        "touched_paths": 0,
     }
     for sub in ("known_good", "known_bad"):
         for fixture_dir in (fixtures / sub).iterdir():
             repo = fixture_dir / "repo"
             verdicts = run_quality_oracles(repo, spec)
             assert {n for n, _ in verdicts} == {
-                "diff_minimality", "idempotency", "baseline_comparison",
+                "diff_minimality",
+                "idempotency",
+                "baseline_comparison",
+                "touched_paths",
             }
             for name, v in verdicts:
                 if not v.details.get("skipped"):

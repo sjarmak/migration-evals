@@ -2,9 +2,9 @@
 
 A :class:`QualitySpec` carries the optional fields a recipe needs to drive
 the batch-change quality oracles (diff_minimality, idempotency,
-baseline_comparison). Every field is optional - an oracle that needs a
-field but doesn't get one emits a ``skipped`` verdict rather than failing
-the trial.
+baseline_comparison, touched_paths). Every field is optional - an oracle
+that needs a field but doesn't get one emits a ``skipped`` verdict rather
+than failing the trial.
 
 Loaded from the recipe YAML (``configs/recipes/<mig>.yaml``):
 
@@ -12,6 +12,7 @@ Loaded from the recipe YAML (``configs/recipes/<mig>.yaml``):
       ground_truth_diff: configs/recipes/go_import_rewrite.ground_truth.diff
       touched_paths_allowlist:
         - "**/*.go"
+      touched_paths_allowlist_mode: warn   # or "enforce"
       baseline_tool: sed
       baseline_pattern:
         match: 'github\\.com/foo/oldpkg'
@@ -26,6 +27,7 @@ from pathlib import Path
 from typing import Any, Mapping, Optional, Tuple
 
 ALLOWED_BASELINE_TOOLS = ("sed", "comby", "gopls")
+ALLOWED_TOUCHED_PATHS_MODES = ("warn", "enforce")
 
 
 @dataclass(frozen=True)
@@ -55,6 +57,7 @@ class QualitySpec:
 
     ground_truth_diff: Optional[Path] = None
     touched_paths_allowlist: Optional[Tuple[str, ...]] = None
+    touched_paths_allowlist_mode: str = "warn"
     baseline_tool: Optional[str] = None
     baseline_pattern: Optional[BaselinePattern] = None
 
@@ -66,6 +69,12 @@ class QualitySpec:
             raise ValueError(
                 f"baseline_tool must be one of {ALLOWED_BASELINE_TOOLS}; "
                 f"got {self.baseline_tool!r}"
+            )
+        if self.touched_paths_allowlist_mode not in ALLOWED_TOUCHED_PATHS_MODES:
+            raise ValueError(
+                "touched_paths_allowlist_mode must be one of "
+                f"{ALLOWED_TOUCHED_PATHS_MODES}; got "
+                f"{self.touched_paths_allowlist_mode!r}"
             )
 
     @classmethod
@@ -95,9 +104,11 @@ class QualitySpec:
             if baseline_pattern_raw
             else None
         )
+        mode_raw = data.get("touched_paths_allowlist_mode") or "warn"
         return cls(
             ground_truth_diff=ground_truth,
             touched_paths_allowlist=allowlist,
+            touched_paths_allowlist_mode=str(mode_raw),
             baseline_tool=str(baseline_tool) if baseline_tool else None,
             baseline_pattern=baseline_pattern,
         )
@@ -105,6 +116,7 @@ class QualitySpec:
 
 __all__ = [
     "ALLOWED_BASELINE_TOOLS",
+    "ALLOWED_TOUCHED_PATHS_MODES",
     "BaselinePattern",
     "QualitySpec",
 ]
