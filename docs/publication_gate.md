@@ -63,23 +63,27 @@ The workflow runs two stamp checks per PR:
    gold-anchor correlation; in-place edits to legacy runs do not
    regress on the stricter flag.
 
-## CODEOWNERS pattern (governance - not applied here)
+## CODEOWNERS pattern
 
-The pre-registered hypotheses file must be owned by the migration-eval-owners
-leadership group so that post-hoc edits require explicit review. The
-following line MUST be added to `.github/CODEOWNERS` by a team
-administrator (this repository change is a governance action and is NOT
-performed by this work unit):
+`.github/CODEOWNERS` requires explicit reviewer signoff on the
+pre-registered hypotheses file so post-hoc edits cannot land
+unreviewed:
 
 ```
-docs/hypotheses_and_thresholds.md @framework-owners
+docs/hypotheses_and_thresholds.md @sjarmak
 ```
 
-The same pattern may be extended to the broader `docs/`
-directory if the working group prefers broader coverage:
+CODEOWNERS only enforces on pull requests, so the rule is dormant
+while the repo lands changes directly on `main` (per current
+contributor convention). It activates automatically the first time a
+PR is opened against the matched path — no future migration step
+needed.
+
+The same pattern may be extended to the broader `docs/` directory if
+the working group later prefers wider coverage:
 
 ```
-docs/ @framework-owners
+docs/ @sjarmak
 ```
 
 ## Operator playbook for stale-stamp failures

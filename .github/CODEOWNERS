@@ -1,0 +1,16 @@
+# CODEOWNERS for migration-evals
+#
+# CODEOWNERS only takes effect on pull requests. The repo currently
+# lands changes directly on main, so these rules are documentation of
+# intent for the moment — they activate automatically the first time a
+# PR is opened against any matched path.
+#
+# See docs/publication_gate.md for the governance contract these
+# rules enforce.
+
+# The pre-registered hypotheses file is the publication-grade source
+# of truth for funnel thresholds and PRD claims. Post-hoc edits must
+# carry an explicit reviewer signature; the gate at
+# .github/workflows/publication_gate.yml is mechanical and cannot
+# detect a drive-by change to the doc itself.
+docs/hypotheses_and_thresholds.md @sjarmak
