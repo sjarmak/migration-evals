@@ -267,6 +267,16 @@ def run_from_config(config_path: Path) -> int:
         )
         return 2
 
+    # Recipe templates may declare a top-level `sandbox_policy:` block so
+    # per-recipe defaults live alongside the recipe rather than being
+    # duplicated in every smoke YAML. The smoke config still wins per
+    # key (shallow merge) when both sources set the same flag.
+    recipe_template_policy = _load_recipe_template_sandbox_policy(recipe_spec)
+    smoke_policy = adapters_cfg.get("sandbox_policy")
+    merged_policy = _merge_sandbox_policy(recipe_template_policy, smoke_policy)
+    if merged_policy is not None:
+        adapters_cfg = {**adapters_cfg, "sandbox_policy": merged_policy}
+
     output_root.mkdir(parents=True, exist_ok=True)
     written = 0
     for repo_entry in repo_entries:
@@ -369,6 +379,49 @@ def _as_path(raw: Any) -> Optional[Path]:
     if isinstance(raw, str) and raw:
         return Path(raw)
     return None
+
+
+def _load_recipe_template_sandbox_policy(
+    recipe_spec: Optional[Path],
+) -> Mapping[str, Any]:
+    """Return the recipe template's top-level ``sandbox_policy`` block.
+
+    Returns ``{}`` for any failure mode (missing path, unreadable file,
+    invalid YAML, non-mapping block) so the caller can treat "no
+    template policy" and "broken template policy" identically — the
+    recipe template is consulted as a soft-default source, not a
+    correctness gate.
+    """
+    if recipe_spec is None or not recipe_spec.is_file():
+        return {}
+    try:
+        data = yaml.safe_load(recipe_spec.read_text(encoding="utf-8"))
+    except yaml.YAMLError:
+        return {}
+    if not isinstance(data, Mapping):
+        return {}
+    block = data.get("sandbox_policy")
+    if not isinstance(block, Mapping):
+        return {}
+    return dict(block)
+
+
+def _merge_sandbox_policy(
+    recipe_policy: Mapping[str, Any],
+    smoke_policy: Optional[Mapping[str, Any]],
+) -> Optional[Mapping[str, Any]]:
+    """Shallow-merge a recipe-template policy with a smoke-YAML policy.
+
+    Smoke wins per key — recipe values fill in keys the smoke config
+    omits, but the smoke config can override or zero-out any recipe
+    default. Returns ``None`` when neither source provides any keys, so
+    the caller can leave ``adapters_cfg`` untouched in the common case.
+    """
+    merged: dict[str, Any] = dict(recipe_policy)
+    if smoke_policy:
+        for key, value in smoke_policy.items():
+            merged[key] = value
+    return merged if merged else None
 
 
 def _sha_of(path: Path) -> str:
