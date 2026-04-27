@@ -58,3 +58,33 @@ jobs:
             python -m migration_evals.publication_gate --check-run "$run_dir"
             echo "::endgroup::"
           done <<< "$CHANGED_RUNS"
+
+      - name: Enumerate newly-added migration runs
+        # Newly-added run dirs must additionally pass --require-gold-anchor
+        # so that publication-grade claims (vs. work-in-progress recordings)
+        # carry a calibrated gold-anchor correlation. Modifications to
+        # existing runs don't trip this stricter check; only A-filter
+        # additions of a run-dir's first artifact count.
+        id: new_runs
+        run: |
+          NEW_RUNS=$(git diff --name-only --diff-filter=A \
+              "origin/${{ github.base_ref }}"...HEAD \
+            | grep -E "^runs/analysis/mig_[^/]+/" \
+            | cut -d/ -f1-3 \
+            | sort -u || true)
+          echo "new_runs<<EOF" >> "$GITHUB_OUTPUT"
+          echo "$NEW_RUNS" >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
+
+      - name: Require gold-anchor on each newly-added run
+        if: steps.new_runs.outputs.new_runs != ''
+        env:
+          NEW_RUNS: ${{ steps.new_runs.outputs.new_runs }}
+        run: |
+          while IFS= read -r run_dir; do
+            [ -z "$run_dir" ] && continue
+            echo "::group::gate (gold-anchor): $run_dir"
+            python -m migration_evals.publication_gate \
+              --check-run "$run_dir" --require-gold-anchor
+            echo "::endgroup::"
+          done <<< "$NEW_RUNS"

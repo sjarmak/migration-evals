@@ -53,6 +53,16 @@ script path so that Python's import machinery does not put
 `src/migration_evals/` on `sys.path[0]` (the package's `types.py` would
 otherwise shadow the stdlib `types` module and break `argparse`).
 
+The workflow runs two stamp checks per PR:
+
+1. **Touched runs** — every run directory the PR modifies passes the
+   default gate (stamp validity only).
+2. **Newly-added runs** — additions filtered with `git diff
+   --diff-filter=A` additionally pass `--require-gold-anchor`. New
+   publication-grade runs must therefore carry a calibrated
+   gold-anchor correlation; in-place edits to legacy runs do not
+   regress on the stricter flag.
+
 ## CODEOWNERS pattern (governance - not applied here)
 
 The pre-registered hypotheses file must be owned by the migration-eval-owners
