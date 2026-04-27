@@ -140,4 +140,6 @@ contained:
   jstack-based tests" is the recipe, not the smoke runner.
 - Rootless Docker / podman: the user is rootless inside the container.
   Running the *outer* docker daemon rootless (or substituting podman
-  rootless) is a follow-up.
+  rootless) is documented in
+  [sandbox_outer_daemon.md](./sandbox_outer_daemon.md), including
+  the `adapters.docker_bin` drop-in path for podman.

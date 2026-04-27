@@ -257,6 +257,74 @@ def test_build_sandbox_adapter_rejects_unknown_provider(tmp_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
+# docker_bin override (gk0): proves the podman drop-in path
+# ---------------------------------------------------------------------------
+
+
+def test_docker_bin_override_threads_through_every_subprocess_call(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Setting ``docker_bin='podman'`` must cause every CLI invocation
+    (create / exec / kill / rm) to call ``podman`` instead of ``docker``.
+
+    This is the load-bearing assertion behind ``docs/sandbox_outer_daemon.md``
+    Option B: podman rootless is reachable as a drop-in by flipping the
+    config knob, with no code change. The test does not require podman to
+    be installed - it only verifies the adapter delegates the binary
+    selection to the override.
+    """
+    timeout_exc = subprocess.TimeoutExpired(
+        cmd=["podman", "exec"], timeout=1, output="", stderr=""
+    )
+    recorder = _Recorder(
+        [
+            _StubProc(stdout="cid\n"),  # create_sandbox
+            timeout_exc,  # exec raises -> triggers kill path
+            _StubProc(returncode=0, stdout="cid\n"),  # kill
+            _StubProc(returncode=0, stdout="cid\n"),  # rm -f (destroy)
+        ]
+    )
+    monkeypatch.setattr(subprocess, "run", recorder)
+    adapter = DockerSandboxAdapter(tmp_path, docker_bin="podman")
+
+    sid = adapter.create_sandbox(image="alpine:3.19")
+    adapter.exec(sid, command="sleep 9999", timeout_s=1)
+    adapter.destroy_sandbox(sid)
+
+    # Four subprocess calls: create / exec / kill / rm. Every one must
+    # start with the overridden binary.
+    assert len(recorder.calls) == 4
+    for call in recorder.calls:
+        assert call["args"][0] == "podman", (
+            f"docker_bin override leaked: {call['args'][:3]}"
+        )
+    # Spot-check sub-commands stay identical (we only swap the binary,
+    # not the verbs).
+    assert recorder.calls[0]["args"][1] == "run"
+    assert recorder.calls[1]["args"][1] == "exec"
+    assert recorder.calls[2]["args"][1] == "kill"
+    assert recorder.calls[3]["args"][1] == "rm"
+
+
+def test_build_sandbox_adapter_threads_docker_bin_from_config(
+    tmp_path: Path,
+) -> None:
+    """The factory must propagate ``adapters.docker_bin`` to the adapter.
+
+    Without this, the podman drop-in path documented in
+    ``docs/sandbox_outer_daemon.md`` would silently fall back to
+    ``docker``.
+    """
+    adapter = build_sandbox_adapter(
+        repo_path=tmp_path,
+        adapters_cfg={"sandbox_provider": "docker", "docker_bin": "podman"},
+        cassette_dir=None,
+    )
+    assert isinstance(adapter, DockerSandboxAdapter)
+    assert adapter._docker_bin == "podman"
+
+
+# ---------------------------------------------------------------------------
 # Live Docker integration (opt-in)
 # ---------------------------------------------------------------------------
 

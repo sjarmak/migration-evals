@@ -44,7 +44,7 @@ revert.
 | [`docs/oracle_funnel.md`](docs/oracle_funnel.md) | Funnel design + sandbox/Anthropic backend selection. |
 | [`docs/tier0_skip.md`](docs/tier0_skip.md) | Why tier 0 is skipped today and the three conditions that re-open it. |
 | [`src/migration_evals/`](src/migration_evals/) | Python package - CLI, funnel (Tier 0–4), oracles, gold anchor, iterator-batch report, ledger, contamination split, pre-registration / publication gate, Python 2→3 probe. |
-| [`src/migration_evals/adapters_docker.py`](src/migration_evals/adapters_docker.py) | Docker-backed `SandboxAdapter` for tiers 1+2 (compile + tests inside a real container). |
+| [`src/migration_evals/adapters_docker.py`](src/migration_evals/adapters_docker.py) | Docker-backed `SandboxAdapter` for tiers 1+2 (compile + tests inside a real container). Outer-daemon hardening (rootless docker / podman drop-in) is covered in [`docs/sandbox_outer_daemon.md`](docs/sandbox_outer_daemon.md). |
 | [`src/migration_evals/adapters_anthropic.py`](src/migration_evals/adapters_anthropic.py) | SDK-backed `AnthropicAdapter` for tier 3 (LLM judge) with prompt-cache passthrough and pre-call budget guard. |
 | [`schemas/`](schemas/) | JSON Schemas for `result.json` and gold-anchor entries. |
 | [`configs/java8_17_smoke.yaml`](configs/java8_17_smoke.yaml) | End-to-end smoke config: 3 fixture repos, all non-network tiers, replay cassettes - no API keys required. |
