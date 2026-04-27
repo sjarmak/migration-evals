@@ -2,5 +2,6 @@
   "fixture_id": "bad_014_test_panic",
   "expected_outcome": "reject",
   "expected_reject_tier": "tests",
+  "applicable_tiers": ["compile_only", "tests"],
   "notes": "Module compiles cleanly but a test panics with a nil-map write. Distinct tier-2 failure mode from bad_013 (assertion vs runtime panic)."
 }

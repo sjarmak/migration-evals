@@ -1,5 +1,6 @@
 {
   "fixture_id": "good_012_subpackage_compiles",
   "expected_outcome": "pass_all",
+  "applicable_tiers": ["compile_only", "tests"],
   "notes": "Two-package self-contained Go module with an intra-module import; compiles and tests cleanly (calibrates tier-1 + tier-2 known-good axis with a slightly richer shape than good_011)"
 }

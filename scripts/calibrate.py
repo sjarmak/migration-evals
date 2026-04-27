@@ -358,7 +358,7 @@ def calibrate(
     recipe: Optional[Recipe] = None,
     sandbox_factory: Optional[Callable[..., Any]] = None,
     sandbox_image: str = "golang:1.22",
-):
+) -> CalibrationReport:
     """Drive the funnel over every fixture and return a CalibrationReport.
 
     Parameters
@@ -502,7 +502,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.recipe is not None:
         try:
             recipe = _load_recipe_from_yaml(args.recipe)
-        except (OSError, ValueError) as exc:
+        except (OSError, ValueError, ImportError) as exc:
             print(f"calibrate: {exc}", file=sys.stderr)
             return 1
 

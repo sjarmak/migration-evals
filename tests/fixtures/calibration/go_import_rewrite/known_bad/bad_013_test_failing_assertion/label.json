@@ -2,5 +2,6 @@
   "fixture_id": "bad_013_test_failing_assertion",
   "expected_outcome": "reject",
   "expected_reject_tier": "tests",
+  "applicable_tiers": ["compile_only", "tests"],
   "notes": "Module compiles cleanly but a test asserts a value the implementation does not produce. Calibrates the tier-2 (tests) known-bad axis."
 }

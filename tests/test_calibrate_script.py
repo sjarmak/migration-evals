@@ -59,10 +59,13 @@ def test_calibrate_emits_clean_tier_zero_calibration(tmp_path: Path) -> None:
     assert out.is_file()
     report = CalibrationReport.from_path(out)
     assert report.migration_id == "go_import_rewrite"
-    # 10 tier-0 known-good + 2 tier-1/tier-2 known-good (no patch.diff,
-    # repo-only structural fallback passes).
+    # 10 tier-0 known-good + 2 tier-1/tier-2 known-good. The latter
+    # declare applicable_tiers=["compile_only", "tests"] so they do not
+    # contribute to the tier-0 corpus.
     assert report.n_known_good == 12
     # 10 tier-0 known-bad + 2 compile_only + 2 tests known-bad fixtures.
+    # The compile_only/tests fixtures also declare applicable_tiers
+    # excluding diff_valid, so they do not run through tier-0.
     assert report.n_known_bad == 14
     diff = report.tier("diff_valid")
     # Corpus is hand-vetted for tier-0; FPR must be zero (no clean diff
@@ -71,9 +74,9 @@ def test_calibrate_emits_clean_tier_zero_calibration(tmp_path: Path) -> None:
     # 10 bad_*_* fixtures), so it must also be zero.
     assert diff.fpr == 0.0
     assert diff.fnr == 0.0
-    # Tier-0 sees every fixture (it always runs first); the 12 known-good
-    # all pass tier-0, and the 10 known-bad targeted at tier-0 all fail.
-    assert diff.tn == 12 and diff.tp == 10
+    # Only the 10 tier-0 fixtures opt into diff_valid via applicable_tiers;
+    # tier-1/tier-2 fixtures restrict themselves to ['compile_only','tests'].
+    assert diff.tn == 10 and diff.tp == 10
     # Tiers above tier 0 weren't run; their rates are unobserved.
     assert report.tier("compile_only").fpr is None
     assert report.tier("compile_only").fnr is None

@@ -355,7 +355,10 @@ def test_live_docker_roundtrip(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-from migration_evals.sandbox_policy import SandboxPolicy  # noqa: E402
+from migration_evals.sandbox_policy import (  # noqa: E402
+    DEFAULT_PROXY_IMAGE,
+    SandboxPolicy,
+)
 
 
 def _docker_run_args(tmp_path: Path, monkeypatch, *, policy=None) -> list[str]:
@@ -716,7 +719,7 @@ def test_pull_proxy_config_writes_filter_lines(
     # and -v mounts the dir at /etc/tinyproxy. Locate the dir.
     runs = _calls_with_subcommand(recorder, "docker", "run")
     proxy_run = next(
-        r for r in runs if "vimagick/tinyproxy:latest" in r  # default image
+        r for r in runs if DEFAULT_PROXY_IMAGE in r  # default image
     )
     mounts = [proxy_run[i + 1] for i, a in enumerate(proxy_run) if a == "-v"]
     conf_dir_mounts = [m for m in mounts if m.endswith(":/etc/tinyproxy:ro")]
@@ -805,6 +808,7 @@ def test_pull_proxy_run_failure_cleans_up_network(
     recorder = _Recorder(
         [
             _StubProc(stdout="netid\n"),  # network create succeeds
+            _StubProc(stdout="[]"),  # network inspect (returns no IPAM)
             err,  # proxy docker run FAILS
             _StubProc(returncode=0),  # network rm cleanup
         ]

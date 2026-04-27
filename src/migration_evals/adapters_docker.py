@@ -28,7 +28,9 @@ and :mod:`migration_evals.runner` share one decision point.
 
 from __future__ import annotations
 
+import json
 import re
+import shutil
 import subprocess
 import tempfile
 import uuid
@@ -163,7 +165,10 @@ class DockerSandboxAdapter:
         if self._policy.network == "none":
             args.extend(["--network", "none"])
         elif self._policy.network == "pull":
-            assert egress is not None  # set above for this branch
+            if egress is None:
+                raise RuntimeError(
+                    "egress filter was not set up for network='pull' branch"
+                )
             args.extend(["--network", egress.network_name])
             # Keep the audit label so existing log analyzers can still
             # see what the trial was permitted to reach.
@@ -222,11 +227,7 @@ class DockerSandboxAdapter:
     @staticmethod
     def _cleanup_scratch(path: Path) -> None:
         """Best-effort recursive removal of a scratch directory."""
-        try:
-            import shutil
-            shutil.rmtree(path, ignore_errors=True)
-        except Exception:  # pragma: no cover - defensive
-            pass
+        shutil.rmtree(path, ignore_errors=True)
 
     # ------------------------------------------------------------------
     # Egress filter (network='pull')
@@ -254,10 +255,14 @@ class DockerSandboxAdapter:
     def _setup_egress_filter(self, scratch_host: Path) -> _EgressFilter:
         """Stand up the per-sandbox network + proxy sidecar.
 
-        Order matters: create the internal network first, then start the
-        proxy sidecar attached to it, then connect the sidecar to the
-        default bridge so it has egress. The workload is run by the
-        caller and joined to ``network_name``.
+        Order matters: create the internal network first, inspect its
+        subnet so we can restrict the proxy's ``Allow`` to just that
+        subnet (otherwise clients on the default bridge could use the
+        proxy as an open relay to our allowlisted hosts), render the
+        config, then start the proxy sidecar attached to the internal
+        network, then connect the sidecar to the default bridge so it
+        has egress. The workload is run by the caller and joined to
+        ``network_name``.
         """
         suffix = uuid.uuid4().hex[:12]
         network_name = f"mig-eval-egress-{suffix}"
@@ -265,10 +270,6 @@ class DockerSandboxAdapter:
         # generated tinyproxy.conf is cleaned up when the scratch dir is.
         config_dir = scratch_host.parent / f"mig-eval-proxyconf-{suffix}"
         config_dir.mkdir(parents=True, exist_ok=True)
-        config_path = config_dir / "tinyproxy.conf"
-        filter_path = config_dir / "filter"
-        config_path.write_text(self._render_proxy_config(), encoding="utf-8")
-        filter_path.write_text(self._render_proxy_filter(), encoding="utf-8")
 
         # 1. Create the per-sandbox internal bridge. `--internal` is the
         #    load-bearing flag: docker installs no MASQUERADE rule, so
@@ -290,6 +291,23 @@ class DockerSandboxAdapter:
                 f"docker network create failed (exit={exc.returncode}): "
                 f"{exc.stderr.strip()}"
             ) from exc
+
+        # 1a. Inspect the network for its subnet so the proxy's Allow
+        #     directive can restrict clients to this sandbox's subnet
+        #     only. Otherwise the sidecar (which is also on the default
+        #     bridge for outbound egress) would accept connections from
+        #     any container on the bridge and act as an open relay to
+        #     our allowlist. Best-effort: if inspection fails we fall
+        #     back to 0.0.0.0/0 so we don't break the sandbox, but the
+        #     happy path on a healthy daemon always pins the subnet.
+        internal_subnet = self._inspect_network_subnet(network_name)
+        config_path = config_dir / "tinyproxy.conf"
+        filter_path = config_dir / "filter"
+        config_path.write_text(
+            self._render_proxy_config(allow_cidr=internal_subnet),
+            encoding="utf-8",
+        )
+        filter_path.write_text(self._render_proxy_filter(), encoding="utf-8")
 
         # 2. Start the proxy sidecar on the internal network with the
         #    `proxy` DNS alias the workload uses. Mount the per-sandbox
@@ -319,6 +337,13 @@ class DockerSandboxAdapter:
                 f"{exc.stderr.strip()}"
             ) from exc
         proxy_container = completed.stdout.strip()
+        if not proxy_container:
+            subprocess.run(
+                [self._docker_bin, "network", "rm", network_name],
+                capture_output=True, check=False,
+            )
+            self._cleanup_scratch(config_dir)
+            raise RuntimeError("docker run produced empty proxy container id")
 
         # 3. Attach the sidecar to the default bridge so it has egress.
         connect_args = [
@@ -349,7 +374,7 @@ class DockerSandboxAdapter:
             config_dir=config_dir,
         )
 
-    def _render_proxy_config(self) -> str:
+    def _render_proxy_config(self, *, allow_cidr: str | None = None) -> str:
         """Generate a tinyproxy config that points at the filter file.
 
         ``FilterDefaultDeny Yes`` plus an anchored regex per allowlisted
@@ -359,12 +384,24 @@ class DockerSandboxAdapter:
         passed through ``re.escape`` so dots in ``registry-1.docker.io``
         are literal, not "any character".
 
+        ``allow_cidr`` restricts which clients can use the proxy at all.
+        The sidecar attaches to the default bridge for outbound egress,
+        so without this restriction any container on the bridge could
+        relay through us to our allowlisted hosts. Pinning ``Allow`` to
+        the per-sandbox internal subnet means only this sandbox's
+        workload can connect.
+
         Also embed the allowlist as comment lines so tests (and
         operators reading the conf for audit) can see the active
         allowlist in one place; tinyproxy ignores lines starting with
         ``#``.
         """
         port = self._policy.proxy_port
+        # Allow only the per-sandbox internal subnet. Fall back to
+        # 0.0.0.0/0 only if the caller could not determine the subnet
+        # (network inspect failed) - an audit-trail label rather than a
+        # deliberate open relay.
+        allow = allow_cidr if allow_cidr else "0.0.0.0/0"
         lines = [
             "# Generated by migration-evals DockerSandboxAdapter (cxa).",
             f"Port {port}",
@@ -374,9 +411,10 @@ class DockerSandboxAdapter:
             # allow/deny based on hostname.
             "ConnectPort 443",
             "ConnectPort 80",
-            # Allow any client - we rely on the docker network for
-            # client isolation; no other container can reach the proxy.
-            "Allow 0.0.0.0/0",
+            # Restrict clients to the per-sandbox internal subnet so
+            # the sidecar (also on the default bridge for egress) does
+            # not act as an open relay to our allowlist.
+            f"Allow {allow}",
             'Filter "/etc/tinyproxy/filter"',
             "FilterDefaultDeny Yes",
             "FilterExtended Yes",
@@ -409,6 +447,31 @@ class DockerSandboxAdapter:
         ``registry-1.docker.io``.
         """
         return f"^{re.escape(host)}$"
+
+    def _inspect_network_subnet(self, network_name: str) -> str | None:
+        """Return the IPAM subnet of a docker network, or None on failure.
+
+        Used to pin the proxy's ``Allow`` directive to just the per-
+        sandbox internal subnet so the sidecar (also on the default
+        bridge for outbound egress) is not an open relay.
+        """
+        try:
+            completed = subprocess.run(
+                [self._docker_bin, "network", "inspect", network_name],
+                check=True, capture_output=True, text=True,
+            )
+        except subprocess.CalledProcessError:
+            return None
+        try:
+            data = json.loads(completed.stdout)
+            ipam_configs = data[0].get("IPAM", {}).get("Config", [])
+            for cfg in ipam_configs:
+                subnet = cfg.get("Subnet")
+                if subnet:
+                    return subnet
+        except (json.JSONDecodeError, IndexError, KeyError, AttributeError):
+            return None
+        return None
 
     def _teardown_egress_filter(self, egress: _EgressFilter) -> None:
         """Best-effort: kill the proxy sidecar, then remove the network.

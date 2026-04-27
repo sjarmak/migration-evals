@@ -2,5 +2,6 @@
   "fixture_id": "bad_012_compile_undefined_symbol",
   "expected_outcome": "reject",
   "expected_reject_tier": "compile_only",
+  "applicable_tiers": ["compile_only", "tests"],
   "notes": "Source references a symbol that does not exist on the imported standard-library package. Tier-0 passes (syntactically balanced); compile_only fails."
 }
