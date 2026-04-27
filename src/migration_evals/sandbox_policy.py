@@ -25,8 +25,9 @@ restrictive useful set:
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
-from typing import Any, Mapping, Optional, Tuple
+from typing import Any, Mapping
 
 ALLOWED_NETWORK_MODES = ("none", "pull")
 DEFAULT_USER = "1000:1000"
@@ -60,6 +61,15 @@ SAFE_CAPS = frozenset(
     }
 )
 
+# Hostname charset for ``network_allowlist`` entries. Each entry is later
+# fed through ``re.escape`` and joined into the tinyproxy filter file with
+# ``\n`` separators; ``re.escape`` of a real newline produces a backslash
+# followed by an actual newline, which physically splits one filter line
+# into two — and a YAML entry like ``"trusted.io\nevil.io"`` would smuggle
+# ``evil.io`` into the allowlist. Allow only the strict hostname charset
+# (RFC 952/1123 + the underscore commonly seen in registry hosts).
+_HOSTNAME_CHARSET_RE = re.compile(r"^[A-Za-z0-9._\-]+$")
+
 
 def _validate_cap_add_allowlist(caps: tuple[str, ...]) -> None:
     """Reject any cap_add entry that isn't in :data:`SAFE_CAPS`.
@@ -70,11 +80,44 @@ def _validate_cap_add_allowlist(caps: tuple[str, ...]) -> None:
     for a debugger-style trial). The error lists every offending cap so
     the operator can fix the recipe in one pass.
     """
-    bad = tuple(c for c in caps if c not in SAFE_CAPS)
+    bad = [c for c in caps if c not in SAFE_CAPS]
     if bad:
         raise ValueError(
             "cap_add contains capabilities outside the safe-cap allowlist: "
-            f"{list(bad)}; allowed caps are {sorted(SAFE_CAPS)}"
+            f"{bad}; allowed caps are {sorted(SAFE_CAPS)}"
+        )
+
+
+def _validate_network_allowlist(hosts: tuple[str, ...]) -> None:
+    """Reject ``network_allowlist`` entries that contain anything outside
+    the hostname charset.
+
+    Why: each entry flows verbatim into the tinyproxy filter file via
+    ``re.escape``. Newlines, carriage returns, and other control chars
+    survive ``re.escape`` as literal whitespace and split one filter line
+    into two, smuggling unauthorized hosts into the allowlist.
+    """
+    bad = [h for h in hosts if not _HOSTNAME_CHARSET_RE.match(h)]
+    if bad:
+        raise ValueError(
+            "network_allowlist entries contain disallowed characters "
+            f"(only [A-Za-z0-9._-] permitted): {bad}"
+        )
+
+
+def _validate_cap_drop(cap_drop: tuple[str, ...]) -> None:
+    """Require ``"ALL"`` in any operator-supplied ``cap_drop``.
+
+    The hardened default is ``cap_drop=("ALL",)`` paired with an empty
+    ``cap_add``; the security model is "drop everything, opt back in to
+    the minimum needed." A YAML recipe that supplies ``cap_drop: []`` or
+    a list omitting ``ALL`` silently restores Docker's full default
+    capability set, which defeats the model. Reject at ingest.
+    """
+    if "ALL" not in cap_drop:
+        raise ValueError(
+            "cap_drop must include 'ALL' to preserve the drop-all baseline; "
+            f"got {list(cap_drop)}"
         )
 
 
@@ -88,11 +131,11 @@ class SandboxPolicy:
     """
 
     network: str = "none"
-    network_allowlist: Tuple[str, ...] = ()
-    cap_drop: Tuple[str, ...] = ("ALL",)
-    cap_add: Tuple[str, ...] = ()
+    network_allowlist: tuple[str, ...] = ()
+    cap_drop: tuple[str, ...] = ("ALL",)
+    cap_add: tuple[str, ...] = ()
     no_new_privileges: bool = True
-    user: Optional[str] = DEFAULT_USER
+    user: str | None = DEFAULT_USER
     repo_mount_readonly: bool = True
     scratch_dir: str = DEFAULT_SCRATCH
     # Egress-filter knobs (cxa). When network='pull', the docker adapter
@@ -108,8 +151,7 @@ class SandboxPolicy:
     def __post_init__(self) -> None:
         if self.network not in ALLOWED_NETWORK_MODES:
             raise ValueError(
-                f"network must be one of {ALLOWED_NETWORK_MODES}; "
-                f"got {self.network!r}"
+                f"network must be one of {ALLOWED_NETWORK_MODES}; " f"got {self.network!r}"
             )
         if self.network == "pull" and not self.network_allowlist:
             raise ValueError(
@@ -117,9 +159,7 @@ class SandboxPolicy:
                 "(e.g. ['registry-1.docker.io', 'proxy.golang.org'])"
             )
         if self.network == "none" and self.network_allowlist:
-            raise ValueError(
-                "network_allowlist must be empty when network='none'"
-            )
+            raise ValueError("network_allowlist must be empty when network='none'")
 
     @classmethod
     def hardened_default(cls) -> "SandboxPolicy":
@@ -127,25 +167,22 @@ class SandboxPolicy:
         return cls()
 
     @classmethod
-    def from_dict(
-        cls, data: Mapping[str, Any] | None
-    ) -> "SandboxPolicy":
+    def from_dict(cls, data: Mapping[str, Any] | None) -> "SandboxPolicy":
         if not data:
             return cls.hardened_default()
         kwargs: dict[str, Any] = {}
         if "network" in data:
             kwargs["network"] = str(data["network"])
         if "network_allowlist" in data:
-            allowlist = data["network_allowlist"] or ()
-            kwargs["network_allowlist"] = tuple(str(x) for x in allowlist)
+            allowlist = tuple(str(x) for x in (data["network_allowlist"] or ()))
+            _validate_network_allowlist(allowlist)
+            kwargs["network_allowlist"] = allowlist
         if "cap_drop" in data:
-            kwargs["cap_drop"] = tuple(
-                str(x) for x in (data["cap_drop"] or ())
-            )
+            cap_drop = tuple(str(x) for x in (data["cap_drop"] or ()))
+            _validate_cap_drop(cap_drop)
+            kwargs["cap_drop"] = cap_drop
         if "cap_add" in data:
-            cap_add = tuple(
-                str(x) for x in (data["cap_add"] or ())
-            )
+            cap_add = tuple(str(x) for x in (data["cap_add"] or ()))
             _validate_cap_add_allowlist(cap_add)
             kwargs["cap_add"] = cap_add
         if "no_new_privileges" in data:

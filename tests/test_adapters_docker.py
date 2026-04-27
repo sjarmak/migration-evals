@@ -28,7 +28,6 @@ from migration_evals.adapters_docker import (  # noqa: E402
     build_sandbox_adapter,
 )
 
-
 # ---------------------------------------------------------------------------
 # subprocess.run recorder
 # ---------------------------------------------------------------------------
@@ -80,7 +79,9 @@ def test_create_sandbox_issues_docker_run(tmp_path: Path, monkeypatch: pytest.Mo
     monkeypatch.setattr(subprocess, "run", recorder)
     adapter = DockerSandboxAdapter(tmp_path, workdir="/work")
 
-    sandbox_id = adapter.create_sandbox(image="build-sandbox:latest", env={"JAVA_HOME": "/opt/jdk17"})
+    sandbox_id = adapter.create_sandbox(
+        image="build-sandbox:latest", env={"JAVA_HOME": "/opt/jdk17"}
+    )
 
     assert sandbox_id == "deadbeef0000"
     assert len(recorder.calls) == 1
@@ -154,7 +155,9 @@ def test_exec_propagates_nonzero_exit(tmp_path: Path, monkeypatch: pytest.Monkey
 def test_exec_timeout_kills_container_and_reports(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    timeout_exc = subprocess.TimeoutExpired(cmd=["docker", "exec"], timeout=1, output="partial", stderr="")
+    timeout_exc = subprocess.TimeoutExpired(
+        cmd=["docker", "exec"], timeout=1, output="partial", stderr=""
+    )
     recorder = _Recorder(
         [
             _StubProc(stdout="c1\n"),  # create
@@ -233,9 +236,7 @@ def test_destroy_sandbox_tolerates_rm_failure(
 def test_build_sandbox_adapter_defaults_to_cassette(tmp_path: Path) -> None:
     from migration_evals.cli import _CassetteSandboxAdapter
 
-    adapter = build_sandbox_adapter(
-        repo_path=tmp_path, adapters_cfg={}, cassette_dir=None
-    )
+    adapter = build_sandbox_adapter(repo_path=tmp_path, adapters_cfg={}, cassette_dir=None)
     assert isinstance(adapter, _CassetteSandboxAdapter)
 
 
@@ -274,9 +275,7 @@ def test_docker_bin_override_threads_through_every_subprocess_call(
     be installed - it only verifies the adapter delegates the binary
     selection to the override.
     """
-    timeout_exc = subprocess.TimeoutExpired(
-        cmd=["podman", "exec"], timeout=1, output="", stderr=""
-    )
+    timeout_exc = subprocess.TimeoutExpired(cmd=["podman", "exec"], timeout=1, output="", stderr="")
     recorder = _Recorder(
         [
             _StubProc(stdout="cid\n"),  # create_sandbox
@@ -296,9 +295,7 @@ def test_docker_bin_override_threads_through_every_subprocess_call(
     # start with the overridden binary.
     assert len(recorder.calls) == 4
     for call in recorder.calls:
-        assert call["args"][0] == "podman", (
-            f"docker_bin override leaked: {call['args'][:3]}"
-        )
+        assert call["args"][0] == "podman", f"docker_bin override leaked: {call['args'][:3]}"
     # Spot-check sub-commands stay identical (we only swap the binary,
     # not the verbs).
     assert recorder.calls[0]["args"][1] == "run"
@@ -374,25 +371,20 @@ def _docker_run_args(tmp_path: Path, monkeypatch, *, policy=None) -> list[str]:
     # Provide enough stub responses for any backend path: network=none
     # uses 1, network=pull uses up to 4 (network create, proxy run,
     # network connect, workload run). Extra responses are ignored.
-    recorder = _Recorder(
-        [_StubProc(stdout=f"id-{i}\n") for i in range(8)]
-    )
+    recorder = _Recorder([_StubProc(stdout=f"id-{i}\n") for i in range(8)])
     monkeypatch.setattr(subprocess, "run", recorder)
     adapter = DockerSandboxAdapter(tmp_path, policy=policy)
     adapter.create_sandbox(image="build-sandbox:latest")
     workload_runs = [
         c["args"]
         for c in recorder.calls
-        if c["args"][:2] == ["docker", "run"]
-        and "build-sandbox:latest" in c["args"]
+        if c["args"][:2] == ["docker", "run"] and "build-sandbox:latest" in c["args"]
     ]
     assert workload_runs, "expected exactly one workload docker-run"
     return workload_runs[-1]
 
 
-def test_default_policy_drops_all_caps(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_default_policy_drops_all_caps(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     args = _docker_run_args(tmp_path, monkeypatch)
     # --cap-drop ALL must appear; no --cap-add lines by default.
     drops = [args[i + 1] for i, a in enumerate(args) if a == "--cap-drop"]
@@ -401,9 +393,7 @@ def test_default_policy_drops_all_caps(
     assert adds == []
 
 
-def test_default_policy_disables_network(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_default_policy_disables_network(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     args = _docker_run_args(tmp_path, monkeypatch)
     # --network none disables the namespace - egress (curl, dns, etc.)
     # cannot leave the container.
@@ -411,17 +401,13 @@ def test_default_policy_disables_network(
     assert args[idx + 1] == "none"
 
 
-def test_default_policy_no_new_privileges(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_default_policy_no_new_privileges(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     args = _docker_run_args(tmp_path, monkeypatch)
     sec_opts = [args[i + 1] for i, a in enumerate(args) if a == "--security-opt"]
     assert "no-new-privileges:true" in sec_opts
 
 
-def test_default_policy_runs_rootless_user(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_default_policy_runs_rootless_user(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     args = _docker_run_args(tmp_path, monkeypatch)
     user_idx = args.index("--user")
     assert args[user_idx + 1] == "1000:1000"
@@ -457,9 +443,7 @@ def test_contains_filesystem_writes_outside_scratch(
     assert args[args.index("--user") + 1] == "1000:1000"
 
 
-def test_contains_dns_exfiltration(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_contains_dns_exfiltration(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """A patch that opens an outbound connection (DNS / curl) is contained
     by --network none. With no network namespace, the container cannot
     resolve a hostname or reach an exfil endpoint."""
@@ -468,9 +452,7 @@ def test_contains_dns_exfiltration(
     assert args[idx + 1] == "none"
 
 
-def test_contains_setuid_escalation(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_contains_setuid_escalation(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """A patch that drops a setuid binary cannot escalate because
     --security-opt=no-new-privileges plus --cap-drop=ALL means setuid
     bits cannot grant capabilities the container does not already
@@ -504,15 +486,11 @@ def test_policy_network_pull_emits_allowlist_labels(
     # network=pull does NOT set --network none; the allowlist is recorded
     # as a label for auditability.
     assert "--network" not in args or args[args.index("--network") + 1] != "none"
-    assert any(
-        "registry-1.docker.io" in label for label in labels
-    )
+    assert any("registry-1.docker.io" in label for label in labels)
     assert any("proxy.golang.org" in label for label in labels)
 
 
-def test_policy_cap_add_opt_in(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_policy_cap_add_opt_in(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """A recipe that needs SYS_PTRACE (e.g. a tracing-based test runner)
     can opt back in to that capability without abandoning the rest."""
     policy = SandboxPolicy(cap_add=("SYS_PTRACE",))
@@ -608,17 +586,13 @@ def _calls_with_subcommand(recorder: _Recorder, *prefix: str) -> list[list[str]]
     return out
 
 
-def test_pull_creates_internal_network(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_pull_creates_internal_network(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """`docker network create --internal` runs before the workload starts.
 
     `--internal` is the load-bearing flag: it disables NAT/route to the
     host so even `curl --noproxy '*'` cannot reach the outside world.
     """
-    policy = SandboxPolicy(
-        network="pull", network_allowlist=("registry-1.docker.io",)
-    )
+    policy = SandboxPolicy(network="pull", network_allowlist=("registry-1.docker.io",))
     _, recorder, _ = _create_with_recorder(tmp_path, monkeypatch, policy=policy)
     nets = _calls_with_subcommand(recorder, "docker", "network", "create")
     assert nets, "expected `docker network create` for the per-sandbox network"
@@ -660,9 +634,7 @@ def test_pull_workload_uses_internal_network_only(
 ) -> None:
     """The workload `docker run` has `--network <sandbox-net>` (NOT bridge,
     NOT none)."""
-    policy = SandboxPolicy(
-        network="pull", network_allowlist=("registry-1.docker.io",)
-    )
+    policy = SandboxPolicy(network="pull", network_allowlist=("registry-1.docker.io",))
     _, recorder, _ = _create_with_recorder(tmp_path, monkeypatch, policy=policy)
     runs = _calls_with_subcommand(recorder, "docker", "run")
     workload_runs = [r for r in runs if "build-sandbox:latest" in r]
@@ -719,9 +691,7 @@ def test_pull_proxy_config_writes_filter_lines(
     # The adapter writes tinyproxy.conf + filter into a per-sandbox dir
     # and -v mounts the dir at /etc/tinyproxy. Locate the dir.
     runs = _calls_with_subcommand(recorder, "docker", "run")
-    proxy_run = next(
-        r for r in runs if DEFAULT_PROXY_IMAGE in r  # default image
-    )
+    proxy_run = next(r for r in runs if DEFAULT_PROXY_IMAGE in r)  # default image
     mounts = [proxy_run[i + 1] for i, a in enumerate(proxy_run) if a == "-v"]
     conf_dir_mounts = [m for m in mounts if m.endswith(":/etc/tinyproxy:ro")]
     assert conf_dir_mounts, "expected /etc/tinyproxy bind-mount"
@@ -775,9 +745,7 @@ def test_pull_destroy_removes_proxy_and_network(
     """destroy_sandbox must tear down workload, proxy, and the per-sandbox
     network (in that order; networks can't be removed while containers
     are attached)."""
-    policy = SandboxPolicy(
-        network="pull", network_allowlist=("registry-1.docker.io",)
-    )
+    policy = SandboxPolicy(network="pull", network_allowlist=("registry-1.docker.io",))
     adapter, recorder, sandbox_id = _create_with_recorder(
         tmp_path, monkeypatch, policy=policy, response_count=16
     )
@@ -785,27 +753,17 @@ def test_pull_destroy_removes_proxy_and_network(
     adapter.destroy_sandbox(sandbox_id)
     after = recorder.calls[pre_destroy:]
     rm_calls = [c["args"] for c in after if c["args"][:2] == ["docker", "rm"]]
-    netrm_calls = [
-        c["args"]
-        for c in after
-        if c["args"][:3] == ["docker", "network", "rm"]
-    ]
+    netrm_calls = [c["args"] for c in after if c["args"][:3] == ["docker", "network", "rm"]]
     assert len(rm_calls) >= 2, "expected workload + proxy removed"
     assert netrm_calls, "expected per-sandbox network removed"
     # Network removal must come AFTER all container removals.
-    last_rm_idx = max(
-        i
-        for i, c in enumerate(after)
-        if c["args"][:2] == ["docker", "rm"]
-    )
+    last_rm_idx = max(i for i, c in enumerate(after) if c["args"][:2] == ["docker", "rm"])
     first_netrm_idx = min(
-        i
-        for i, c in enumerate(after)
-        if c["args"][:3] == ["docker", "network", "rm"]
+        i for i, c in enumerate(after) if c["args"][:3] == ["docker", "network", "rm"]
     )
-    assert first_netrm_idx > last_rm_idx, (
-        "must remove containers before the network they're attached to"
-    )
+    assert (
+        first_netrm_idx > last_rm_idx
+    ), "must remove containers before the network they're attached to"
 
 
 def test_network_none_is_unaffected_by_egress_filter(
@@ -848,9 +806,7 @@ def test_pull_proxy_run_failure_cleans_up_network(
         ]
     )
     monkeypatch.setattr(subprocess, "run", recorder)
-    policy = SandboxPolicy(
-        network="pull", network_allowlist=("registry-1.docker.io",)
-    )
+    policy = SandboxPolicy(network="pull", network_allowlist=("registry-1.docker.io",))
     adapter = DockerSandboxAdapter(tmp_path, policy=policy)
     with pytest.raises(RuntimeError):
         adapter.create_sandbox(image="build-sandbox:latest")
@@ -903,12 +859,13 @@ def test_live_egress_allowlist_enforced(tmp_path: Path) -> None:
     adapter = DockerSandboxAdapter(tmp_path, policy=policy)
     # Use a workload image that has curl. alpine + apk would need network;
     # curlimages/curl is purpose-built and small, but if not present skip.
-    workload_image = os.environ.get(
-        "MIGRATION_EVAL_WORKLOAD_IMAGE", "curlimages/curl:latest"
+    workload_image = os.environ.get("MIGRATION_EVAL_WORKLOAD_IMAGE", "curlimages/curl:latest")
+    has_workload = (
+        subprocess.run(
+            ["docker", "image", "inspect", workload_image], capture_output=True
+        ).returncode
+        == 0
     )
-    has_workload = subprocess.run(
-        ["docker", "image", "inspect", workload_image], capture_output=True
-    ).returncode == 0
     if not has_workload:
         pytest.skip(f"workload image {workload_image} not present locally")
     sid = adapter.create_sandbox(image=workload_image)
@@ -926,8 +883,6 @@ def test_live_egress_allowlist_enforced(tmp_path: Path) -> None:
             command="curl -sSf -o /dev/null https://www.google.com/",
             timeout_s=30,
         )
-        assert bad["exit_code"] != 0, (
-            f"disallowed host must fail: {bad}"
-        )
+        assert bad["exit_code"] != 0, f"disallowed host must fail: {bad}"
     finally:
         adapter.destroy_sandbox(sid)

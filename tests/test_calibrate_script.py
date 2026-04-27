@@ -25,9 +25,7 @@ from migration_evals.calibration import CalibrationReport  # noqa: E402
 REPO_ROOT = _REPO_ROOT
 CALIBRATE_SCRIPT = REPO_ROOT / "scripts" / "calibrate.py"
 GATE_MODULE = "migration_evals.publication_gate"
-CALIBRATION_FIXTURES = (
-    REPO_ROOT / "tests" / "fixtures" / "calibration" / "go_import_rewrite"
-)
+CALIBRATION_FIXTURES = REPO_ROOT / "tests" / "fixtures" / "calibration" / "go_import_rewrite"
 HYPOTHESES_PATH = REPO_ROOT / "docs" / "hypotheses_and_thresholds.md"
 RUN_STAMPED = REPO_ROOT / "tests" / "fixtures" / "run_stamped"
 
@@ -47,13 +45,19 @@ def test_calibrate_emits_clean_tier_zero_calibration(tmp_path: Path) -> None:
         [
             sys.executable,
             str(CALIBRATE_SCRIPT),
-            "--migration", "go_import_rewrite",
-            "--fixtures", str(CALIBRATION_FIXTURES),
-            "--output", str(out),
-            "--stages", "diff",
+            "--migration",
+            "go_import_rewrite",
+            "--fixtures",
+            str(CALIBRATION_FIXTURES),
+            "--output",
+            str(out),
+            "--stages",
+            "diff",
         ],
-        capture_output=True, text=True,
-        cwd=str(REPO_ROOT), env=_env(),
+        capture_output=True,
+        text=True,
+        cwd=str(REPO_ROOT),
+        env=_env(),
     )
     assert proc.returncode == 0, proc.stderr
     assert out.is_file()
@@ -85,13 +89,19 @@ def test_calibrate_emits_clean_tier_zero_calibration(tmp_path: Path) -> None:
 def test_calibrate_fails_on_missing_fixtures_dir(tmp_path: Path) -> None:
     proc = subprocess.run(
         [
-            sys.executable, str(CALIBRATE_SCRIPT),
-            "--migration", "go_import_rewrite",
-            "--fixtures", str(tmp_path / "does_not_exist"),
-            "--output", str(tmp_path / "out.json"),
+            sys.executable,
+            str(CALIBRATE_SCRIPT),
+            "--migration",
+            "go_import_rewrite",
+            "--fixtures",
+            str(tmp_path / "does_not_exist"),
+            "--output",
+            str(tmp_path / "out.json"),
         ],
-        capture_output=True, text=True,
-        cwd=str(REPO_ROOT), env=_env(),
+        capture_output=True,
+        text=True,
+        cwd=str(REPO_ROOT),
+        env=_env(),
     )
     assert proc.returncode == 1
     assert "does not exist" in proc.stderr
@@ -100,14 +110,21 @@ def test_calibrate_fails_on_missing_fixtures_dir(tmp_path: Path) -> None:
 def test_calibrate_fails_on_unknown_stage(tmp_path: Path) -> None:
     proc = subprocess.run(
         [
-            sys.executable, str(CALIBRATE_SCRIPT),
-            "--migration", "x",
-            "--fixtures", str(CALIBRATION_FIXTURES),
-            "--output", str(tmp_path / "out.json"),
-            "--stages", "diff,brunch",
+            sys.executable,
+            str(CALIBRATE_SCRIPT),
+            "--migration",
+            "x",
+            "--fixtures",
+            str(CALIBRATION_FIXTURES),
+            "--output",
+            str(tmp_path / "out.json"),
+            "--stages",
+            "diff,brunch",
         ],
-        capture_output=True, text=True,
-        cwd=str(REPO_ROOT), env=_env(),
+        capture_output=True,
+        text=True,
+        cwd=str(REPO_ROOT),
+        env=_env(),
     )
     assert proc.returncode == 1
     assert "unknown --stages" in proc.stderr
@@ -118,11 +135,7 @@ def test_calibrate_fails_on_unknown_stage(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-CALIBRATION_RECIPE = (
-    REPO_ROOT
-    / "configs" / "recipes"
-    / "go_import_rewrite.calibration.recipe.yaml"
-)
+CALIBRATION_RECIPE = REPO_ROOT / "configs" / "recipes" / "go_import_rewrite.calibration.recipe.yaml"
 STUB_FACTORY_SPEC = "tests._calibrate_stub_sandbox:stub_factory"
 
 
@@ -152,11 +165,7 @@ def _read_stub_log(tmp_path: Path) -> list[dict]:
     log_path = tmp_path / "stub_log.jsonl"
     if not log_path.is_file():
         return []
-    return [
-        json.loads(line)
-        for line in log_path.read_text().splitlines()
-        if line.strip()
-    ]
+    return [json.loads(line) for line in log_path.read_text().splitlines() if line.strip()]
 
 
 def test_calibrate_requires_recipe_for_sandbox_stages(tmp_path: Path) -> None:
@@ -164,14 +173,21 @@ def test_calibrate_requires_recipe_for_sandbox_stages(tmp_path: Path) -> None:
     silent fall-back to tier-0."""
     proc = subprocess.run(
         [
-            sys.executable, str(CALIBRATE_SCRIPT),
-            "--migration", "go_import_rewrite",
-            "--fixtures", str(CALIBRATION_FIXTURES),
-            "--output", str(tmp_path / "out.json"),
-            "--stages", "diff,compile",
+            sys.executable,
+            str(CALIBRATE_SCRIPT),
+            "--migration",
+            "go_import_rewrite",
+            "--fixtures",
+            str(CALIBRATION_FIXTURES),
+            "--output",
+            str(tmp_path / "out.json"),
+            "--stages",
+            "diff,compile",
         ],
-        capture_output=True, text=True,
-        cwd=str(REPO_ROOT), env=_env(),
+        capture_output=True,
+        text=True,
+        cwd=str(REPO_ROOT),
+        env=_env(),
     )
     assert proc.returncode == 1
     assert "--recipe is required" in proc.stderr
@@ -186,17 +202,27 @@ def test_calibrate_wires_sandbox_factory_for_compile_stage(
     out = tmp_path / "calibration.json"
     proc = subprocess.run(
         [
-            sys.executable, str(CALIBRATE_SCRIPT),
-            "--migration", "go_import_rewrite",
-            "--fixtures", str(CALIBRATION_FIXTURES),
-            "--output", str(out),
-            "--stages", "diff,compile",
-            "--recipe", str(CALIBRATION_RECIPE),
-            "--sandbox-factory", STUB_FACTORY_SPEC,
-            "--sandbox-image", "stub-image:latest",
+            sys.executable,
+            str(CALIBRATE_SCRIPT),
+            "--migration",
+            "go_import_rewrite",
+            "--fixtures",
+            str(CALIBRATION_FIXTURES),
+            "--output",
+            str(out),
+            "--stages",
+            "diff,compile",
+            "--recipe",
+            str(CALIBRATION_RECIPE),
+            "--sandbox-factory",
+            STUB_FACTORY_SPEC,
+            "--sandbox-image",
+            "stub-image:latest",
         ],
-        capture_output=True, text=True,
-        cwd=str(REPO_ROOT), env=_stub_env(tmp_path),
+        capture_output=True,
+        text=True,
+        cwd=str(REPO_ROOT),
+        env=_stub_env(tmp_path),
     )
     assert proc.returncode == 0, proc.stderr
     log = _read_stub_log(tmp_path)
@@ -240,16 +266,25 @@ def test_calibrate_sandbox_script_drives_compile_only_verdicts(
     out = tmp_path / "calibration.json"
     proc = subprocess.run(
         [
-            sys.executable, str(CALIBRATE_SCRIPT),
-            "--migration", "go_import_rewrite",
-            "--fixtures", str(CALIBRATION_FIXTURES),
-            "--output", str(out),
-            "--stages", "diff,compile",
-            "--recipe", str(CALIBRATION_RECIPE),
-            "--sandbox-factory", STUB_FACTORY_SPEC,
+            sys.executable,
+            str(CALIBRATE_SCRIPT),
+            "--migration",
+            "go_import_rewrite",
+            "--fixtures",
+            str(CALIBRATION_FIXTURES),
+            "--output",
+            str(out),
+            "--stages",
+            "diff,compile",
+            "--recipe",
+            str(CALIBRATION_RECIPE),
+            "--sandbox-factory",
+            STUB_FACTORY_SPEC,
         ],
-        capture_output=True, text=True,
-        cwd=str(REPO_ROOT), env=_stub_env(tmp_path, script=script),
+        capture_output=True,
+        text=True,
+        cwd=str(REPO_ROOT),
+        env=_stub_env(tmp_path, script=script),
     )
     assert proc.returncode == 0, proc.stderr
     report = CalibrationReport.from_path(out)
@@ -287,16 +322,25 @@ def test_calibrate_sandbox_script_drives_tests_tier_verdicts(
     out = tmp_path / "calibration.json"
     proc = subprocess.run(
         [
-            sys.executable, str(CALIBRATE_SCRIPT),
-            "--migration", "go_import_rewrite",
-            "--fixtures", str(CALIBRATION_FIXTURES),
-            "--output", str(out),
-            "--stages", "diff,compile,tests",
-            "--recipe", str(CALIBRATION_RECIPE),
-            "--sandbox-factory", STUB_FACTORY_SPEC,
+            sys.executable,
+            str(CALIBRATE_SCRIPT),
+            "--migration",
+            "go_import_rewrite",
+            "--fixtures",
+            str(CALIBRATION_FIXTURES),
+            "--output",
+            str(out),
+            "--stages",
+            "diff,compile,tests",
+            "--recipe",
+            str(CALIBRATION_RECIPE),
+            "--sandbox-factory",
+            STUB_FACTORY_SPEC,
         ],
-        capture_output=True, text=True,
-        cwd=str(REPO_ROOT), env=_stub_env(tmp_path, script=script),
+        capture_output=True,
+        text=True,
+        cwd=str(REPO_ROOT),
+        env=_stub_env(tmp_path, script=script),
     )
     assert proc.returncode == 0, proc.stderr
     report = CalibrationReport.from_path(out)
@@ -320,17 +364,25 @@ def test_calibrate_does_not_construct_sandbox_for_tier_zero_only(
     out = tmp_path / "calibration.json"
     proc = subprocess.run(
         [
-            sys.executable, str(CALIBRATE_SCRIPT),
-            "--migration", "go_import_rewrite",
-            "--fixtures", str(CALIBRATION_FIXTURES),
-            "--output", str(out),
-            "--stages", "diff",
+            sys.executable,
+            str(CALIBRATE_SCRIPT),
+            "--migration",
+            "go_import_rewrite",
+            "--fixtures",
+            str(CALIBRATION_FIXTURES),
+            "--output",
+            str(out),
+            "--stages",
+            "diff",
             # Deliberately point at a non-existent factory: tier-0 path
             # must not touch it.
-            "--sandbox-factory", "tests._calibrate_stub_sandbox:does_not_exist",
+            "--sandbox-factory",
+            "tests._calibrate_stub_sandbox:does_not_exist",
         ],
-        capture_output=True, text=True,
-        cwd=str(REPO_ROOT), env=_stub_env(tmp_path),
+        capture_output=True,
+        text=True,
+        cwd=str(REPO_ROOT),
+        env=_stub_env(tmp_path),
     )
     assert proc.returncode == 0, proc.stderr
     log = _read_stub_log(tmp_path)
@@ -365,16 +417,25 @@ def test_calibrate_rejects_sandbox_factory_outside_allowlist(
     """
     proc = subprocess.run(
         [
-            sys.executable, str(CALIBRATE_SCRIPT),
-            "--migration", "go_import_rewrite",
-            "--fixtures", str(CALIBRATION_FIXTURES),
-            "--output", str(tmp_path / "out.json"),
-            "--stages", "diff,compile",
-            "--recipe", str(CALIBRATION_RECIPE),
-            "--sandbox-factory", spec,
+            sys.executable,
+            str(CALIBRATE_SCRIPT),
+            "--migration",
+            "go_import_rewrite",
+            "--fixtures",
+            str(CALIBRATION_FIXTURES),
+            "--output",
+            str(tmp_path / "out.json"),
+            "--stages",
+            "diff,compile",
+            "--recipe",
+            str(CALIBRATION_RECIPE),
+            "--sandbox-factory",
+            spec,
         ],
-        capture_output=True, text=True,
-        cwd=str(REPO_ROOT), env=_env(),
+        capture_output=True,
+        text=True,
+        cwd=str(REPO_ROOT),
+        env=_env(),
     )
     assert proc.returncode == 1, proc.stdout + proc.stderr
     # Error message must be specific so operators understand why the
@@ -394,8 +455,10 @@ def test_calibrate_help_text_warns_about_sandbox_factory_security(
     """
     proc = subprocess.run(
         [sys.executable, str(CALIBRATE_SCRIPT), "--help"],
-        capture_output=True, text=True,
-        cwd=str(REPO_ROOT), env=_env(),
+        capture_output=True,
+        text=True,
+        cwd=str(REPO_ROOT),
+        env=_env(),
     )
     assert proc.returncode == 0, proc.stderr
     help_text = proc.stdout
@@ -414,9 +477,7 @@ def _import_calibrate_module():
     the ``src/`` package layout)."""
     import importlib.util
 
-    spec = importlib.util.spec_from_file_location(
-        "calibrate_module_under_test", CALIBRATE_SCRIPT
-    )
+    spec = importlib.util.spec_from_file_location("calibrate_module_under_test", CALIBRATE_SCRIPT)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
@@ -441,9 +502,7 @@ def test_calibrate_resolve_sandbox_factory_unit_accepts_tests_prefix() -> None:
     must remain resolvable — the allowlist must not regress the
     documented test seam."""
     calibrate_mod = _import_calibrate_module()
-    factory = calibrate_mod._resolve_sandbox_factory(
-        "tests._calibrate_stub_sandbox:stub_factory"
-    )
+    factory = calibrate_mod._resolve_sandbox_factory("tests._calibrate_stub_sandbox:stub_factory")
     assert callable(factory)
 
 
@@ -455,9 +514,7 @@ def test_calibrate_resolve_sandbox_factory_unit_accepts_tests_prefix() -> None:
 _DOCKER_AVAILABLE = shutil.which("docker") is not None
 _DOCKER_INTEGRATION = os.environ.get("MIGRATION_EVAL_DOCKER_INTEGRATION") == "1"
 _CALIBRATION_RECIPE_LIVE = (
-    REPO_ROOT
-    / "configs" / "recipes"
-    / "go_import_rewrite.calibration.recipe.yaml"
+    REPO_ROOT / "configs" / "recipes" / "go_import_rewrite.calibration.recipe.yaml"
 )
 
 
@@ -475,16 +532,25 @@ def test_calibrate_end_to_end_against_docker(tmp_path: Path) -> None:
     out = tmp_path / "calibration.json"
     proc = subprocess.run(
         [
-            sys.executable, str(CALIBRATE_SCRIPT),
-            "--migration", "go_import_rewrite",
-            "--fixtures", str(CALIBRATION_FIXTURES),
-            "--output", str(out),
-            "--stages", "diff,compile,tests",
-            "--recipe", str(_CALIBRATION_RECIPE_LIVE),
-            "--sandbox-image", "golang:1.22",
+            sys.executable,
+            str(CALIBRATE_SCRIPT),
+            "--migration",
+            "go_import_rewrite",
+            "--fixtures",
+            str(CALIBRATION_FIXTURES),
+            "--output",
+            str(out),
+            "--stages",
+            "diff,compile,tests",
+            "--recipe",
+            str(_CALIBRATION_RECIPE_LIVE),
+            "--sandbox-image",
+            "golang:1.22",
         ],
-        capture_output=True, text=True,
-        cwd=str(REPO_ROOT), env=_env(),
+        capture_output=True,
+        text=True,
+        cwd=str(REPO_ROOT),
+        env=_env(),
         timeout=600,
     )
     assert proc.returncode == 0, proc.stderr
@@ -531,12 +597,17 @@ def _stage_run_with_calibration(
 def _run_gate(run_dir: Path, *extra_args: str) -> subprocess.CompletedProcess:
     return subprocess.run(
         [
-            sys.executable, "-m", GATE_MODULE,
-            "--check-run", str(run_dir),
+            sys.executable,
+            "-m",
+            GATE_MODULE,
+            "--check-run",
+            str(run_dir),
             *extra_args,
         ],
-        capture_output=True, text=True,
-        cwd=str(REPO_ROOT), env=_env(),
+        capture_output=True,
+        text=True,
+        cwd=str(REPO_ROOT),
+        env=_env(),
     )
 
 
@@ -550,24 +621,36 @@ def _passing_calibration_payload() -> dict:
         "per_tier": [
             {
                 "tier": "diff_valid",
-                "tp": 10, "fp": 0, "tn": 12, "fn": 0,
+                "tp": 10,
+                "fp": 0,
+                "tn": 12,
+                "fn": 0,
                 "n_known_good_observed": 12,
                 "n_known_bad_targeted_observed": 10,
-                "fpr": 0.0, "fnr": 0.0,
+                "fpr": 0.0,
+                "fnr": 0.0,
             },
             {
                 "tier": "compile_only",
-                "tp": 2, "fp": 0, "tn": 2, "fn": 0,
+                "tp": 2,
+                "fp": 0,
+                "tn": 2,
+                "fn": 0,
                 "n_known_good_observed": 2,
                 "n_known_bad_targeted_observed": 2,
-                "fpr": 0.0, "fnr": 0.0,
+                "fpr": 0.0,
+                "fnr": 0.0,
             },
             {
                 "tier": "tests",
-                "tp": 2, "fp": 0, "tn": 2, "fn": 0,
+                "tp": 2,
+                "fp": 0,
+                "tn": 2,
+                "fn": 0,
                 "n_known_good_observed": 2,
                 "n_known_bad_targeted_observed": 2,
-                "fpr": 0.0, "fnr": 0.0,
+                "fpr": 0.0,
+                "fnr": 0.0,
             },
         ],
     }
@@ -578,8 +661,10 @@ def test_gate_default_mode_does_not_check_calibration(
 ) -> None:
     """Without --require-calibration, the gate ignores calibration entirely."""
     staged = _stage_run_with_calibration(
-        src=RUN_STAMPED, dst=tmp_path / "run_default",
-        calibration_payload=None, declare_in_manifest=False,
+        src=RUN_STAMPED,
+        dst=tmp_path / "run_default",
+        calibration_payload=None,
+        declare_in_manifest=False,
     )
     proc = _run_gate(staged)
     assert proc.returncode == 0, proc.stderr
@@ -587,7 +672,8 @@ def test_gate_default_mode_does_not_check_calibration(
 
 def test_gate_require_calibration_passes_when_clean(tmp_path: Path) -> None:
     staged = _stage_run_with_calibration(
-        src=RUN_STAMPED, dst=tmp_path / "run_clean",
+        src=RUN_STAMPED,
+        dst=tmp_path / "run_clean",
         calibration_payload=_passing_calibration_payload(),
         declare_in_manifest=True,
     )
@@ -599,8 +685,10 @@ def test_gate_require_calibration_fails_on_missing_pointer(
     tmp_path: Path,
 ) -> None:
     staged = _stage_run_with_calibration(
-        src=RUN_STAMPED, dst=tmp_path / "run_no_pointer",
-        calibration_payload=None, declare_in_manifest=False,
+        src=RUN_STAMPED,
+        dst=tmp_path / "run_no_pointer",
+        calibration_payload=None,
+        declare_in_manifest=False,
     )
     proc = _run_gate(staged, "--require-calibration")
     assert proc.returncode == 1
@@ -612,8 +700,10 @@ def test_gate_require_calibration_fails_on_missing_file(
 ) -> None:
     """Manifest declares a calibration_report path but the file isn't there."""
     staged = _stage_run_with_calibration(
-        src=RUN_STAMPED, dst=tmp_path / "run_missing_file",
-        calibration_payload=None, declare_in_manifest=False,
+        src=RUN_STAMPED,
+        dst=tmp_path / "run_missing_file",
+        calibration_payload=None,
+        declare_in_manifest=False,
     )
     manifest_path = staged / "manifest.json"
     manifest = json.loads(manifest_path.read_text())
@@ -632,8 +722,10 @@ def test_gate_require_calibration_fails_on_fpr_breach(
     payload["per_tier"][0]["fp"] = 3
     payload["per_tier"][0]["tn"] = 7
     staged = _stage_run_with_calibration(
-        src=RUN_STAMPED, dst=tmp_path / "run_fpr_breach",
-        calibration_payload=payload, declare_in_manifest=True,
+        src=RUN_STAMPED,
+        dst=tmp_path / "run_fpr_breach",
+        calibration_payload=payload,
+        declare_in_manifest=True,
     )
     proc = _run_gate(staged, "--require-calibration")
     assert proc.returncode == 1
@@ -650,8 +742,10 @@ def test_gate_require_calibration_fails_on_fnr_breach(
     payload["per_tier"][0]["fn"] = 5
     payload["per_tier"][0]["tp"] = 5
     staged = _stage_run_with_calibration(
-        src=RUN_STAMPED, dst=tmp_path / "run_fnr_breach",
-        calibration_payload=payload, declare_in_manifest=True,
+        src=RUN_STAMPED,
+        dst=tmp_path / "run_fnr_breach",
+        calibration_payload=payload,
+        declare_in_manifest=True,
     )
     proc = _run_gate(staged, "--require-calibration")
     assert proc.returncode == 1
@@ -672,8 +766,10 @@ def test_gate_require_calibration_fails_on_null_rate_when_threshold_set(
     payload["per_tier"][0]["tn"] = 0
     payload["per_tier"][0]["fn"] = 0
     staged = _stage_run_with_calibration(
-        src=RUN_STAMPED, dst=tmp_path / "run_null_rates",
-        calibration_payload=payload, declare_in_manifest=True,
+        src=RUN_STAMPED,
+        dst=tmp_path / "run_null_rates",
+        calibration_payload=payload,
+        declare_in_manifest=True,
     )
     proc = _run_gate(staged, "--require-calibration")
     assert proc.returncode == 1
@@ -684,8 +780,10 @@ def test_gate_require_calibration_fails_on_corrupt_json(
     tmp_path: Path,
 ) -> None:
     staged = _stage_run_with_calibration(
-        src=RUN_STAMPED, dst=tmp_path / "run_corrupt",
-        calibration_payload=None, declare_in_manifest=False,
+        src=RUN_STAMPED,
+        dst=tmp_path / "run_corrupt",
+        calibration_payload=None,
+        declare_in_manifest=False,
     )
     cal_path = staged / "calibration.json"
     cal_path.write_text("{ this is not valid json")
@@ -708,15 +806,13 @@ def test_committed_calibration_satisfies_thresholds() -> None:
 
     Without this guard, a published headline run could ship with a
     calibration that subtly fails one threshold and only get caught in CI."""
-    cal_path = (
-        REPO_ROOT
-        / "configs" / "recipes" / "go_import_rewrite.calibration.json"
-    )
+    cal_path = REPO_ROOT / "configs" / "recipes" / "go_import_rewrite.calibration.json"
     assert cal_path.is_file()
     from migration_evals.calibration import (
         load_calibration_thresholds,
         validate_against_thresholds,
     )
+
     report = CalibrationReport.from_path(cal_path)
     thresholds = load_calibration_thresholds(HYPOTHESES_PATH)
     violations = validate_against_thresholds(report, thresholds)

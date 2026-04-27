@@ -59,6 +59,7 @@ if str(_SRC) not in sys.path:
     sys.path.insert(0, str(_SRC))
 
 from migration_evals.calibration import (  # noqa: E402
+    CalibrationReport,
     FixtureLabel,
     FixtureObservation,
     compute_calibration,
@@ -83,9 +84,7 @@ DEFAULT_TIER_ORDER: tuple[str, ...] = (
 )
 
 # Tiers that need a SandboxAdapter to produce any verdict at all.
-_SANDBOX_TIERS: frozenset[str] = frozenset(
-    {tier1_compile.TIER_NAME, tier2_tests.TIER_NAME}
-)
+_SANDBOX_TIERS: frozenset[str] = frozenset({tier1_compile.TIER_NAME, tier2_tests.TIER_NAME})
 
 
 # ---------------------------------------------------------------------------
@@ -126,27 +125,20 @@ def _load_recipe_from_yaml(path: Path) -> Recipe:
 
     raw = yaml.safe_load(Path(path).read_text())
     if not isinstance(raw, Mapping):
-        raise ValueError(
-            f"recipe YAML at {path} did not parse to a mapping"
-        )
+        raise ValueError(f"recipe YAML at {path} did not parse to a mapping")
     block = raw.get("recipe")
     if not isinstance(block, Mapping):
-        raise ValueError(
-            f"recipe YAML at {path} is missing a top-level 'recipe' block"
-        )
+        raise ValueError(f"recipe YAML at {path} is missing a top-level 'recipe' block")
     try:
         return Recipe(
             dockerfile=str(block["dockerfile"]),
             build_cmd=str(block["build_cmd"]),
             test_cmd=str(block["test_cmd"]),
-            harness_provenance=dict(
-                block.get("harness_provenance", _CALIBRATION_PROVENANCE)
-            ),
+            harness_provenance=dict(block.get("harness_provenance", _CALIBRATION_PROVENANCE)),
         )
     except KeyError as exc:
         raise ValueError(
-            f"recipe YAML at {path} missing required key {exc.args[0]!r} "
-            "under 'recipe'"
+            f"recipe YAML at {path} missing required key {exc.args[0]!r} " "under 'recipe'"
         ) from exc
 
 
@@ -178,9 +170,7 @@ class _ImageOverridingSandbox:
         env: Optional[Mapping[str, str]] = None,
         cassette: Optional[Any] = None,
     ) -> str:
-        return self._inner.create_sandbox(
-            image=self._image, env=env, cassette=cassette
-        )
+        return self._inner.create_sandbox(image=self._image, env=env, cassette=cassette)
 
     def exec(
         self,
@@ -201,18 +191,14 @@ class _ImageOverridingSandbox:
         self._inner.destroy_sandbox(sandbox_id)
 
 
-def _default_sandbox_factory(
-    repo_path: Path, *, image: str
-) -> Any:
+def _default_sandbox_factory(repo_path: Path, *, image: str) -> Any:
     """Build the production sandbox adapter (Docker) for ``repo_path``.
 
     Imported lazily so unit tests that mock the factory never trigger
     Docker import-time work. Wrapping in :class:`_ImageOverridingSandbox`
     pins the image to the calibration-controlled value.
     """
-    docker_module = importlib.import_module(
-        "migration_evals.adapters_docker"
-    )
+    docker_module = importlib.import_module("migration_evals.adapters_docker")
     inner = docker_module.DockerSandboxAdapter(repo_path)
     return _ImageOverridingSandbox(inner, image=image)
 
@@ -248,14 +234,9 @@ def _resolve_sandbox_factory(
     if spec is None:
         return _default_sandbox_factory
     if ":" not in spec:
-        raise ValueError(
-            f"--sandbox-factory must be 'module:attr' (got {spec!r})"
-        )
+        raise ValueError(f"--sandbox-factory must be 'module:attr' (got {spec!r})")
     module_name, attr = spec.split(":", 1)
-    if not any(
-        module_name.startswith(prefix)
-        for prefix in _SANDBOX_FACTORY_ALLOWED_PREFIXES
-    ):
+    if not any(module_name.startswith(prefix) for prefix in _SANDBOX_FACTORY_ALLOWED_PREFIXES):
         raise ValueError(
             f"--sandbox-factory {spec!r}: module {module_name!r} is not "
             f"in the allowlist {_SANDBOX_FACTORY_ALLOWED_PREFIXES!r}. "
@@ -265,9 +246,7 @@ def _resolve_sandbox_factory(
     module = importlib.import_module(module_name)
     factory = getattr(module, attr)
     if not callable(factory):
-        raise ValueError(
-            f"--sandbox-factory {spec!r} resolved to non-callable"
-        )
+        raise ValueError(f"--sandbox-factory {spec!r} resolved to non-callable")
     return factory
 
 
@@ -287,8 +266,7 @@ def _resolve_stages(raw: str | None) -> tuple[str, ...] | None:
             continue
         if token not in STAGE_ALIASES:
             raise ValueError(
-                f"unknown --stages token {token!r}; "
-                f"valid values: {sorted(STAGE_ALIASES)}"
+                f"unknown --stages token {token!r}; " f"valid values: {sorted(STAGE_ALIASES)}"
             )
         requested.extend(STAGE_ALIASES[token])
     return tuple(dict.fromkeys(requested))
@@ -360,9 +338,7 @@ def _run_one(
     """Run the funnel for one fixture and return its observation."""
     repo = fixture_dir / "repo"
     if not repo.is_dir():
-        raise FileNotFoundError(
-            f"calibration fixture {fixture_dir} has no repo/ subdir"
-        )
+        raise FileNotFoundError(f"calibration fixture {fixture_dir} has no repo/ subdir")
     effective = _effective_stages(label, stages)
     adapters: dict[str, Any] = {}
     if _stages_need_sandbox(effective) and sandbox_factory is not None:
@@ -426,9 +402,7 @@ def calibrate(
         )
         fixture_count += 1
     if fixture_count == 0:
-        raise FileNotFoundError(
-            f"no calibration fixtures found under {fixtures_root}"
-        )
+        raise FileNotFoundError(f"no calibration fixtures found under {fixtures_root}")
     return compute_calibration(
         observations,
         migration_id=migration_id,

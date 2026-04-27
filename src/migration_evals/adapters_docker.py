@@ -208,16 +208,12 @@ class DockerSandboxAdapter:
             args.extend(["--network", "none"])
         elif self._policy.network == "pull":
             if egress is None:
-                raise RuntimeError(
-                    "egress filter was not set up for network='pull' branch"
-                )
+                raise RuntimeError("egress filter was not set up for network='pull' branch")
             args.extend(["--network", egress.network_name])
             # Keep the audit label so existing log analyzers can still
             # see what the trial was permitted to reach.
             for host in self._policy.network_allowlist:
-                args.extend(
-                    ["--label", f"migration-eval.network-allowlist={host}"]
-                )
+                args.extend(["--label", f"migration-eval.network-allowlist={host}"])
         # Privilege isolation.
         if self._policy.no_new_privileges:
             args.extend(["--security-opt", "no-new-privileges:true"])
@@ -249,9 +245,7 @@ class DockerSandboxAdapter:
         partially-built sandbox state.
         """
         try:
-            completed = subprocess.run(
-                args, check=True, capture_output=True, text=True
-            )
+            completed = subprocess.run(args, check=True, capture_output=True, text=True)
         except subprocess.CalledProcessError as exc:
             raise RuntimeError(
                 f"docker run failed (exit={exc.returncode}): {exc.stderr.strip()}"
@@ -315,9 +309,9 @@ class DockerSandboxAdapter:
         config_dir.mkdir(parents=True, exist_ok=True)
 
         with contextlib.ExitStack() as stack:
-            # config_dir was just created on disk; register its cleanup
-            # first so it unwinds last (after the docker resources that
-            # depend on it).
+            # config_dir is bind-mounted into the proxy sidecar; register its
+            # cleanup first so it unwinds LAST — after the container that
+            # mounts it has been force-removed.
             stack.callback(self._cleanup_scratch, config_dir)
 
             self._create_internal_network(network_name)
@@ -325,9 +319,7 @@ class DockerSandboxAdapter:
 
             self._write_proxy_config_files(network_name, config_dir)
 
-            proxy_container = self._start_proxy_sidecar(
-                network_name, config_dir
-            )
+            proxy_container = self._start_proxy_sidecar(network_name, config_dir)
             stack.callback(self._force_remove_container, proxy_container)
 
             self._connect_proxy_to_bridge(proxy_container)
@@ -350,22 +342,22 @@ class DockerSandboxAdapter:
         hatch.
         """
         args = [
-            self._docker_bin, "network", "create",
+            self._docker_bin,
+            "network",
+            "create",
             "--internal",
-            "--driver", "bridge",
+            "--driver",
+            "bridge",
             network_name,
         ]
         try:
             subprocess.run(args, check=True, capture_output=True, text=True)
         except subprocess.CalledProcessError as exc:
             raise RuntimeError(
-                f"docker network create failed (exit={exc.returncode}): "
-                f"{exc.stderr.strip()}"
+                f"docker network create failed (exit={exc.returncode}): " f"{exc.stderr.strip()}"
             ) from exc
 
-    def _write_proxy_config_files(
-        self, network_name: str, config_dir: Path
-    ) -> None:
+    def _write_proxy_config_files(self, network_name: str, config_dir: Path) -> None:
         """Render tinyproxy.conf + filter into ``config_dir``.
 
         Inspects the network for its IPAM subnet so the proxy's
@@ -382,13 +374,9 @@ class DockerSandboxAdapter:
             self._render_proxy_config(allow_cidr=internal_subnet),
             encoding="utf-8",
         )
-        (config_dir / "filter").write_text(
-            self._render_proxy_filter(), encoding="utf-8"
-        )
+        (config_dir / "filter").write_text(self._render_proxy_filter(), encoding="utf-8")
 
-    def _start_proxy_sidecar(
-        self, network_name: str, config_dir: Path
-    ) -> str:
+    def _start_proxy_sidecar(self, network_name: str, config_dir: Path) -> str:
         """Start the proxy sidecar on the internal network.
 
         The sidecar advertises the ``proxy`` DNS alias the workload
@@ -396,21 +384,23 @@ class DockerSandboxAdapter:
         filter) into ``/etc/tinyproxy``. Returns the container id.
         """
         proxy_run = [
-            self._docker_bin, "run",
-            "-d", "--rm",
-            "--network", network_name,
-            "--network-alias", PROXY_DNS_ALIAS,
-            "-v", f"{config_dir}:/etc/tinyproxy:ro",
+            self._docker_bin,
+            "run",
+            "-d",
+            "--rm",
+            "--network",
+            network_name,
+            "--network-alias",
+            PROXY_DNS_ALIAS,
+            "-v",
+            f"{config_dir}:/etc/tinyproxy:ro",
             self._policy.proxy_image,
         ]
         try:
-            completed = subprocess.run(
-                proxy_run, check=True, capture_output=True, text=True
-            )
+            completed = subprocess.run(proxy_run, check=True, capture_output=True, text=True)
         except subprocess.CalledProcessError as exc:
             raise RuntimeError(
-                f"proxy sidecar failed to start (exit={exc.returncode}): "
-                f"{exc.stderr.strip()}"
+                f"proxy sidecar failed to start (exit={exc.returncode}): " f"{exc.stderr.strip()}"
             ) from exc
         proxy_container = completed.stdout.strip()
         if not proxy_container:
@@ -420,12 +410,14 @@ class DockerSandboxAdapter:
     def _connect_proxy_to_bridge(self, proxy_container: str) -> None:
         """Attach the proxy sidecar to the default bridge so it has egress."""
         connect_args = [
-            self._docker_bin, "network", "connect", "bridge", proxy_container,
+            self._docker_bin,
+            "network",
+            "connect",
+            "bridge",
+            proxy_container,
         ]
         try:
-            subprocess.run(
-                connect_args, check=True, capture_output=True, text=True
-            )
+            subprocess.run(connect_args, check=True, capture_output=True, text=True)
         except subprocess.CalledProcessError as exc:
             raise RuntimeError(
                 f"could not connect proxy sidecar to default bridge "
@@ -436,14 +428,16 @@ class DockerSandboxAdapter:
         """Best-effort ``docker network rm``; never raises."""
         subprocess.run(
             [self._docker_bin, "network", "rm", network_name],
-            capture_output=True, check=False,
+            capture_output=True,
+            check=False,
         )
 
     def _force_remove_container(self, container_id: str) -> None:
         """Best-effort ``docker rm -f``; never raises."""
         subprocess.run(
             [self._docker_bin, "rm", "-f", container_id],
-            capture_output=True, check=False,
+            capture_output=True,
+            check=False,
         )
 
     def _render_proxy_config(self, *, allow_cidr: str | None = None) -> str:
@@ -505,10 +499,9 @@ class DockerSandboxAdapter:
         what actually denies — but in practice ``network='pull'``
         without an allowlist is rejected by ``SandboxPolicy``.
         """
-        return "\n".join(
-            self._anchored_host_regex(h)
-            for h in self._policy.network_allowlist
-        ) + "\n"
+        return (
+            "\n".join(self._anchored_host_regex(h) for h in self._policy.network_allowlist) + "\n"
+        )
 
     @staticmethod
     def _anchored_host_regex(host: str) -> str:
@@ -533,7 +526,9 @@ class DockerSandboxAdapter:
         try:
             completed = subprocess.run(
                 [self._docker_bin, "network", "inspect", network_name],
-                check=True, capture_output=True, text=True,
+                check=True,
+                capture_output=True,
+                text=True,
             )
         except subprocess.CalledProcessError:
             return None
@@ -571,9 +566,7 @@ class DockerSandboxAdapter:
         container_id = self._containers[sandbox_id]
         args = [self._docker_bin, "exec", container_id, "sh", "-c", command]
         try:
-            completed = subprocess.run(
-                args, capture_output=True, text=True, timeout=timeout_s
-            )
+            completed = subprocess.run(args, capture_output=True, text=True, timeout=timeout_s)
         except subprocess.TimeoutExpired as exc:
             # Stop the container so the inner process dies too - otherwise
             # the build/test command keeps consuming resources after we
@@ -583,11 +576,15 @@ class DockerSandboxAdapter:
                 capture_output=True,
                 check=False,
             )
-            stdout = exc.stdout if isinstance(exc.stdout, str) else (
-                exc.stdout.decode("utf-8", "replace") if exc.stdout else ""
+            stdout = (
+                exc.stdout
+                if isinstance(exc.stdout, str)
+                else (exc.stdout.decode("utf-8", "replace") if exc.stdout else "")
             )
-            stderr = exc.stderr if isinstance(exc.stderr, str) else (
-                exc.stderr.decode("utf-8", "replace") if exc.stderr else ""
+            stderr = (
+                exc.stderr
+                if isinstance(exc.stderr, str)
+                else (exc.stderr.decode("utf-8", "replace") if exc.stderr else "")
             )
             return {
                 "exit_code": 124,  # conventional 'timed out' exit code
@@ -673,6 +670,4 @@ def build_sandbox_adapter(
             policy=policy,
         )
 
-    raise ValueError(
-        f"unknown sandbox_provider {provider!r}; expected 'cassette' or 'docker'"
-    )
+    raise ValueError(f"unknown sandbox_provider {provider!r}; expected 'cassette' or 'docker'")

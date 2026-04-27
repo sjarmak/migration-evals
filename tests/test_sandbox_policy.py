@@ -26,7 +26,6 @@ from migration_evals.sandbox_policy import (  # noqa: E402
     SandboxPolicy,
 )
 
-
 # ---------------------------------------------------------------------------
 # SAFE_CAPS contents — explicit lock against accidental drift
 # ---------------------------------------------------------------------------
@@ -131,9 +130,7 @@ def test_from_dict_mixed_caps_lists_only_bad_ones() -> None:
     must not happen is the safe cap being flagged in the offending-list.
     """
     with pytest.raises(ValueError) as excinfo:
-        SandboxPolicy.from_dict(
-            {"cap_add": ["NET_BIND_SERVICE", "SYS_ADMIN", "NET_ADMIN"]}
-        )
+        SandboxPolicy.from_dict({"cap_add": ["NET_BIND_SERVICE", "SYS_ADMIN", "NET_ADMIN"]})
     msg = str(excinfo.value)
     # both bad caps named in the offending-list
     assert "SYS_ADMIN" in msg
@@ -180,3 +177,111 @@ def test_constructor_accepts_dangerous_cap_directly() -> None:
     to-be-set-from-Python tests in test_adapters_docker.py."""
     policy = SandboxPolicy(cap_add=("SYS_PTRACE",))
     assert policy.cap_add == ("SYS_PTRACE",)
+
+
+# ---------------------------------------------------------------------------
+# network_allowlist hostname-charset validation (security wave-2 F1)
+# ---------------------------------------------------------------------------
+
+
+def test_from_dict_rejects_network_allowlist_with_newline() -> None:
+    """Wave-2 security review F1: a YAML entry containing a newline
+    (e.g. ``"trusted.io\\nevil.io"``) survives ``re.escape`` as a
+    literal newline + backslash, splitting one tinyproxy filter line
+    into two and smuggling ``evil.io`` into the allowlist."""
+    with pytest.raises(ValueError) as excinfo:
+        SandboxPolicy.from_dict({"network": "pull", "network_allowlist": ["trusted.io\nevil.io"]})
+    assert "network_allowlist" in str(excinfo.value)
+
+
+def test_from_dict_rejects_network_allowlist_with_carriage_return() -> None:
+    with pytest.raises(ValueError):
+        SandboxPolicy.from_dict({"network": "pull", "network_allowlist": ["trusted.io\rother.io"]})
+
+
+def test_from_dict_rejects_network_allowlist_with_space() -> None:
+    """Spaces are also outside the hostname charset and would split
+    the filter line in some tinyproxy versions."""
+    with pytest.raises(ValueError):
+        SandboxPolicy.from_dict({"network": "pull", "network_allowlist": ["trusted.io evil.io"]})
+
+
+def test_from_dict_rejects_network_allowlist_with_regex_metachar() -> None:
+    """Regex metacharacters survive ``re.escape`` but should still be
+    rejected at ingest — they have no place in a hostname."""
+    with pytest.raises(ValueError):
+        SandboxPolicy.from_dict({"network": "pull", "network_allowlist": ["evil.*"]})
+
+
+def test_from_dict_accepts_normal_network_allowlist() -> None:
+    """Sanity check: the validator does not over-reject."""
+    policy = SandboxPolicy.from_dict(
+        {
+            "network": "pull",
+            "network_allowlist": [
+                "registry-1.docker.io",
+                "pypi.org",
+                "files.pythonhosted.org",
+                "host_with_underscore.example",
+            ],
+        }
+    )
+    assert policy.network_allowlist == (
+        "registry-1.docker.io",
+        "pypi.org",
+        "files.pythonhosted.org",
+        "host_with_underscore.example",
+    )
+
+
+def test_from_dict_lists_all_bad_network_allowlist_entries() -> None:
+    """Operator should see every offending entry, not just the first."""
+    with pytest.raises(ValueError) as excinfo:
+        SandboxPolicy.from_dict(
+            {
+                "network": "pull",
+                "network_allowlist": ["good.io", "bad\nio", "also bad"],
+            }
+        )
+    msg = str(excinfo.value)
+    # The list is rendered via repr(), so the newline shows as ``\\n``.
+    assert "bad\\nio" in msg
+    assert "also bad" in msg
+
+
+# ---------------------------------------------------------------------------
+# cap_drop minimum-requirement validation (security wave-2 F2)
+# ---------------------------------------------------------------------------
+
+
+def test_from_dict_rejects_empty_cap_drop() -> None:
+    """A YAML recipe that strips the drop-ALL baseline must be
+    rejected — otherwise ``cap_add: ["NET_RAW"]`` plus ``cap_drop: []``
+    silently restores Docker's full default-cap set on top of the
+    explicitly opted-in cap."""
+    with pytest.raises(ValueError) as excinfo:
+        SandboxPolicy.from_dict({"cap_drop": []})
+    assert "ALL" in str(excinfo.value)
+
+
+def test_from_dict_rejects_cap_drop_without_all() -> None:
+    """``cap_drop: ["NET_RAW"]`` (without ALL) is also rejected — the
+    operator must explicitly preserve the drop-all baseline."""
+    with pytest.raises(ValueError) as excinfo:
+        SandboxPolicy.from_dict({"cap_drop": ["NET_RAW"]})
+    assert "ALL" in str(excinfo.value)
+
+
+def test_from_dict_accepts_cap_drop_with_all() -> None:
+    """``cap_drop: ["ALL"]`` (the canonical baseline) must still work,
+    as must ``cap_drop: ["ALL", "NET_RAW"]`` (belt-and-suspenders)."""
+    policy = SandboxPolicy.from_dict({"cap_drop": ["ALL", "NET_RAW"]})
+    assert "ALL" in policy.cap_drop
+
+
+def test_constructor_accepts_cap_drop_without_all() -> None:
+    """Same asymmetry as ``cap_add``: the validation applies to the
+    YAML ingest path only. Direct construction is the audited internal
+    caller and may legitimately customize the drop set."""
+    policy = SandboxPolicy(cap_drop=())
+    assert policy.cap_drop == ()
