@@ -34,6 +34,49 @@ DEFAULT_SCRATCH = "/scratch"
 DEFAULT_PROXY_IMAGE = "vimagick/tinyproxy:latest"
 DEFAULT_PROXY_PORT = 8888
 
+# Docker's documented default-capability set — these are what the docker
+# daemon grants to a container before any --cap-add. Anything outside
+# this set (notably SYS_ADMIN, NET_ADMIN, SYS_PTRACE, SYS_MODULE,
+# DAC_READ_SEARCH) materially expands the blast radius of a sandbox
+# escape and must NOT be re-grantable from a YAML/dict-supplied recipe.
+# Source: docs.docker.com/engine/containers/run/#runtime-privilege-and-
+# linux-capabilities — "default capabilities" table.
+SAFE_CAPS = frozenset(
+    {
+        "AUDIT_WRITE",
+        "CHOWN",
+        "DAC_OVERRIDE",
+        "FOWNER",
+        "FSETID",
+        "KILL",
+        "MKNOD",
+        "NET_BIND_SERVICE",
+        "NET_RAW",
+        "SETFCAP",
+        "SETGID",
+        "SETPCAP",
+        "SETUID",
+        "SYS_CHROOT",
+    }
+)
+
+
+def _validate_cap_add_allowlist(caps: tuple[str, ...]) -> None:
+    """Reject any cap_add entry that isn't in :data:`SAFE_CAPS`.
+
+    Applied at YAML/dict ingest (``from_dict``) only — direct
+    ``SandboxPolicy(...)`` construction is an audited internal-caller
+    path and may legitimately request elevated caps (e.g. ``SYS_PTRACE``
+    for a debugger-style trial). The error lists every offending cap so
+    the operator can fix the recipe in one pass.
+    """
+    bad = tuple(c for c in caps if c not in SAFE_CAPS)
+    if bad:
+        raise ValueError(
+            "cap_add contains capabilities outside the safe-cap allowlist: "
+            f"{list(bad)}; allowed caps are {sorted(SAFE_CAPS)}"
+        )
+
 
 @dataclass(frozen=True)
 class SandboxPolicy:
@@ -100,9 +143,11 @@ class SandboxPolicy:
                 str(x) for x in (data["cap_drop"] or ())
             )
         if "cap_add" in data:
-            kwargs["cap_add"] = tuple(
+            cap_add = tuple(
                 str(x) for x in (data["cap_add"] or ())
             )
+            _validate_cap_add_allowlist(cap_add)
+            kwargs["cap_add"] = cap_add
         if "no_new_privileges" in data:
             kwargs["no_new_privileges"] = bool(data["no_new_privileges"])
         if "user" in data:
@@ -125,5 +170,6 @@ __all__ = [
     "DEFAULT_PROXY_PORT",
     "DEFAULT_SCRATCH",
     "DEFAULT_USER",
+    "SAFE_CAPS",
     "SandboxPolicy",
 ]
