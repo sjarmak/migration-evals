@@ -28,8 +28,11 @@ and :mod:`migration_evals.runner` share one decision point.
 
 from __future__ import annotations
 
+import re
 import subprocess
 import tempfile
+import uuid
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping, Optional
 
@@ -40,6 +43,26 @@ __all__ = ["DockerSandboxAdapter", "build_sandbox_adapter"]
 
 DEFAULT_DOCKER_BIN = "docker"
 DEFAULT_WORKDIR = "/work"
+# DNS name the workload uses to reach the proxy sidecar on the per-
+# sandbox internal network. Docker's embedded DNS resolves container
+# aliases to their IP on user-defined networks, so this name resolves
+# inside the workload without us touching /etc/hosts.
+PROXY_DNS_ALIAS = "proxy"
+
+
+@dataclass(frozen=True)
+class _EgressFilter:
+    """Per-sandbox egress-filter resources created for network='pull'.
+
+    Tracks the docker artefacts the adapter needs to remove in
+    destroy_sandbox: the per-sandbox internal network, the proxy
+    sidecar container, and the host directory holding the generated
+    tinyproxy config (cleaned up with the scratch dir).
+    """
+
+    network_name: str
+    proxy_container: str
+    config_dir: Path
 
 
 class DockerSandboxAdapter:
@@ -84,6 +107,10 @@ class DockerSandboxAdapter:
         # destroy_sandbox.
         self._containers: dict[str, str] = {}
         self._scratch_dirs: dict[str, Path] = {}
+        # Per-sandbox egress-filter artefacts (only populated for
+        # network='pull'). Keyed by sandbox id so destroy_sandbox can
+        # tear them down in the right order.
+        self._egress: dict[str, _EgressFilter] = {}
 
     # ------------------------------------------------------------------
     # SandboxAdapter Protocol
@@ -98,6 +125,19 @@ class DockerSandboxAdapter:
     ) -> str:
         """Start a detached, hardened container and return its id."""
         scratch_host = Path(tempfile.mkdtemp(prefix="mig-eval-scratch-"))
+
+        # If the policy opts in to network='pull', stand up the per-
+        # sandbox internal network and HTTP CONNECT proxy sidecar BEFORE
+        # the workload runs, so the workload can be attached to the
+        # internal network with HTTP_PROXY env vars in one shot.
+        egress: Optional[_EgressFilter] = None
+        if self._policy.network == "pull":
+            try:
+                egress = self._setup_egress_filter(scratch_host)
+            except Exception:
+                self._cleanup_scratch(scratch_host)
+                raise
+
         repo_mount_flag = (
             f"{self._repo_path}:{self._workdir}:ro"
             if self._policy.repo_mount_readonly
@@ -115,14 +155,18 @@ class DockerSandboxAdapter:
             "-w",
             self._workdir,
         ]
-        # Network isolation - 'none' means no network namespace; 'pull'
-        # means default bridge with the recipe's allowlist enforced
-        # outside the container (DNS / proxy config), so this layer
-        # records the allowlist on the container as a label for
-        # auditability.
+        # Network isolation. 'none' has no namespace at all. 'pull' goes
+        # on a per-sandbox `--internal` bridge (no host route) and is
+        # forced through the proxy sidecar via HTTP_PROXY env vars - so
+        # the workload only reaches allowlisted hosts even if it tries
+        # to use raw sockets.
         if self._policy.network == "none":
             args.extend(["--network", "none"])
         elif self._policy.network == "pull":
+            assert egress is not None  # set above for this branch
+            args.extend(["--network", egress.network_name])
+            # Keep the audit label so existing log analyzers can still
+            # see what the trial was permitted to reach.
             for host in self._policy.network_allowlist:
                 args.extend(
                     ["--label", f"migration-eval.network-allowlist={host}"]
@@ -138,8 +182,15 @@ class DockerSandboxAdapter:
             args.extend(["--cap-add", cap])
         if self._policy.user:
             args.extend(["--user", self._policy.user])
+        # Workload env: caller-supplied env first, then the proxy env
+        # for network='pull'. We deliberately set proxy vars LAST so a
+        # caller cannot accidentally point HTTP_PROXY at a different
+        # host and bypass the allowlist.
         for key, value in (env or {}).items():
             args.extend(["-e", f"{key}={value}"])
+        if egress is not None:
+            for key, value in self._proxy_env_vars().items():
+                args.extend(["-e", f"{key}={value}"])
         args.extend([image, "tail", "-f", "/dev/null"])
 
         try:
@@ -147,9 +198,11 @@ class DockerSandboxAdapter:
                 args, check=True, capture_output=True, text=True
             )
         except subprocess.CalledProcessError as exc:
-            # Don't leak the scratch dir if docker run failed before
-            # the container ever started.
+            # Don't leak the scratch dir or the half-built egress filter
+            # if docker run failed before the workload ever started.
             self._cleanup_scratch(scratch_host)
+            if egress is not None:
+                self._teardown_egress_filter(egress)
             raise RuntimeError(
                 f"docker run failed (exit={exc.returncode}): {exc.stderr.strip()}"
             ) from exc
@@ -157,9 +210,13 @@ class DockerSandboxAdapter:
         container_id = completed.stdout.strip()
         if not container_id:
             self._cleanup_scratch(scratch_host)
+            if egress is not None:
+                self._teardown_egress_filter(egress)
             raise RuntimeError("docker run produced empty container id")
         self._containers[container_id] = container_id
         self._scratch_dirs[container_id] = scratch_host
+        if egress is not None:
+            self._egress[container_id] = egress
         return container_id
 
     @staticmethod
@@ -170,6 +227,205 @@ class DockerSandboxAdapter:
             shutil.rmtree(path, ignore_errors=True)
         except Exception:  # pragma: no cover - defensive
             pass
+
+    # ------------------------------------------------------------------
+    # Egress filter (network='pull')
+    # ------------------------------------------------------------------
+
+    def _proxy_env_vars(self) -> dict[str, str]:
+        """HTTP_PROXY env vars the workload sees on an internal network.
+
+        Both upper- and lower-case forms are set because tooling is
+        inconsistent (curl, pip, apt all read different cases). NO_PROXY
+        keeps `localhost` and the proxy's own DNS alias reachable
+        without recursion.
+        """
+        url = f"http://{PROXY_DNS_ALIAS}:{self._policy.proxy_port}"
+        no_proxy = f"localhost,127.0.0.1,{PROXY_DNS_ALIAS}"
+        return {
+            "HTTP_PROXY": url,
+            "HTTPS_PROXY": url,
+            "http_proxy": url,
+            "https_proxy": url,
+            "NO_PROXY": no_proxy,
+            "no_proxy": no_proxy,
+        }
+
+    def _setup_egress_filter(self, scratch_host: Path) -> _EgressFilter:
+        """Stand up the per-sandbox network + proxy sidecar.
+
+        Order matters: create the internal network first, then start the
+        proxy sidecar attached to it, then connect the sidecar to the
+        default bridge so it has egress. The workload is run by the
+        caller and joined to ``network_name``.
+        """
+        suffix = uuid.uuid4().hex[:12]
+        network_name = f"mig-eval-egress-{suffix}"
+        # Per-sandbox config dir lives next to the scratch dir so the
+        # generated tinyproxy.conf is cleaned up when the scratch dir is.
+        config_dir = scratch_host.parent / f"mig-eval-proxyconf-{suffix}"
+        config_dir.mkdir(parents=True, exist_ok=True)
+        config_path = config_dir / "tinyproxy.conf"
+        filter_path = config_dir / "filter"
+        config_path.write_text(self._render_proxy_config(), encoding="utf-8")
+        filter_path.write_text(self._render_proxy_filter(), encoding="utf-8")
+
+        # 1. Create the per-sandbox internal bridge. `--internal` is the
+        #    load-bearing flag: docker installs no MASQUERADE rule, so
+        #    the workload cannot reach the host or the outside world
+        #    directly. The proxy sidecar is the only escape hatch.
+        net_args = [
+            self._docker_bin, "network", "create",
+            "--internal",
+            "--driver", "bridge",
+            network_name,
+        ]
+        try:
+            subprocess.run(
+                net_args, check=True, capture_output=True, text=True
+            )
+        except subprocess.CalledProcessError as exc:
+            self._cleanup_scratch(config_dir)
+            raise RuntimeError(
+                f"docker network create failed (exit={exc.returncode}): "
+                f"{exc.stderr.strip()}"
+            ) from exc
+
+        # 2. Start the proxy sidecar on the internal network with the
+        #    `proxy` DNS alias the workload uses. Mount the per-sandbox
+        #    config dir (containing tinyproxy.conf + filter) into the
+        #    sidecar at /etc/tinyproxy.
+        proxy_run = [
+            self._docker_bin, "run",
+            "-d", "--rm",
+            "--network", network_name,
+            "--network-alias", PROXY_DNS_ALIAS,
+            "-v", f"{config_dir}:/etc/tinyproxy:ro",
+            self._policy.proxy_image,
+        ]
+        try:
+            completed = subprocess.run(
+                proxy_run, check=True, capture_output=True, text=True
+            )
+        except subprocess.CalledProcessError as exc:
+            # Tear the network back down so we don't leak it.
+            subprocess.run(
+                [self._docker_bin, "network", "rm", network_name],
+                capture_output=True, check=False,
+            )
+            self._cleanup_scratch(config_dir)
+            raise RuntimeError(
+                f"proxy sidecar failed to start (exit={exc.returncode}): "
+                f"{exc.stderr.strip()}"
+            ) from exc
+        proxy_container = completed.stdout.strip()
+
+        # 3. Attach the sidecar to the default bridge so it has egress.
+        connect_args = [
+            self._docker_bin, "network", "connect", "bridge", proxy_container,
+        ]
+        try:
+            subprocess.run(
+                connect_args, check=True, capture_output=True, text=True
+            )
+        except subprocess.CalledProcessError as exc:
+            subprocess.run(
+                [self._docker_bin, "rm", "-f", proxy_container],
+                capture_output=True, check=False,
+            )
+            subprocess.run(
+                [self._docker_bin, "network", "rm", network_name],
+                capture_output=True, check=False,
+            )
+            self._cleanup_scratch(config_dir)
+            raise RuntimeError(
+                f"could not connect proxy sidecar to default bridge "
+                f"(exit={exc.returncode}): {exc.stderr.strip()}"
+            ) from exc
+
+        return _EgressFilter(
+            network_name=network_name,
+            proxy_container=proxy_container,
+            config_dir=config_dir,
+        )
+
+    def _render_proxy_config(self) -> str:
+        """Generate a tinyproxy config that points at the filter file.
+
+        ``FilterDefaultDeny Yes`` plus an anchored regex per allowlisted
+        host (in the sibling ``filter`` file) means the proxy returns
+        403 for any unmatched CONNECT host. ``FilterExtended Yes``
+        enables ERE so anchors and escaped dots are honoured. Hosts are
+        passed through ``re.escape`` so dots in ``registry-1.docker.io``
+        are literal, not "any character".
+
+        Also embed the allowlist as comment lines so tests (and
+        operators reading the conf for audit) can see the active
+        allowlist in one place; tinyproxy ignores lines starting with
+        ``#``.
+        """
+        port = self._policy.proxy_port
+        lines = [
+            "# Generated by migration-evals DockerSandboxAdapter (cxa).",
+            f"Port {port}",
+            "Listen 0.0.0.0",
+            "Timeout 600",
+            # Accept CONNECT for HTTPS and HTTP. Filter does the actual
+            # allow/deny based on hostname.
+            "ConnectPort 443",
+            "ConnectPort 80",
+            # Allow any client - we rely on the docker network for
+            # client isolation; no other container can reach the proxy.
+            "Allow 0.0.0.0/0",
+            'Filter "/etc/tinyproxy/filter"',
+            "FilterDefaultDeny Yes",
+            "FilterExtended Yes",
+            "FilterURLs Off",
+        ]
+        for host in self._policy.network_allowlist:
+            lines.append(f"# allowlist: {self._anchored_host_regex(host)}")
+        return "\n".join(lines) + "\n"
+
+    def _render_proxy_filter(self) -> str:
+        """Return the body of the tinyproxy ``filter`` file.
+
+        One anchored regex per line; tinyproxy treats this as an
+        OR-list. Empty allowlist still yields a non-empty file (a
+        single never-matching line) so ``FilterDefaultDeny Yes`` is
+        what actually denies — but in practice ``network='pull'``
+        without an allowlist is rejected by ``SandboxPolicy``.
+        """
+        return "\n".join(
+            self._anchored_host_regex(h)
+            for h in self._policy.network_allowlist
+        ) + "\n"
+
+    @staticmethod
+    def _anchored_host_regex(host: str) -> str:
+        """Return ``^<re.escape(host)>$`` so dots are literal.
+
+        Anchored matching prevents a sneaky ``evil-registry-1.docker.io``
+        from being accepted via prefix-match against
+        ``registry-1.docker.io``.
+        """
+        return f"^{re.escape(host)}$"
+
+    def _teardown_egress_filter(self, egress: _EgressFilter) -> None:
+        """Best-effort: kill the proxy sidecar, then remove the network.
+
+        Order matters: docker refuses to remove a network that still has
+        endpoints attached. The workload has already been removed by
+        ``destroy_sandbox`` before this is called.
+        """
+        subprocess.run(
+            [self._docker_bin, "rm", "-f", egress.proxy_container],
+            capture_output=True, check=False,
+        )
+        subprocess.run(
+            [self._docker_bin, "network", "rm", egress.network_name],
+            capture_output=True, check=False,
+        )
+        self._cleanup_scratch(egress.config_dir)
 
     def exec(
         self,
@@ -213,12 +469,20 @@ class DockerSandboxAdapter:
         }
 
     def destroy_sandbox(self, sandbox_id: str) -> None:
-        """Force-remove the container and clean up scratch."""
+        """Force-remove the container and clean up scratch.
+
+        For network='pull' sandboxes, also tear down the proxy sidecar
+        and the per-sandbox internal network. Order: workload first
+        (frees the network endpoint), then proxy + network.
+        """
         container_id = self._containers.pop(sandbox_id, None)
         scratch = self._scratch_dirs.pop(sandbox_id, None)
+        egress = self._egress.pop(sandbox_id, None)
         if container_id is None:
             if scratch is not None:
                 self._cleanup_scratch(scratch)
+            if egress is not None:
+                self._teardown_egress_filter(egress)
             return
         # check=False: a missing-container error from Docker should not
         # mask the caller's real outcome.
@@ -227,6 +491,8 @@ class DockerSandboxAdapter:
             capture_output=True,
             check=False,
         )
+        if egress is not None:
+            self._teardown_egress_filter(egress)
         if scratch is not None:
             self._cleanup_scratch(scratch)
 

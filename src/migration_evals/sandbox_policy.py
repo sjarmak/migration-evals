@@ -31,6 +31,8 @@ from typing import Any, Mapping, Optional, Tuple
 ALLOWED_NETWORK_MODES = ("none", "pull")
 DEFAULT_USER = "1000:1000"
 DEFAULT_SCRATCH = "/scratch"
+DEFAULT_PROXY_IMAGE = "vimagick/tinyproxy:latest"
+DEFAULT_PROXY_PORT = 8888
 
 
 @dataclass(frozen=True)
@@ -50,6 +52,15 @@ class SandboxPolicy:
     user: Optional[str] = DEFAULT_USER
     repo_mount_readonly: bool = True
     scratch_dir: str = DEFAULT_SCRATCH
+    # Egress-filter knobs (cxa). When network='pull', the docker adapter
+    # spins up an HTTP CONNECT proxy sidecar from this image and routes
+    # the workload's HTTP_PROXY/HTTPS_PROXY to it on this port. The
+    # workload's own network is a per-sandbox `--internal` bridge, so
+    # the proxy is the only egress path and the allowlist is enforced
+    # mechanically. The image is configurable so test environments and
+    # air-gapped deployments can swap in a pre-mirrored proxy build.
+    proxy_image: str = DEFAULT_PROXY_IMAGE
+    proxy_port: int = DEFAULT_PROXY_PORT
 
     def __post_init__(self) -> None:
         if self.network not in ALLOWED_NETWORK_MODES:
@@ -101,11 +112,17 @@ class SandboxPolicy:
             kwargs["repo_mount_readonly"] = bool(data["repo_mount_readonly"])
         if "scratch_dir" in data:
             kwargs["scratch_dir"] = str(data["scratch_dir"])
+        if "proxy_image" in data:
+            kwargs["proxy_image"] = str(data["proxy_image"])
+        if "proxy_port" in data:
+            kwargs["proxy_port"] = int(data["proxy_port"])
         return cls(**kwargs)
 
 
 __all__ = [
     "ALLOWED_NETWORK_MODES",
+    "DEFAULT_PROXY_IMAGE",
+    "DEFAULT_PROXY_PORT",
     "DEFAULT_SCRATCH",
     "DEFAULT_USER",
     "SandboxPolicy",

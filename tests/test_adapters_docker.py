@@ -291,12 +291,31 @@ from migration_evals.sandbox_policy import SandboxPolicy  # noqa: E402
 
 
 def _docker_run_args(tmp_path: Path, monkeypatch, *, policy=None) -> list[str]:
-    """Run create_sandbox with a recorder and return the docker-run argv."""
-    recorder = _Recorder([_StubProc(stdout="cid\n")])
+    """Run create_sandbox with a recorder and return the WORKLOAD docker-run argv.
+
+    network='pull' policies issue extra subprocess.run calls (network
+    create + proxy run + network connect) before the workload starts;
+    the helper returns just the workload `docker run` invocation - the
+    one whose argv contains the workload image - so callers can keep
+    their assertions focused on the workload's hardening flags.
+    """
+    # Provide enough stub responses for any backend path: network=none
+    # uses 1, network=pull uses up to 4 (network create, proxy run,
+    # network connect, workload run). Extra responses are ignored.
+    recorder = _Recorder(
+        [_StubProc(stdout=f"id-{i}\n") for i in range(8)]
+    )
     monkeypatch.setattr(subprocess, "run", recorder)
     adapter = DockerSandboxAdapter(tmp_path, policy=policy)
     adapter.create_sandbox(image="build-sandbox:latest")
-    return recorder.calls[0]["args"]
+    workload_runs = [
+        c["args"]
+        for c in recorder.calls
+        if c["args"][:2] == ["docker", "run"]
+        and "build-sandbox:latest" in c["args"]
+    ]
+    assert workload_runs, "expected exactly one workload docker-run"
+    return workload_runs[-1]
 
 
 def test_default_policy_drops_all_caps(
@@ -468,3 +487,341 @@ def test_repo_mount_readonly_can_be_disabled_for_legacy_recipes(
     assert "no-new-privileges:true" in [
         args[i + 1] for i, a in enumerate(args) if a == "--security-opt"
     ]
+
+
+# ---------------------------------------------------------------------------
+# Egress filter for network='pull' (cxa)
+# ---------------------------------------------------------------------------
+#
+# When network='pull' the adapter must do real egress filtering, not just
+# slap a label on the workload. Approach: per-sandbox `--internal` docker
+# network with no host route + an HTTP CONNECT proxy sidecar attached to
+# both the internal network and the default bridge. Workload only sees
+# the internal network and is forced through HTTP_PROXY/HTTPS_PROXY at the
+# sidecar. The proxy enforces the allowlist; the `--internal` flag means
+# even raw-socket attempts can't escape.
+
+
+def _create_with_recorder(
+    tmp_path: Path,
+    monkeypatch,
+    *,
+    policy=None,
+    response_count: int = 8,
+) -> tuple[DockerSandboxAdapter, _Recorder, str]:
+    """Run create_sandbox with enough stub responses for any backend path.
+
+    Returns the adapter, the recorder (so callers can inspect calls), and
+    the sandbox id. The stub returns short ids for every subprocess call
+    so network-create / proxy-run / workload-run all succeed.
+    """
+    responses = [_StubProc(stdout=f"id-{i}\n") for i in range(response_count)]
+    recorder = _Recorder(responses)
+    monkeypatch.setattr(subprocess, "run", recorder)
+    adapter = DockerSandboxAdapter(tmp_path, policy=policy)
+    sandbox_id = adapter.create_sandbox(image="build-sandbox:latest")
+    return adapter, recorder, sandbox_id
+
+
+def _calls_with_subcommand(recorder: _Recorder, *prefix: str) -> list[list[str]]:
+    """Return docker-CLI invocations whose argv starts with ``prefix``.
+
+    e.g. ``_calls_with_subcommand(rec, "docker", "network", "create")``.
+    """
+    out: list[list[str]] = []
+    for call in recorder.calls:
+        args = call["args"]
+        if list(args[: len(prefix)]) == list(prefix):
+            out.append(args)
+    return out
+
+
+def test_pull_creates_internal_network(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`docker network create --internal` runs before the workload starts.
+
+    `--internal` is the load-bearing flag: it disables NAT/route to the
+    host so even `curl --noproxy '*'` cannot reach the outside world.
+    """
+    policy = SandboxPolicy(
+        network="pull", network_allowlist=("registry-1.docker.io",)
+    )
+    _, recorder, _ = _create_with_recorder(tmp_path, monkeypatch, policy=policy)
+    nets = _calls_with_subcommand(recorder, "docker", "network", "create")
+    assert nets, "expected `docker network create` for the per-sandbox network"
+    assert "--internal" in nets[0], (
+        "the per-sandbox network must be --internal so the workload has no "
+        "direct egress; the proxy sidecar is the only escape hatch"
+    )
+
+
+def test_pull_starts_proxy_sidecar_on_two_networks(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The proxy sidecar attaches to BOTH the internal sandbox network
+    (so the workload can reach it) AND the default bridge (so it has
+    egress to the real internet)."""
+    policy = SandboxPolicy(
+        network="pull",
+        network_allowlist=("registry-1.docker.io",),
+        proxy_image="my-proxy:1.0",
+    )
+    _, recorder, _ = _create_with_recorder(tmp_path, monkeypatch, policy=policy)
+    runs = _calls_with_subcommand(recorder, "docker", "run")
+    proxy_runs = [r for r in runs if "my-proxy:1.0" in r]
+    assert proxy_runs, "expected a docker-run for the proxy image"
+    proxy_run = proxy_runs[0]
+    # Sidecar starts on the internal sandbox network (`--network <name>`)
+    # and is then connected to the default bridge via `docker network
+    # connect bridge <sidecar>`. Verify the connect call exists.
+    connects = _calls_with_subcommand(recorder, "docker", "network", "connect")
+    assert any(
+        "bridge" in c for c in connects
+    ), "proxy sidecar must be connected to the default bridge for egress"
+    # Sidecar is detached so the adapter can return.
+    assert "-d" in proxy_run
+
+
+def test_pull_workload_uses_internal_network_only(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The workload `docker run` has `--network <sandbox-net>` (NOT bridge,
+    NOT none)."""
+    policy = SandboxPolicy(
+        network="pull", network_allowlist=("registry-1.docker.io",)
+    )
+    _, recorder, _ = _create_with_recorder(tmp_path, monkeypatch, policy=policy)
+    runs = _calls_with_subcommand(recorder, "docker", "run")
+    workload_runs = [r for r in runs if "build-sandbox:latest" in r]
+    assert len(workload_runs) == 1
+    workload = workload_runs[0]
+    assert "--network" in workload
+    netname = workload[workload.index("--network") + 1]
+    assert netname != "none"
+    assert netname != "bridge"
+    # The network name is the same one created via `docker network create`.
+    nets = _calls_with_subcommand(recorder, "docker", "network", "create")
+    assert nets and netname in nets[0]
+
+
+def test_pull_injects_proxy_env_into_workload(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The workload gets HTTP_PROXY/HTTPS_PROXY (and lower-case variants)
+    pointing at the sidecar by DNS name on the internal network."""
+    policy = SandboxPolicy(
+        network="pull",
+        network_allowlist=("registry-1.docker.io",),
+        proxy_port=3128,
+    )
+    _, recorder, _ = _create_with_recorder(tmp_path, monkeypatch, policy=policy)
+    runs = _calls_with_subcommand(recorder, "docker", "run")
+    workload = next(r for r in runs if "build-sandbox:latest" in r)
+    # Pull every -e VAL pair off the argv.
+    env_pairs: list[str] = []
+    for i, a in enumerate(workload):
+        if a == "-e":
+            env_pairs.append(workload[i + 1])
+    proxy_url = "http://proxy:3128"
+    assert any(p == f"HTTP_PROXY={proxy_url}" for p in env_pairs)
+    assert any(p == f"HTTPS_PROXY={proxy_url}" for p in env_pairs)
+    assert any(p == f"http_proxy={proxy_url}" for p in env_pairs)
+    assert any(p == f"https_proxy={proxy_url}" for p in env_pairs)
+    # NO_PROXY keeps `proxy` itself reachable so the workload can talk to
+    # the sidecar on the internal network.
+    assert any(p.startswith("NO_PROXY=") and "proxy" in p for p in env_pairs)
+
+
+def test_pull_proxy_config_writes_filter_lines(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The tinyproxy config mounted into the sidecar has FilterDefaultDeny
+    Yes plus an anchored regex per allowlisted host, so unlisted hosts
+    are dropped at the CONNECT layer."""
+    policy = SandboxPolicy(
+        network="pull",
+        network_allowlist=("registry-1.docker.io", "proxy.golang.org"),
+    )
+    _, recorder, _ = _create_with_recorder(tmp_path, monkeypatch, policy=policy)
+    # The adapter writes tinyproxy.conf + filter into a per-sandbox dir
+    # and -v mounts the dir at /etc/tinyproxy. Locate the dir.
+    runs = _calls_with_subcommand(recorder, "docker", "run")
+    proxy_run = next(
+        r for r in runs if "vimagick/tinyproxy:latest" in r  # default image
+    )
+    mounts = [proxy_run[i + 1] for i, a in enumerate(proxy_run) if a == "-v"]
+    conf_dir_mounts = [m for m in mounts if m.endswith(":/etc/tinyproxy:ro")]
+    assert conf_dir_mounts, "expected /etc/tinyproxy bind-mount"
+    host_dir = Path(conf_dir_mounts[0].split(":")[0])
+    conf_text = (host_dir / "tinyproxy.conf").read_text(encoding="utf-8")
+    filter_text = (host_dir / "filter").read_text(encoding="utf-8")
+    assert "FilterDefaultDeny Yes" in conf_text
+    assert "FilterExtended Yes" in conf_text
+    # Each allowlisted host appears as an anchored regex with escaped dots
+    # in the filter file.
+    assert r"^registry\-1\.docker\.io$" in filter_text or r"^registry-1\.docker\.io$" in filter_text
+    assert r"^proxy\.golang\.org$" in filter_text
+
+
+def test_pull_destroy_removes_proxy_and_network(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """destroy_sandbox must tear down workload, proxy, and the per-sandbox
+    network (in that order; networks can't be removed while containers
+    are attached)."""
+    policy = SandboxPolicy(
+        network="pull", network_allowlist=("registry-1.docker.io",)
+    )
+    adapter, recorder, sandbox_id = _create_with_recorder(
+        tmp_path, monkeypatch, policy=policy, response_count=16
+    )
+    pre_destroy = len(recorder.calls)
+    adapter.destroy_sandbox(sandbox_id)
+    after = recorder.calls[pre_destroy:]
+    rm_calls = [c["args"] for c in after if c["args"][:2] == ["docker", "rm"]]
+    netrm_calls = [
+        c["args"]
+        for c in after
+        if c["args"][:3] == ["docker", "network", "rm"]
+    ]
+    assert len(rm_calls) >= 2, "expected workload + proxy removed"
+    assert netrm_calls, "expected per-sandbox network removed"
+    # Network removal must come AFTER all container removals.
+    last_rm_idx = max(
+        i
+        for i, c in enumerate(after)
+        if c["args"][:2] == ["docker", "rm"]
+    )
+    first_netrm_idx = min(
+        i
+        for i, c in enumerate(after)
+        if c["args"][:3] == ["docker", "network", "rm"]
+    )
+    assert first_netrm_idx > last_rm_idx, (
+        "must remove containers before the network they're attached to"
+    )
+
+
+def test_network_none_is_unaffected_by_egress_filter(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The egress-filter machinery must not fire for network='none' (the
+    default). The workload should still be a single docker-run with
+    --network none and no proxy sidecar."""
+    recorder = _Recorder([_StubProc(stdout="cid\n")])
+    monkeypatch.setattr(subprocess, "run", recorder)
+    adapter = DockerSandboxAdapter(tmp_path)  # default policy: network=none
+    adapter.create_sandbox(image="build-sandbox:latest")
+    # Exactly one subprocess.run: the workload docker-run. No network
+    # create, no proxy run.
+    assert len(recorder.calls) == 1
+    args = recorder.calls[0]["args"]
+    assert args[:2] == ["docker", "run"]
+    assert "--network" in args
+    assert args[args.index("--network") + 1] == "none"
+
+
+def test_pull_proxy_run_failure_cleans_up_network(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """If the proxy sidecar fails to start (e.g. image not pulled), the
+    half-created per-sandbox network must be torn down so we don't leak
+    docker resources across runs."""
+    err = subprocess.CalledProcessError(
+        returncode=125,
+        cmd=["docker", "run"],
+        output="",
+        stderr="Unable to find image 'vimagick/tinyproxy:latest' locally",
+    )
+    recorder = _Recorder(
+        [
+            _StubProc(stdout="netid\n"),  # network create succeeds
+            err,  # proxy docker run FAILS
+            _StubProc(returncode=0),  # network rm cleanup
+        ]
+    )
+    monkeypatch.setattr(subprocess, "run", recorder)
+    policy = SandboxPolicy(
+        network="pull", network_allowlist=("registry-1.docker.io",)
+    )
+    adapter = DockerSandboxAdapter(tmp_path, policy=policy)
+    with pytest.raises(RuntimeError):
+        adapter.create_sandbox(image="build-sandbox:latest")
+    # Last call must be the network teardown.
+    netrms = _calls_with_subcommand(recorder, "docker", "network", "rm")
+    assert netrms, "must clean up the per-sandbox network when proxy run fails"
+
+
+# ---------------------------------------------------------------------------
+# Live Docker integration for the egress filter (opt-in).
+# ---------------------------------------------------------------------------
+#
+# Proves end-to-end that the proxy sidecar drops a non-allowlisted host
+# and forwards an allowlisted one. Same gating as the existing live test;
+# additionally requires the proxy image to be importable locally so we
+# don't go pulling tinyproxy on every CI box.
+
+
+_PROXY_IMAGE_FOR_INTEGRATION = os.environ.get(
+    "MIGRATION_EVAL_PROXY_IMAGE", "vimagick/tinyproxy:latest"
+)
+
+
+def _proxy_image_present() -> bool:
+    if not _DOCKER_AVAILABLE:
+        return False
+    res = subprocess.run(
+        ["docker", "image", "inspect", _PROXY_IMAGE_FOR_INTEGRATION],
+        capture_output=True,
+    )
+    return res.returncode == 0
+
+
+@pytest.mark.skipif(
+    not (_DOCKER_AVAILABLE and _DOCKER_INTEGRATION and _proxy_image_present()),
+    reason=(
+        "set MIGRATION_EVAL_DOCKER_INTEGRATION=1 with Docker available and "
+        "the proxy image (MIGRATION_EVAL_PROXY_IMAGE or vimagick/tinyproxy:latest) "
+        "present locally"
+    ),
+)
+def test_live_egress_allowlist_enforced(tmp_path: Path) -> None:
+    """End-to-end: allowlisted host succeeds; disallowed host is dropped."""
+    (tmp_path / "noop").write_text("hi\n")
+    policy = SandboxPolicy(
+        network="pull",
+        network_allowlist=("example.com",),
+        proxy_image=_PROXY_IMAGE_FOR_INTEGRATION,
+    )
+    adapter = DockerSandboxAdapter(tmp_path, policy=policy)
+    # Use a workload image that has curl. alpine + apk would need network;
+    # curlimages/curl is purpose-built and small, but if not present skip.
+    workload_image = os.environ.get(
+        "MIGRATION_EVAL_WORKLOAD_IMAGE", "curlimages/curl:latest"
+    )
+    has_workload = subprocess.run(
+        ["docker", "image", "inspect", workload_image], capture_output=True
+    ).returncode == 0
+    if not has_workload:
+        pytest.skip(f"workload image {workload_image} not present locally")
+    sid = adapter.create_sandbox(image=workload_image)
+    try:
+        # Allowlisted host -> proxy lets it through.
+        ok = adapter.exec(
+            sid,
+            command="curl -sSf -o /dev/null -w '%{http_code}' https://example.com/",
+            timeout_s=30,
+        )
+        assert ok["exit_code"] == 0, f"allowlisted host should succeed: {ok}"
+        # Disallowed host -> proxy should drop the CONNECT, exit nonzero.
+        bad = adapter.exec(
+            sid,
+            command="curl -sSf -o /dev/null https://www.google.com/",
+            timeout_s=30,
+        )
+        assert bad["exit_code"] != 0, (
+            f"disallowed host must fail: {bad}"
+        )
+    finally:
+        adapter.destroy_sandbox(sid)
