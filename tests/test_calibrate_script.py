@@ -338,6 +338,116 @@ def test_calibrate_does_not_construct_sandbox_for_tier_zero_only(
 
 
 # ---------------------------------------------------------------------------
+# scripts/calibrate.py — --sandbox-factory module-prefix allowlist (o7z)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "spec",
+    [
+        "os:system",
+        "subprocess:run",
+        "shutil:rmtree",
+        "__main__:anything",
+        "builtins:eval",
+        # A repo-internal-looking prefix that is NOT in the allowlist.
+        "scripts.calibrate:_default_sandbox_factory",
+    ],
+)
+def test_calibrate_rejects_sandbox_factory_outside_allowlist(
+    tmp_path: Path,
+    spec: str,
+) -> None:
+    """``--sandbox-factory`` must reject any module whose name does not
+    start with one of the allowlisted prefixes (``tests.``,
+    ``migration_evals.``). The CLI surface area means a pipeline that
+    pipes user-controlled args could otherwise import arbitrary modules.
+    """
+    proc = subprocess.run(
+        [
+            sys.executable, str(CALIBRATE_SCRIPT),
+            "--migration", "go_import_rewrite",
+            "--fixtures", str(CALIBRATION_FIXTURES),
+            "--output", str(tmp_path / "out.json"),
+            "--stages", "diff,compile",
+            "--recipe", str(CALIBRATION_RECIPE),
+            "--sandbox-factory", spec,
+        ],
+        capture_output=True, text=True,
+        cwd=str(REPO_ROOT), env=_env(),
+    )
+    assert proc.returncode == 1, proc.stdout + proc.stderr
+    # Error message must be specific so operators understand why the
+    # spec was rejected (not a generic ImportError or KeyError).
+    assert "--sandbox-factory" in proc.stderr
+    assert "allowlist" in proc.stderr or "allowed" in proc.stderr
+
+
+def test_calibrate_help_text_warns_about_sandbox_factory_security(
+    tmp_path: Path,
+) -> None:
+    """The --help output must explicitly mark --sandbox-factory as a
+    development/test-only seam and warn against wiring user-controlled
+    input. This is the documentation half of the o7z hardening — even if
+    a future change loosens the allowlist, the help text keeps the
+    contract visible at the CLI surface.
+    """
+    proc = subprocess.run(
+        [sys.executable, str(CALIBRATE_SCRIPT), "--help"],
+        capture_output=True, text=True,
+        cwd=str(REPO_ROOT), env=_env(),
+    )
+    assert proc.returncode == 0, proc.stderr
+    help_text = proc.stdout
+    # Warning is case-insensitive to keep the assertion robust against
+    # minor wording changes; the substring "test only" or
+    # "test-only" plus a mention of arbitrary import is the contract.
+    lower = help_text.lower()
+    assert "test only" in lower or "test-only" in lower
+    assert "untrusted" in lower or "user-controlled" in lower
+    assert "arbitrary import" in lower
+
+
+def _import_calibrate_module():
+    """Load ``scripts/calibrate.py`` as an importable module without
+    permanently mutating ``sys.path`` (the calibrate file lives outside
+    the ``src/`` package layout)."""
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location(
+        "calibrate_module_under_test", CALIBRATE_SCRIPT
+    )
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_calibrate_resolve_sandbox_factory_unit_rejects_outside_allowlist() -> None:
+    """In-process unit check that ``_resolve_sandbox_factory`` raises
+    ``ValueError`` for a non-allowlisted module without performing the
+    import. Subprocess tests above prove the CLI surface; this one
+    proves the internal contract so refactors keep failing loudly.
+    """
+    calibrate_mod = _import_calibrate_module()
+    with pytest.raises(ValueError) as excinfo:
+        calibrate_mod._resolve_sandbox_factory("os:system")
+    msg = str(excinfo.value)
+    assert "allowlist" in msg or "allowed" in msg
+
+
+def test_calibrate_resolve_sandbox_factory_unit_accepts_tests_prefix() -> None:
+    """The committed stub factory under ``tests._calibrate_stub_sandbox``
+    must remain resolvable — the allowlist must not regress the
+    documented test seam."""
+    calibrate_mod = _import_calibrate_module()
+    factory = calibrate_mod._resolve_sandbox_factory(
+        "tests._calibrate_stub_sandbox:stub_factory"
+    )
+    assert callable(factory)
+
+
+# ---------------------------------------------------------------------------
 # Live Docker integration (opt-in, x8w)
 # ---------------------------------------------------------------------------
 
