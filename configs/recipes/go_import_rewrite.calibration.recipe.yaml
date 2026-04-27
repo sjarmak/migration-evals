@@ -1,0 +1,36 @@
+# Calibration recipe for the go_import_rewrite migration (x8w).
+#
+# This is intentionally separate from configs/recipes/go_import_rewrite.yaml
+# because calibration runs against tiny self-contained Go modules under
+# tests/fixtures/calibration/go_import_rewrite/ — not real-world repos. The
+# build/test commands here are tuned for that corpus:
+#
+#   * The default sandbox policy mounts /work read-only; we copy the repo
+#     to /scratch so `go build` can write to its workdir.
+#   * The default sandbox policy is network=none; we point GOMODCACHE /
+#     GOCACHE / GOPATH at /scratch so Go never tries to talk to the
+#     module proxy. The calibration corpus uses only the standard
+#     library, so no module fetches are needed.
+#
+# scripts/calibrate.py loads this file via --recipe and constructs a
+# Recipe(dockerfile=..., build_cmd=..., test_cmd=...) for the funnel.
+
+migration_id: go_import_rewrite_calibration
+
+recipe:
+  # Dockerfile is ignored by the calibration driver — we run the
+  # commands inside the pre-pulled image named by --sandbox-image
+  # (default golang:1.22) — but the Recipe dataclass requires the field.
+  dockerfile: |
+    FROM golang:1.22
+    WORKDIR /work
+  # Single-line on purpose: YAML's folded scalars (`>`) preserve
+  # newlines on more-indented continuation lines, which sh interprets
+  # as command terminators and silently splits the env-var prefix from
+  # the `go build` call. Keep both commands as one logical line.
+  build_cmd: "cp -r /work/. /scratch/repo && cd /scratch/repo && GOFLAGS=-mod=mod GOMODCACHE=/scratch/gomodcache GOCACHE=/scratch/gocache GOPATH=/scratch/gopath GOPROXY=off go build ./..."
+  test_cmd: "cp -r /work/. /scratch/repo && cd /scratch/repo && GOFLAGS=-mod=mod GOMODCACHE=/scratch/gomodcache GOCACHE=/scratch/gocache GOPATH=/scratch/gopath GOPROXY=off go test ./..."
+  harness_provenance:
+    model: calibration
+    prompt_version: calibration-v1
+    timestamp: "1970-01-01T00:00:00Z"

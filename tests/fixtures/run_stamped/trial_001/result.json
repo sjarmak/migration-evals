@@ -7,7 +7,7 @@
   "oracle_tier": "compile_only",
   "oracle_spec_sha": "79a65900fe2da5252ed173c18c125a06a99b25014e5398b545e167a7354e8b2f",
   "recipe_spec_sha": "2eeae1feba028ac9eb9007c1906406af6a3a6d6434e632c1b4a6d894824d0b7c",
-  "pre_reg_sha": "be442aa241ac97f5aa7208fa7fcb85efaf66b2275c4b1382e3800bc4a86f87ea",
+  "pre_reg_sha": "e4000b0e1be316f0faaa7ee39b193f10b1abbf7df6bed7ca93b5aef28f992d7c",
   "score_pre_cutoff": 0.84,
   "score_post_cutoff": 0.77
 }

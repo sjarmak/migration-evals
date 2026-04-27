@@ -47,11 +47,22 @@ class FixtureLabel:
     ``expected_reject_tier`` names the tier that is expected to do the
     rejecting (so a fixture that exists to exercise tier-1 catches a
     different miscalibration from one that targets tier-0).
+
+    ``applicable_tiers`` optionally restricts the set of funnel tiers
+    this fixture is intended to inform. The default ``None`` means the
+    fixture is valid for every tier; a non-empty tuple narrows it (for
+    example, the legacy patch-only fixtures used for tier-0 calibration
+    are not compilable in isolation, so they declare
+    ``applicable_tiers=["diff_valid"]`` to keep them out of tier-1 /
+    tier-2 confusion-matrix denominators). ``compute_calibration``
+    skips a fixture for tiers outside its ``applicable_tiers`` even if
+    the funnel ran them.
     """
 
     fixture_id: str
     expected_outcome: str
     expected_reject_tier: Optional[str] = None
+    applicable_tiers: Optional[tuple[str, ...]] = None
     notes: str = ""
 
     def __post_init__(self) -> None:
@@ -70,9 +81,35 @@ class FixtureLabel:
                 "fixtures with expected_outcome='pass_all' must not "
                 "declare expected_reject_tier"
             )
+        if (
+            self.expected_outcome == REJECT
+            and self.applicable_tiers is not None
+            and self.expected_reject_tier not in self.applicable_tiers
+        ):
+            raise ValueError(
+                "expected_reject_tier "
+                f"{self.expected_reject_tier!r} must appear in "
+                f"applicable_tiers {self.applicable_tiers!r}"
+            )
+
+    def applies_to(self, tier: str) -> bool:
+        """Return True iff this fixture should inform ``tier``'s metrics."""
+        if self.applicable_tiers is None:
+            return True
+        return tier in self.applicable_tiers
 
     @classmethod
     def from_dict(cls, data: Mapping[str, Any]) -> "FixtureLabel":
+        raw_tiers = data.get("applicable_tiers")
+        applicable_tiers: Optional[tuple[str, ...]]
+        if raw_tiers is None:
+            applicable_tiers = None
+        else:
+            applicable_tiers = tuple(str(t) for t in raw_tiers)
+            if not applicable_tiers:
+                raise ValueError(
+                    "applicable_tiers, when present, must be non-empty"
+                )
         return cls(
             fixture_id=str(data["fixture_id"]),
             expected_outcome=str(data["expected_outcome"]),
@@ -81,6 +118,7 @@ class FixtureLabel:
                 if data.get("expected_reject_tier")
                 else None
             ),
+            applicable_tiers=applicable_tiers,
             notes=str(data.get("notes", "")),
         )
 
@@ -290,6 +328,11 @@ def compute_calibration(
         n_kb_obs = 0
         for obs in observations:
             if tier not in obs.tier_passed:
+                continue
+            # Skip fixtures whose label opted them out of this tier
+            # (e.g. tier-0-only patch fixtures that do not compile in
+            # isolation must not contaminate tier-1 metrics).
+            if not obs.label.applies_to(tier):
                 continue
             passed = obs.tier_passed[tier]
             if obs.label.expected_outcome == PASS_ALL:

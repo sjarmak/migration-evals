@@ -1,8 +1,8 @@
 {
   "migration_id": "go_import_rewrite",
-  "n_known_bad": 10,
-  "n_known_good": 10,
-  "notes": "tier-0 only; tier-1/tier-2 calibration deferred (Docker corpus follow-up)",
+  "n_known_bad": 14,
+  "n_known_good": 12,
+  "notes": "tier-0 + tier-1 + tier-2 calibration derived from tests/fixtures/calibration/go_import_rewrite/ via scripts/calibrate.py --stages diff,compile,tests --recipe configs/recipes/go_import_rewrite.calibration.recipe.yaml --sandbox-image golang:1.22 (x8w)",
   "per_tier": [
     {
       "fn": 0,
@@ -10,32 +10,32 @@
       "fp": 0,
       "fpr": 0.0,
       "n_known_bad_targeted_observed": 10,
-      "n_known_good_observed": 10,
+      "n_known_good_observed": 12,
       "tier": "diff_valid",
-      "tn": 10,
+      "tn": 12,
       "tp": 10
     },
     {
       "fn": 0,
-      "fnr": null,
+      "fnr": 0.0,
       "fp": 0,
-      "fpr": null,
-      "n_known_bad_targeted_observed": 0,
-      "n_known_good_observed": 0,
+      "fpr": 0.0,
+      "n_known_bad_targeted_observed": 2,
+      "n_known_good_observed": 2,
       "tier": "compile_only",
-      "tn": 0,
-      "tp": 0
+      "tn": 2,
+      "tp": 2
     },
     {
       "fn": 0,
-      "fnr": null,
+      "fnr": 0.0,
       "fp": 0,
-      "fpr": null,
-      "n_known_bad_targeted_observed": 0,
-      "n_known_good_observed": 0,
+      "fpr": 0.0,
+      "n_known_bad_targeted_observed": 2,
+      "n_known_good_observed": 2,
       "tier": "tests",
-      "tn": 0,
-      "tp": 0
+      "tn": 2,
+      "tp": 2
     },
     {
       "fn": 0,

@@ -84,6 +84,92 @@ def test_fixture_label_round_trips_via_dict(tmp_path: Path) -> None:
     assert FixtureLabel.from_path(path).fixture_id == "g1"
 
 
+def test_fixture_label_applicable_tiers_defaults_to_all(tmp_path: Path) -> None:
+    label = FixtureLabel(fixture_id="g", expected_outcome="pass_all")
+    assert label.applicable_tiers is None
+    assert label.applies_to("diff_valid")
+    assert label.applies_to("compile_only")
+
+
+def test_fixture_label_applicable_tiers_restricts_scope() -> None:
+    label = FixtureLabel(
+        fixture_id="g",
+        expected_outcome="pass_all",
+        applicable_tiers=("diff_valid",),
+    )
+    assert label.applies_to("diff_valid")
+    assert not label.applies_to("compile_only")
+
+
+def test_fixture_label_reject_tier_must_be_in_applicable_tiers() -> None:
+    """A bad fixture targeting compile_only cannot opt out of compile_only."""
+    with pytest.raises(ValueError, match="must appear in applicable_tiers"):
+        FixtureLabel(
+            fixture_id="b",
+            expected_outcome="reject",
+            expected_reject_tier="compile_only",
+            applicable_tiers=("diff_valid",),
+        )
+
+
+def test_fixture_label_applicable_tiers_must_be_non_empty() -> None:
+    with pytest.raises(ValueError, match="non-empty"):
+        FixtureLabel.from_dict(
+            {
+                "fixture_id": "g",
+                "expected_outcome": "pass_all",
+                "applicable_tiers": [],
+            }
+        )
+
+
+def test_compute_calibration_skips_off_scope_tiers() -> None:
+    """A pass_all fixture with applicable_tiers=['diff_valid'] must not
+    contribute to compile_only's known-good denominator even when the
+    funnel ran compile_only for it."""
+    obs = [
+        FixtureObservation(
+            label=FixtureLabel(
+                fixture_id="g_legacy",
+                expected_outcome="pass_all",
+                applicable_tiers=("diff_valid",),
+            ),
+            # The funnel ran every tier, but the fixture intentionally
+            # fails compile_only — it was never written to be compiled.
+            tier_passed={
+                "diff_valid": True,
+                "compile_only": False,
+                "tests": False,
+            },
+        ),
+        FixtureObservation(
+            label=FixtureLabel(
+                fixture_id="g_modern",
+                expected_outcome="pass_all",
+            ),
+            tier_passed={
+                "diff_valid": True,
+                "compile_only": True,
+                "tests": True,
+            },
+        ),
+    ]
+    report = compute_calibration(
+        obs, migration_id="recipe", tier_order=TIER_ORDER
+    )
+    diff = report.tier("diff_valid")
+    # Both fixtures inform tier 0 (legacy explicitly, modern by default).
+    assert diff.tn == 2
+    assert diff.fp == 0
+
+    compile_t = report.tier("compile_only")
+    # Only g_modern informs compile_only; g_legacy is out of scope.
+    assert compile_t.n_known_good_observed == 1
+    assert compile_t.tn == 1
+    assert compile_t.fp == 0
+    assert compile_t.fpr == 0.0
+
+
 # ---------------------------------------------------------------------------
 # compute_calibration
 # ---------------------------------------------------------------------------

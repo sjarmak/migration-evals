@@ -2,5 +2,8 @@
   "fixture_id": "bad_003_no_file_headers",
   "expected_outcome": "reject",
   "expected_reject_tier": "diff_valid",
+  "applicable_tiers": [
+    "diff_valid"
+  ],
   "notes": "Missing --- and +++ file headers entirely"
 }

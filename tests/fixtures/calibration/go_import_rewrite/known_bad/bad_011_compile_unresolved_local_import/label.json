@@ -1,0 +1,6 @@
+{
+  "fixture_id": "bad_011_compile_unresolved_local_import",
+  "expected_outcome": "reject",
+  "expected_reject_tier": "compile_only",
+  "notes": "main.go imports a subpackage path that does not exist in this module — a realistic post-import-rewrite mistake. go build fails at compile_only; tier-0 passes because the source files are syntactically balanced."
+}

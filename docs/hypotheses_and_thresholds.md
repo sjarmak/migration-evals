@@ -42,13 +42,20 @@ under `--require-calibration` (m1w).
 A numeric `max_fpr` / `max_fnr` requires the calibration's actual rate to
 be `<=` the threshold; a `null` actual rate (no observations for that
 tier) does not satisfy a numeric threshold. An empty cell means no
-constraint for that rate. Tier-1 / tier-2 calibration requires Docker and
-is deferred to a follow-up bead; the table currently constrains tier 0
-only.
+constraint for that rate.
+
+Tier-1 (`compile_only`) and tier-2 (`tests`) calibration requires Docker;
+the corpus under `tests/fixtures/calibration/go_import_rewrite/` (x8w)
+provides 2 known-good and 2-targeted-known-bad fixtures per tier, so the
+finest-grain rate observable is `0.5` per fixture flip. Thresholds below
+are set with that resolution in mind: a single fixture regression in
+either direction trips the gate.
 
 | tier         | max_fpr | max_fnr |
 |--------------|---------|---------|
 | diff_valid   | 0.05    | 0.10    |
+| compile_only | 0.10    | 0.20    |
+| tests        | 0.15    | 0.25    |
 
 ## Post-hoc changes
 

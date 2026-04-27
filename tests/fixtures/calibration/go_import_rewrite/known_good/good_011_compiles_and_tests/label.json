@@ -1,0 +1,5 @@
+{
+  "fixture_id": "good_011_compiles_and_tests",
+  "expected_outcome": "pass_all",
+  "notes": "Self-contained Go module: compiles cleanly and has one passing test (calibrates tier-1 + tier-2 known-good axis)"
+}

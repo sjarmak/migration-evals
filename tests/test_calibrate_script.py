@@ -15,6 +15,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_REPO_ROOT / "src"))
 
@@ -57,13 +59,21 @@ def test_calibrate_emits_clean_tier_zero_calibration(tmp_path: Path) -> None:
     assert out.is_file()
     report = CalibrationReport.from_path(out)
     assert report.migration_id == "go_import_rewrite"
-    assert report.n_known_good == 10
-    assert report.n_known_bad == 10
+    # 10 tier-0 known-good + 2 tier-1/tier-2 known-good (no patch.diff,
+    # repo-only structural fallback passes).
+    assert report.n_known_good == 12
+    # 10 tier-0 known-bad + 2 compile_only + 2 tests known-bad fixtures.
+    assert report.n_known_bad == 14
     diff = report.tier("diff_valid")
-    # Corpus is hand-vetted for tier-0; both rates must be zero.
+    # Corpus is hand-vetted for tier-0; FPR must be zero (no clean diff
+    # is wrongly rejected). FNR is computed only against known-bad
+    # fixtures whose expected_reject_tier == 'diff_valid' (the original
+    # 10 bad_*_* fixtures), so it must also be zero.
     assert diff.fpr == 0.0
     assert diff.fnr == 0.0
-    assert diff.tp == 10 and diff.tn == 10
+    # Tier-0 sees every fixture (it always runs first); the 12 known-good
+    # all pass tier-0, and the 10 known-bad targeted at tier-0 all fail.
+    assert diff.tn == 12 and diff.tp == 10
     # Tiers above tier 0 weren't run; their rates are unobserved.
     assert report.tier("compile_only").fpr is None
     assert report.tier("compile_only").fnr is None
@@ -98,6 +108,280 @@ def test_calibrate_fails_on_unknown_stage(tmp_path: Path) -> None:
     )
     assert proc.returncode == 1
     assert "unknown --stages" in proc.stderr
+
+
+# ---------------------------------------------------------------------------
+# scripts/calibrate.py — sandbox wiring (x8w)
+# ---------------------------------------------------------------------------
+
+
+CALIBRATION_RECIPE = (
+    REPO_ROOT
+    / "configs" / "recipes"
+    / "go_import_rewrite.calibration.recipe.yaml"
+)
+STUB_FACTORY_SPEC = "tests._calibrate_stub_sandbox:stub_factory"
+
+
+def _stub_env(tmp_path: Path, *, script: dict | None = None) -> dict[str, str]:
+    """Build an env dict that points the stub adapter at scratch files."""
+    log_path = tmp_path / "stub_log.jsonl"
+    base = _env()
+    # ``tests._calibrate_stub_sandbox`` lives under the repo root; prepend
+    # so importlib resolves it from there inside the calibrate subprocess.
+    base_pythonpath = base.get("PYTHONPATH", "")
+    pythonpath_entries = [str(REPO_ROOT)]
+    if base_pythonpath:
+        pythonpath_entries.append(base_pythonpath)
+    env = {
+        **base,
+        "CALIBRATE_STUB_LOG": str(log_path),
+        "PYTHONPATH": os.pathsep.join(pythonpath_entries),
+    }
+    if script is not None:
+        script_path = tmp_path / "stub_script.json"
+        script_path.write_text(json.dumps(script))
+        env["CALIBRATE_STUB_SCRIPT"] = str(script_path)
+    return env
+
+
+def _read_stub_log(tmp_path: Path) -> list[dict]:
+    log_path = tmp_path / "stub_log.jsonl"
+    if not log_path.is_file():
+        return []
+    return [
+        json.loads(line)
+        for line in log_path.read_text().splitlines()
+        if line.strip()
+    ]
+
+
+def test_calibrate_requires_recipe_for_sandbox_stages(tmp_path: Path) -> None:
+    """Asking for compile/tests without --recipe is a CLI error, not a
+    silent fall-back to tier-0."""
+    proc = subprocess.run(
+        [
+            sys.executable, str(CALIBRATE_SCRIPT),
+            "--migration", "go_import_rewrite",
+            "--fixtures", str(CALIBRATION_FIXTURES),
+            "--output", str(tmp_path / "out.json"),
+            "--stages", "diff,compile",
+        ],
+        capture_output=True, text=True,
+        cwd=str(REPO_ROOT), env=_env(),
+    )
+    assert proc.returncode == 1
+    assert "--recipe is required" in proc.stderr
+
+
+def test_calibrate_wires_sandbox_factory_for_compile_stage(
+    tmp_path: Path,
+) -> None:
+    """When --stages includes compile, calibrate must construct a
+    SandboxAdapter via the resolved factory and pass it through to the
+    funnel for *every* fixture (not just the tier-1-targeted ones)."""
+    out = tmp_path / "calibration.json"
+    proc = subprocess.run(
+        [
+            sys.executable, str(CALIBRATE_SCRIPT),
+            "--migration", "go_import_rewrite",
+            "--fixtures", str(CALIBRATION_FIXTURES),
+            "--output", str(out),
+            "--stages", "diff,compile",
+            "--recipe", str(CALIBRATION_RECIPE),
+            "--sandbox-factory", STUB_FACTORY_SPEC,
+            "--sandbox-image", "stub-image:latest",
+        ],
+        capture_output=True, text=True,
+        cwd=str(REPO_ROOT), env=_stub_env(tmp_path),
+    )
+    assert proc.returncode == 0, proc.stderr
+    log = _read_stub_log(tmp_path)
+    # The legacy good_001..good_010 / bad_001..bad_010 fixtures declare
+    # applicable_tiers=["diff_valid"] and so opt out of tier-1; only the
+    # x8w-era fixtures (good_011, good_012, bad_011..bad_014) reach
+    # compile_only. 6 fixtures × 1 create_sandbox per tier-1 invocation.
+    creates = [e for e in log if e["event"] == "create_sandbox"]
+    assert len(creates) == 6, [e["fixture_id"] for e in creates]
+    fixture_ids = {e["fixture_id"] for e in creates}
+    assert fixture_ids == {
+        "good_011_compiles_and_tests",
+        "good_012_subpackage_compiles",
+        "bad_011_compile_unresolved_local_import",
+        "bad_012_compile_undefined_symbol",
+        "bad_013_test_failing_assertion",
+        "bad_014_test_panic",
+    }
+    # The wrapper must override the funnel's default image with the
+    # CLI-supplied --sandbox-image. The inner factory_image carries the
+    # value the test passed in.
+    factory_images = {e["factory_image"] for e in creates}
+    assert factory_images == {"stub-image:latest"}
+
+
+def test_calibrate_sandbox_script_drives_compile_only_verdicts(
+    tmp_path: Path,
+) -> None:
+    """The compile_only tier's verdict must come from the sandbox exec
+    envelope, not from any heuristic in calibrate.py. We script
+    bad_011/bad_012 to exit non-zero on `go build` and confirm the
+    resulting calibration shows tp=2 fp=0 for compile_only."""
+    script = {
+        "bad_011_compile_unresolved_local_import": {
+            "go build": {"exit_code": 1, "stderr": "build failed"},
+        },
+        "bad_012_compile_undefined_symbol": {
+            "go build": {"exit_code": 1, "stderr": "build failed"},
+        },
+    }
+    out = tmp_path / "calibration.json"
+    proc = subprocess.run(
+        [
+            sys.executable, str(CALIBRATE_SCRIPT),
+            "--migration", "go_import_rewrite",
+            "--fixtures", str(CALIBRATION_FIXTURES),
+            "--output", str(out),
+            "--stages", "diff,compile",
+            "--recipe", str(CALIBRATION_RECIPE),
+            "--sandbox-factory", STUB_FACTORY_SPEC,
+        ],
+        capture_output=True, text=True,
+        cwd=str(REPO_ROOT), env=_stub_env(tmp_path, script=script),
+    )
+    assert proc.returncode == 0, proc.stderr
+    report = CalibrationReport.from_path(out)
+    compile_tier = report.tier("compile_only")
+    # Two bad_011/bad_012 fixtures targeted at compile_only fail the
+    # build → tp=2.
+    assert compile_tier.tp == 2
+    assert compile_tier.fn == 0
+    # bad_013/bad_014 are targeted at tests, not compile, so their
+    # compile_only pass does not contribute to compile_only's
+    # known-bad-targeted denominator.
+    assert compile_tier.n_known_bad_targeted_observed == 2
+    # Only good_011/good_012 declare applicable_tiers covering
+    # compile_only (the legacy good_001..good_010 fixtures opt out),
+    # so tn=2, fp=0.
+    assert compile_tier.tn == 2
+    assert compile_tier.fp == 0
+    assert compile_tier.fpr == 0.0
+    assert compile_tier.fnr == 0.0
+
+
+def test_calibrate_sandbox_script_drives_tests_tier_verdicts(
+    tmp_path: Path,
+) -> None:
+    """The tests tier's verdict must come from the sandbox exec envelope
+    too. Script bad_013/bad_014 to fail go test and confirm tp=2."""
+    script = {
+        "bad_013_test_failing_assertion": {
+            "go test": {"exit_code": 1, "stderr": "test FAIL"},
+        },
+        "bad_014_test_panic": {
+            "go test": {"exit_code": 2, "stderr": "panic"},
+        },
+    }
+    out = tmp_path / "calibration.json"
+    proc = subprocess.run(
+        [
+            sys.executable, str(CALIBRATE_SCRIPT),
+            "--migration", "go_import_rewrite",
+            "--fixtures", str(CALIBRATION_FIXTURES),
+            "--output", str(out),
+            "--stages", "diff,compile,tests",
+            "--recipe", str(CALIBRATION_RECIPE),
+            "--sandbox-factory", STUB_FACTORY_SPEC,
+        ],
+        capture_output=True, text=True,
+        cwd=str(REPO_ROOT), env=_stub_env(tmp_path, script=script),
+    )
+    assert proc.returncode == 0, proc.stderr
+    report = CalibrationReport.from_path(out)
+    tests_tier = report.tier("tests")
+    assert tests_tier.tp == 2
+    assert tests_tier.fn == 0
+    assert tests_tier.n_known_bad_targeted_observed == 2
+    # Only good_011/good_012 declare applicable_tiers covering tests
+    # (legacy fixtures opt out), so tn=2, fp=0.
+    assert tests_tier.tn == 2
+    assert tests_tier.fp == 0
+    assert tests_tier.fpr == 0.0
+    assert tests_tier.fnr == 0.0
+
+
+def test_calibrate_does_not_construct_sandbox_for_tier_zero_only(
+    tmp_path: Path,
+) -> None:
+    """The default (--stages diff) must remain Docker-free: no factory
+    resolution, no sandbox construction, no log entries."""
+    out = tmp_path / "calibration.json"
+    proc = subprocess.run(
+        [
+            sys.executable, str(CALIBRATE_SCRIPT),
+            "--migration", "go_import_rewrite",
+            "--fixtures", str(CALIBRATION_FIXTURES),
+            "--output", str(out),
+            "--stages", "diff",
+            # Deliberately point at a non-existent factory: tier-0 path
+            # must not touch it.
+            "--sandbox-factory", "tests._calibrate_stub_sandbox:does_not_exist",
+        ],
+        capture_output=True, text=True,
+        cwd=str(REPO_ROOT), env=_stub_env(tmp_path),
+    )
+    assert proc.returncode == 0, proc.stderr
+    log = _read_stub_log(tmp_path)
+    assert log == []  # stub adapter never instantiated
+
+
+# ---------------------------------------------------------------------------
+# Live Docker integration (opt-in, x8w)
+# ---------------------------------------------------------------------------
+
+
+_DOCKER_AVAILABLE = shutil.which("docker") is not None
+_DOCKER_INTEGRATION = os.environ.get("MIGRATION_EVAL_DOCKER_INTEGRATION") == "1"
+_CALIBRATION_RECIPE_LIVE = (
+    REPO_ROOT
+    / "configs" / "recipes"
+    / "go_import_rewrite.calibration.recipe.yaml"
+)
+
+
+@pytest.mark.skipif(
+    not (_DOCKER_AVAILABLE and _DOCKER_INTEGRATION),
+    reason="set MIGRATION_EVAL_DOCKER_INTEGRATION=1 with Docker available",
+)
+def test_calibrate_end_to_end_against_docker(tmp_path: Path) -> None:
+    """End-to-end calibration against the real Docker-backed sandbox.
+
+    Asserts that the corpus + recipe + adapter wiring produce a clean
+    tier-0 / tier-1 / tier-2 calibration (zero FPR, zero FNR) — the same
+    numbers committed to ``configs/recipes/go_import_rewrite.calibration.json``.
+    """
+    out = tmp_path / "calibration.json"
+    proc = subprocess.run(
+        [
+            sys.executable, str(CALIBRATE_SCRIPT),
+            "--migration", "go_import_rewrite",
+            "--fixtures", str(CALIBRATION_FIXTURES),
+            "--output", str(out),
+            "--stages", "diff,compile,tests",
+            "--recipe", str(_CALIBRATION_RECIPE_LIVE),
+            "--sandbox-image", "golang:1.22",
+        ],
+        capture_output=True, text=True,
+        cwd=str(REPO_ROOT), env=_env(),
+        timeout=600,
+    )
+    assert proc.returncode == 0, proc.stderr
+    report = CalibrationReport.from_path(out)
+    assert report.n_known_good == 12
+    assert report.n_known_bad == 14
+    for tier_name in ("diff_valid", "compile_only", "tests"):
+        tier = report.tier(tier_name)
+        assert tier.fpr == 0.0, f"{tier_name} fpr={tier.fpr}"
+        assert tier.fnr == 0.0, f"{tier_name} fnr={tier.fnr}"
 
 
 # ---------------------------------------------------------------------------
@@ -147,17 +431,31 @@ def _passing_calibration_payload() -> dict:
     return {
         "migration_id": "go_import_rewrite",
         "schema_version": "v1",
-        "n_known_good": 10,
-        "n_known_bad": 10,
+        "n_known_good": 12,
+        "n_known_bad": 14,
         "notes": "fixture",
         "per_tier": [
             {
                 "tier": "diff_valid",
-                "tp": 10, "fp": 0, "tn": 10, "fn": 0,
-                "n_known_good_observed": 10,
+                "tp": 10, "fp": 0, "tn": 12, "fn": 0,
+                "n_known_good_observed": 12,
                 "n_known_bad_targeted_observed": 10,
                 "fpr": 0.0, "fnr": 0.0,
-            }
+            },
+            {
+                "tier": "compile_only",
+                "tp": 2, "fp": 0, "tn": 2, "fn": 0,
+                "n_known_good_observed": 2,
+                "n_known_bad_targeted_observed": 2,
+                "fpr": 0.0, "fnr": 0.0,
+            },
+            {
+                "tier": "tests",
+                "tp": 2, "fp": 0, "tn": 2, "fn": 0,
+                "n_known_good_observed": 2,
+                "n_known_bad_targeted_observed": 2,
+                "fpr": 0.0, "fnr": 0.0,
+            },
         ],
     }
 

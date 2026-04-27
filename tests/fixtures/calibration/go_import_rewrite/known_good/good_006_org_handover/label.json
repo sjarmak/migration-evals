@@ -1,5 +1,8 @@
 {
   "fixture_id": "good_006_org_handover",
   "expected_outcome": "pass_all",
+  "applicable_tiers": [
+    "diff_valid"
+  ],
   "notes": "Project transferred to new GitHub org"
 }

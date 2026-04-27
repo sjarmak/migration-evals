@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Per-recipe oracle calibration driver (m1w).
+"""Per-recipe oracle calibration driver (m1w + x8w).
 
 Runs every fixture under
 ``tests/fixtures/calibration/<migration_id>/{known_good,known_bad}/``
@@ -15,17 +15,29 @@ Layout the driver expects (one directory per fixture):
             ...
 
 Tier-0 (``diff_valid``) is local-only and runs in every invocation.
-Higher tiers (``compile_only``, ``tests``, etc.) require a sandbox
-adapter and are gated by ``--stages``: pass ``--stages diff,compile``
-or wider once Docker is available, else accept the offline tier-0
-calibration.
+Higher tiers (``compile_only``, ``tests``, etc.) need a sandbox
+adapter; pass ``--stages diff,compile`` (or wider) together with a
+``--recipe`` pointing at the migration's recipe YAML so the driver
+knows which build/test commands to run inside the sandbox. The driver
+constructs a Docker-backed sandbox by default; ``--sandbox-factory``
+exists for the unit tests that need to inject a stub.
 
 Usage
 -----
+    # Tier-0 only (offline, no Docker).
     python scripts/calibrate.py \\
         --migration go_import_rewrite \\
         --fixtures tests/fixtures/calibration/go_import_rewrite \\
         --output configs/recipes/go_import_rewrite.calibration.json
+
+    # Tier-0 + tier-1 + tier-2 (requires Docker on PATH and
+    # network=none egress fixtures, see the calibration recipe).
+    python scripts/calibrate.py \\
+        --migration go_import_rewrite \\
+        --fixtures tests/fixtures/calibration/go_import_rewrite \\
+        --output configs/recipes/go_import_rewrite.calibration.json \\
+        --recipe configs/recipes/go_import_rewrite.calibration.recipe.yaml \\
+        --stages diff,compile,tests
 
 Exit codes
 ----------
@@ -36,9 +48,10 @@ Exit codes
 from __future__ import annotations
 
 import argparse
+import importlib
 import sys
 from pathlib import Path
-from typing import Iterable
+from typing import Any, Callable, Iterable, Mapping, Optional
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 _SRC = _REPO_ROOT / "src"
@@ -53,6 +66,10 @@ from migration_evals.calibration import (  # noqa: E402
 )
 from migration_evals.funnel import STAGE_ALIASES, run_funnel  # noqa: E402
 from migration_evals.harness.recipe import Recipe  # noqa: E402
+from migration_evals.oracles import (  # noqa: E402
+    tier1_compile,
+    tier2_tests,
+)
 
 # The funnel's tier names are stable; we keep the canonical run order here
 # so the calibration report's per_tier list reflects funnel order.
@@ -65,6 +82,27 @@ DEFAULT_TIER_ORDER: tuple[str, ...] = (
     "daikon",
 )
 
+# Tiers that need a SandboxAdapter to produce any verdict at all.
+_SANDBOX_TIERS: frozenset[str] = frozenset(
+    {tier1_compile.TIER_NAME, tier2_tests.TIER_NAME}
+)
+
+
+# ---------------------------------------------------------------------------
+# Recipe loading
+# ---------------------------------------------------------------------------
+
+
+# Calibration runs are reproducible by construction, so the
+# harness_provenance carried with calibration recipes is fixed and
+# deterministic. The production runner overrides this when synthesising
+# real per-trial recipes.
+_CALIBRATION_PROVENANCE: dict[str, str] = {
+    "model": "calibration",
+    "prompt_version": "calibration-v1",
+    "timestamp": "1970-01-01T00:00:00Z",
+}
+
 
 def _placeholder_recipe() -> Recipe:
     """Tier-0 calibration only needs a Recipe shell (build/test_cmd unused)."""
@@ -72,12 +110,137 @@ def _placeholder_recipe() -> Recipe:
         dockerfile="FROM scratch",
         build_cmd="true",
         test_cmd="true",
-        harness_provenance={
-            "model": "calibration",
-            "prompt_version": "calibration-v1",
-            "timestamp": "1970-01-01T00:00:00Z",
-        },
+        harness_provenance=dict(_CALIBRATION_PROVENANCE),
     )
+
+
+def _load_recipe_from_yaml(path: Path) -> Recipe:
+    """Build a :class:`Recipe` from a recipe YAML at ``path``.
+
+    Mirrors the shape consumed by ``configs/recipes/*.yaml``: the file's
+    top-level ``recipe`` key carries ``dockerfile`` / ``build_cmd`` /
+    ``test_cmd``. ``harness_provenance`` falls back to
+    :data:`_CALIBRATION_PROVENANCE` when the YAML omits it.
+    """
+    import yaml  # local import to keep top-level import light
+
+    raw = yaml.safe_load(Path(path).read_text())
+    if not isinstance(raw, Mapping):
+        raise ValueError(
+            f"recipe YAML at {path} did not parse to a mapping"
+        )
+    block = raw.get("recipe")
+    if not isinstance(block, Mapping):
+        raise ValueError(
+            f"recipe YAML at {path} is missing a top-level 'recipe' block"
+        )
+    try:
+        return Recipe(
+            dockerfile=str(block["dockerfile"]),
+            build_cmd=str(block["build_cmd"]),
+            test_cmd=str(block["test_cmd"]),
+            harness_provenance=dict(
+                block.get("harness_provenance", _CALIBRATION_PROVENANCE)
+            ),
+        )
+    except KeyError as exc:
+        raise ValueError(
+            f"recipe YAML at {path} missing required key {exc.args[0]!r} "
+            "under 'recipe'"
+        ) from exc
+
+
+# ---------------------------------------------------------------------------
+# Sandbox adapter wiring
+# ---------------------------------------------------------------------------
+
+
+class _ImageOverridingSandbox:
+    """Adapter wrapper that pins ``image`` to a calibration-controlled value.
+
+    The funnel's tier-1/tier-2 oracles call ``create_sandbox(image=...)``
+    with a recipe-derived default (``build-sandbox:latest``). For
+    calibration we want to use a known-pulled base image (e.g.
+    ``golang:1.22``) without rebuilding the recipe's Dockerfile and
+    without polluting the host's image namespace by retagging. Wrapping
+    the underlying adapter and rewriting the ``image`` argument is the
+    smallest change that keeps the funnel signature untouched.
+    """
+
+    def __init__(self, inner: Any, image: str) -> None:
+        self._inner = inner
+        self._image = image
+
+    def create_sandbox(
+        self,
+        *,
+        image: str,  # noqa: ARG002 - intentionally ignored
+        env: Optional[Mapping[str, str]] = None,
+        cassette: Optional[Any] = None,
+    ) -> str:
+        return self._inner.create_sandbox(
+            image=self._image, env=env, cassette=cassette
+        )
+
+    def exec(
+        self,
+        sandbox_id: str,
+        *,
+        command: str,
+        timeout_s: int = 600,
+        cassette: Optional[Any] = None,
+    ) -> Mapping[str, Any]:
+        return self._inner.exec(
+            sandbox_id,
+            command=command,
+            timeout_s=timeout_s,
+            cassette=cassette,
+        )
+
+    def destroy_sandbox(self, sandbox_id: str) -> None:
+        self._inner.destroy_sandbox(sandbox_id)
+
+
+def _default_sandbox_factory(
+    repo_path: Path, *, image: str
+) -> Any:
+    """Build the production sandbox adapter (Docker) for ``repo_path``.
+
+    Imported lazily so unit tests that mock the factory never trigger
+    Docker import-time work. Wrapping in :class:`_ImageOverridingSandbox`
+    pins the image to the calibration-controlled value.
+    """
+    docker_module = importlib.import_module(
+        "migration_evals.adapters_docker"
+    )
+    inner = docker_module.DockerSandboxAdapter(repo_path)
+    return _ImageOverridingSandbox(inner, image=image)
+
+
+def _resolve_sandbox_factory(
+    spec: Optional[str],
+) -> Callable[..., Any]:
+    """Translate ``--sandbox-factory`` into a callable.
+
+    ``None`` returns the production Docker factory. A
+    ``module:attr`` string is resolved via :func:`importlib.import_module`
+    and getattr; the attribute must be a callable with the same signature
+    as :func:`_default_sandbox_factory`. This is the unit-test seam.
+    """
+    if spec is None:
+        return _default_sandbox_factory
+    if ":" not in spec:
+        raise ValueError(
+            f"--sandbox-factory must be 'module:attr' (got {spec!r})"
+        )
+    module_name, attr = spec.split(":", 1)
+    module = importlib.import_module(module_name)
+    factory = getattr(module, attr)
+    if not callable(factory):
+        raise ValueError(
+            f"--sandbox-factory {spec!r} resolved to non-callable"
+        )
+    return factory
 
 
 def _resolve_stages(raw: str | None) -> tuple[str, ...] | None:
@@ -103,6 +266,22 @@ def _resolve_stages(raw: str | None) -> tuple[str, ...] | None:
     return tuple(dict.fromkeys(requested))
 
 
+def _stages_need_sandbox(stages: Optional[tuple[str, ...]]) -> bool:
+    """True iff at least one requested stage needs a sandbox adapter.
+
+    ``None`` (run-all) always needs a sandbox because tier-1 / tier-2
+    are in the default funnel.
+    """
+    if stages is None:
+        return True
+    return any(s in _SANDBOX_TIERS for s in stages)
+
+
+# ---------------------------------------------------------------------------
+# Fixture iteration / per-fixture funnel
+# ---------------------------------------------------------------------------
+
+
 def _iter_fixtures(root: Path) -> Iterable[tuple[Path, FixtureLabel]]:
     """Yield ``(fixture_dir, FixtureLabel)`` for every committed fixture.
 
@@ -120,11 +299,35 @@ def _iter_fixtures(root: Path) -> Iterable[tuple[Path, FixtureLabel]]:
             yield fixture, FixtureLabel.from_path(label_path)
 
 
+def _effective_stages(
+    label: FixtureLabel,
+    stages: Optional[tuple[str, ...]],
+) -> Optional[tuple[str, ...]]:
+    """Narrow the global ``stages`` set to those the fixture is valid for.
+
+    Returns ``None`` (run-all) when neither the CLI nor the label
+    constrain the funnel. When the label declares ``applicable_tiers``
+    we intersect them with the requested ``stages``; the funnel honours
+    a ``stages`` argument as an inclusion list, so a fixture that only
+    applies to ``diff_valid`` will produce a single-tier verdict even
+    when the run is configured for ``diff,compile,tests``.
+    """
+    if label.applicable_tiers is None:
+        return stages
+    if stages is None:
+        return tuple(label.applicable_tiers)
+    intersection = tuple(s for s in stages if s in label.applicable_tiers)
+    return intersection
+
+
 def _run_one(
     fixture_dir: Path,
     label: FixtureLabel,
     *,
     stages: tuple[str, ...] | None,
+    recipe: Recipe,
+    sandbox_factory: Optional[Callable[..., Any]],
+    sandbox_image: str,
 ) -> FixtureObservation:
     """Run the funnel for one fixture and return its observation."""
     repo = fixture_dir / "repo"
@@ -132,12 +335,16 @@ def _run_one(
         raise FileNotFoundError(
             f"calibration fixture {fixture_dir} has no repo/ subdir"
         )
+    effective = _effective_stages(label, stages)
+    adapters: dict[str, Any] = {}
+    if _stages_need_sandbox(effective) and sandbox_factory is not None:
+        adapters["sandbox"] = sandbox_factory(repo, image=sandbox_image)
     funnel_result = run_funnel(
         repo,
-        _placeholder_recipe(),
-        adapters={},  # tier-0 only by default; higher tiers need adapters
+        recipe,
+        adapters=adapters,
         is_synthetic=False,
-        stages=stages,
+        stages=effective,
     )
     return observations_from_funnel_dicts(label, funnel_result.to_dict())
 
@@ -148,13 +355,46 @@ def calibrate(
     fixtures_root: Path,
     stages: tuple[str, ...] | None,
     notes: str = "",
+    recipe: Optional[Recipe] = None,
+    sandbox_factory: Optional[Callable[..., Any]] = None,
+    sandbox_image: str = "golang:1.22",
 ):
-    """Drive the funnel over every fixture and return a CalibrationReport."""
+    """Drive the funnel over every fixture and return a CalibrationReport.
+
+    Parameters
+    ----------
+    recipe
+        The build/test recipe to pass to the funnel. ``None`` falls back
+        to a tier-0-only placeholder; callers requesting compile/tests
+        stages must provide a real recipe.
+    sandbox_factory
+        Per-fixture factory ``(repo_path, *, image) -> SandboxAdapter``.
+        ``None`` means tier-0-only (no sandbox is constructed). When the
+        requested ``stages`` need a sandbox tier, callers must pass a
+        factory.
+    """
+    if recipe is None:
+        recipe = _placeholder_recipe()
+    if _stages_need_sandbox(stages) and sandbox_factory is None:
+        raise ValueError(
+            "calibrate: requested stages include a sandbox tier "
+            "(compile_only/tests) but no sandbox_factory was supplied. "
+            "Pass --recipe and use --stages diff (or fewer) to stay "
+            "tier-0 only, or supply a sandbox_factory."
+        )
+
     observations: list[FixtureObservation] = []
     fixture_count = 0
     for fixture_dir, label in _iter_fixtures(fixtures_root):
         observations.append(
-            _run_one(fixture_dir, label, stages=stages)
+            _run_one(
+                fixture_dir,
+                label,
+                stages=stages,
+                recipe=recipe,
+                sandbox_factory=sandbox_factory,
+                sandbox_image=sandbox_image,
+            )
         )
         fixture_count += 1
     if fixture_count == 0:
@@ -205,6 +445,33 @@ def _build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--recipe",
+        type=Path,
+        default=None,
+        help=(
+            "Path to a recipe YAML (e.g. configs/recipes/<id>.yaml or "
+            "the per-id calibration recipe). Required when --stages "
+            "includes a sandbox tier (compile, tests)."
+        ),
+    )
+    parser.add_argument(
+        "--sandbox-image",
+        default="golang:1.22",
+        help=(
+            "Container image used for sandbox tiers (default golang:1.22). "
+            "Pinned per migration so calibration runs reproducibly."
+        ),
+    )
+    parser.add_argument(
+        "--sandbox-factory",
+        default=None,
+        help=(
+            "Optional 'module:attr' override for the sandbox factory. "
+            "Used by tests to inject a fake; production runs use the "
+            "default Docker-backed factory."
+        ),
+    )
+    parser.add_argument(
         "--notes",
         default="",
         help=(
@@ -231,14 +498,41 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 1
 
+    recipe: Optional[Recipe] = None
+    if args.recipe is not None:
+        try:
+            recipe = _load_recipe_from_yaml(args.recipe)
+        except (OSError, ValueError) as exc:
+            print(f"calibrate: {exc}", file=sys.stderr)
+            return 1
+
+    sandbox_factory: Optional[Callable[..., Any]] = None
+    if _stages_need_sandbox(stages):
+        if recipe is None:
+            print(
+                "calibrate: --stages includes a sandbox tier "
+                "(compile/tests); --recipe is required so the funnel "
+                "knows which build/test commands to run.",
+                file=sys.stderr,
+            )
+            return 1
+        try:
+            sandbox_factory = _resolve_sandbox_factory(args.sandbox_factory)
+        except (ImportError, AttributeError, ValueError) as exc:
+            print(f"calibrate: {exc}", file=sys.stderr)
+            return 1
+
     try:
         report = calibrate(
             migration_id=args.migration,
             fixtures_root=fixtures,
             stages=stages,
             notes=args.notes,
+            recipe=recipe,
+            sandbox_factory=sandbox_factory,
+            sandbox_image=args.sandbox_image,
         )
-    except FileNotFoundError as exc:
+    except (FileNotFoundError, ValueError) as exc:
         print(f"calibrate: {exc}", file=sys.stderr)
         return 1
 

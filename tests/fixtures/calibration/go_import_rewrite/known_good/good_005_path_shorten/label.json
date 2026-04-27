@@ -1,5 +1,8 @@
 {
   "fixture_id": "good_005_path_shorten",
   "expected_outcome": "pass_all",
+  "applicable_tiers": [
+    "diff_valid"
+  ],
   "notes": "Path shortened after package extraction"
 }
