@@ -10,6 +10,7 @@ otherwise.
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -730,9 +731,42 @@ def test_pull_proxy_config_writes_filter_lines(
     assert "FilterDefaultDeny Yes" in conf_text
     assert "FilterExtended Yes" in conf_text
     # Each allowlisted host appears as an anchored regex with escaped dots
-    # in the filter file.
-    assert r"^registry\-1\.docker\.io$" in filter_text or r"^registry-1\.docker\.io$" in filter_text
-    assert r"^proxy\.golang\.org$" in filter_text
+    # in the filter file. The regex is version-tolerant — matches both
+    # bare 'host' (tinyproxy 1.11.0 strips the CONNECT port before
+    # regex match) and 'host:port' (other builds retain it). See
+    # test_anchored_host_regex_tolerates_port_suffix below.
+    matched = any(
+        re.compile(line).match("registry-1.docker.io")
+        and re.compile(line).match("registry-1.docker.io:443")
+        for line in filter_text.splitlines()
+        if line
+    )
+    assert matched, (
+        f"no filter line matches both 'registry-1.docker.io' and "
+        f"'registry-1.docker.io:443': {filter_text!r}"
+    )
+
+
+def test_anchored_host_regex_tolerates_port_suffix() -> None:
+    """The Allow regex must match BOTH 'host' and 'host:port' forms.
+
+    tinyproxy CONNECT-target filtering varies by version: 1.11.0
+    strips the ':port' suffix before regex match (verified locally
+    against vimagick/tinyproxy:latest), but other builds retain it.
+    The generated regex must be tolerant of both so an allowlisted
+    host is not silently denied on a version skew.
+    """
+    pattern = re.compile(DockerSandboxAdapter._anchored_host_regex("example.com"))
+    assert pattern.match("example.com"), "must match bare host"
+    assert pattern.match("example.com:443"), "must match host:443"
+    assert pattern.match("example.com:80"), "must match host:80"
+    assert pattern.match("example.com:8080"), "must match arbitrary port"
+    # Anchoring must still hold: no prefix/suffix smuggling.
+    assert not pattern.match("evil.com"), "must not match unrelated host"
+    assert not pattern.match("evil-example.com"), "must not match prefix"
+    assert not pattern.match("example.com.evil.com"), "must not match suffix"
+    assert not pattern.match("example.com:443x"), "must reject trailing junk"
+    assert not pattern.match("example.com:abc"), "port must be numeric"
 
 
 def test_pull_destroy_removes_proxy_and_network(

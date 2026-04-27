@@ -512,13 +512,16 @@ class DockerSandboxAdapter:
 
     @staticmethod
     def _anchored_host_regex(host: str) -> str:
-        """Return ``^<re.escape(host)>$`` so dots are literal.
+        """Return ``^<re.escape(host)>(:[0-9]+)?$`` so dots are literal.
 
         Anchored matching prevents a sneaky ``evil-registry-1.docker.io``
         from being accepted via prefix-match against
-        ``registry-1.docker.io``.
+        ``registry-1.docker.io``. The optional ``:port`` suffix is for
+        tinyproxy version-tolerance: 1.11.0 strips the CONNECT port
+        before regex match, but other builds retain it — accepting both
+        forms keeps allowlisted hosts working across versions.
         """
-        return f"^{re.escape(host)}$"
+        return f"^{re.escape(host)}(:[0-9]+)?$"
 
     def _inspect_network_subnet(self, network_name: str) -> str | None:
         """Return the IPAM subnet of a docker network, or None on failure.
