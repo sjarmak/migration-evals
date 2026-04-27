@@ -217,15 +217,33 @@ def _default_sandbox_factory(
     return _ImageOverridingSandbox(inner, image=image)
 
 
+# Security: ``--sandbox-factory`` resolves an arbitrary ``module:attr``
+# spec via ``importlib.import_module`` + ``getattr``. To keep the CLI
+# surface safe even when calibrate is wired into a larger pipeline that
+# may pass partly-user-controlled args, we restrict the importable
+# module to a small allowlist of repo-internal namespaces. The seam is a
+# development/test affordance only — production runs use the default
+# Docker factory and never set ``--sandbox-factory``.
+_SANDBOX_FACTORY_ALLOWED_PREFIXES: tuple[str, ...] = (
+    "tests.",
+    "migration_evals.",
+)
+
+
 def _resolve_sandbox_factory(
     spec: Optional[str],
 ) -> Callable[..., Any]:
     """Translate ``--sandbox-factory`` into a callable.
 
-    ``None`` returns the production Docker factory. A
-    ``module:attr`` string is resolved via :func:`importlib.import_module`
-    and getattr; the attribute must be a callable with the same signature
-    as :func:`_default_sandbox_factory`. This is the unit-test seam.
+    ``None`` returns the production Docker factory. A ``module:attr``
+    string is resolved via :func:`importlib.import_module` and getattr;
+    the attribute must be a callable with the same signature as
+    :func:`_default_sandbox_factory`. This is the unit-test seam.
+
+    Security: the module name must start with one of
+    :data:`_SANDBOX_FACTORY_ALLOWED_PREFIXES`. The check happens
+    *before* the import so that even attribute-side effects in
+    arbitrary modules cannot run via this CLI surface.
     """
     if spec is None:
         return _default_sandbox_factory
@@ -234,6 +252,16 @@ def _resolve_sandbox_factory(
             f"--sandbox-factory must be 'module:attr' (got {spec!r})"
         )
     module_name, attr = spec.split(":", 1)
+    if not any(
+        module_name.startswith(prefix)
+        for prefix in _SANDBOX_FACTORY_ALLOWED_PREFIXES
+    ):
+        raise ValueError(
+            f"--sandbox-factory {spec!r}: module {module_name!r} is not "
+            f"in the allowlist {_SANDBOX_FACTORY_ALLOWED_PREFIXES!r}. "
+            "This flag is a development/test seam; production runs must "
+            "omit it. Never wire it to user-controlled input."
+        )
     module = importlib.import_module(module_name)
     factory = getattr(module, attr)
     if not callable(factory):
@@ -467,8 +495,11 @@ def _build_parser() -> argparse.ArgumentParser:
         default=None,
         help=(
             "Optional 'module:attr' override for the sandbox factory. "
-            "Used by tests to inject a fake; production runs use the "
-            "default Docker-backed factory."
+            "DEVELOPMENT / TEST-ONLY seam: performs an arbitrary import. "
+            "Module name must start with one of "
+            f"{_SANDBOX_FACTORY_ALLOWED_PREFIXES}. NEVER wire this flag "
+            "to untrusted or user-controlled input. Production runs use "
+            "the default Docker-backed factory and must omit this flag."
         ),
     )
     parser.add_argument(
