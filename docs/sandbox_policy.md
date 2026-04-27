@@ -114,6 +114,15 @@ adapters:
 - Allowlist matching is hostname-only at the CONNECT layer. The proxy
   does not inspect TLS SNI; SNI spoofing detection is out of scope for
   this layer.
+- **tinyproxy version + CONNECT-port behavior (37t):** the default
+  `vimagick/tinyproxy:latest` pins `tinyproxy 1.11.0`. Verified locally
+  that 1.11.0 strips the `:port` suffix before matching the
+  `Filter` regex (a request `CONNECT example.com:443` is matched
+  against the bare string `example.com`). Because behavior across
+  forks/versions is not guaranteed, the generated allow regex is
+  written as `^<host>(:[0-9]+)?$` — it accepts both forms so an
+  allowlisted host is not silently denied on a version skew. Anchoring
+  + `re.escape` still prevents prefix-match smuggling.
 - The audit `--label migration-eval.network-allowlist=<host>` is still
   emitted on the workload container so existing log analyzers continue
   to see what each trial was permitted to reach.
