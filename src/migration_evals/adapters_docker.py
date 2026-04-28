@@ -607,7 +607,7 @@ class DockerSandboxAdapter:
         than hanging the run.
 
         ``nc -z`` is the probe: alpine's busybox (the base of the
-        default ``vimagick/tinyproxy`` image) ships netcat, so this is
+        default ``kalaksi/tinyproxy`` image) ships netcat, so this is
         portable across the proxy images we support today. The argv is
         a literal list so the diff is the documentation.
         """

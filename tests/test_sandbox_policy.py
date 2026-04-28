@@ -412,12 +412,12 @@ def test_constructor_accepts_root_user_directly() -> None:
 
 def test_default_proxy_image_pinned_to_sha256_digest() -> None:
     """The default proxy image must be pinned by digest, not tag."""
-    assert DEFAULT_PROXY_IMAGE.startswith("vimagick/tinyproxy@sha256:")
+    assert DEFAULT_PROXY_IMAGE.startswith("kalaksi/tinyproxy@sha256:")
 
 
 def test_default_proxy_image_digest_has_expected_length() -> None:
     """A sha256 digest is exactly 64 lowercase hex chars after the prefix."""
-    prefix = "vimagick/tinyproxy@sha256:"
+    prefix = "kalaksi/tinyproxy@sha256:"
     assert len(DEFAULT_PROXY_IMAGE) == len(prefix) + 64
     digest_hex = DEFAULT_PROXY_IMAGE[len(prefix) :]
     assert all(c in "0123456789abcdef" for c in digest_hex)
