@@ -42,5 +42,9 @@ env/
 # bd + Claude Code workspace dirs - already-tracked files keep being
 # tracked; this just stops new files under these paths from being
 # auto-staged.
-.beads/
 .claude/
+
+# Gas City
+.beads/*
+!.beads/config.yaml
+!.beads/metadata.json
