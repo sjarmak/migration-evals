@@ -33,6 +33,7 @@ The 30-idea design space converges on a clear architecture: a **tiered-oracle fu
 5. **Not publishing a paper or benchmark-as-product.** This is internal tooling for the working group. Publication is a separate decision that requires re-thinking contamination.
 6. **Not extending to 10,000 repos in v1.** Quarterly 1000-repo cadence is feasible at the stated budget; 10K requires further funnel compression and is deferred.
 7. **Not trying to score cross-repo ripple effects (#19) or micro-ecosystems (#30).** Second-order; deferred beyond v1.
+8. **Not a CVE-remediation harness.** Targeted vulnerability fixes ("scan repo, fix the most urgent CVE") are out of shape: each repo gets a different fix, which violates the funnel's single-deterministic-rule-across-many-repos contract, and CVE IDs are public benchmarks that collide with non-goal §1 above. See [docs/adr/0001-cve-fix-recipe-fit.md](adr/0001-cve-fix-recipe-fit.md) for full reasoning. A narrow "named-CVE-disappears" *quality oracle* on top of an existing dep-bump migration is on the table as a follow-up; a standalone `cve_fix` recipe is not.
 
 ## Requirements
 
