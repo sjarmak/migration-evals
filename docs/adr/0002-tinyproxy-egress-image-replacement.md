@@ -193,7 +193,7 @@ Reasoning, anchored to the wave-4 criteria:
    updated to assert the `kalaksi/tinyproxy@sha256:` prefix. They
    still fail loudly if a future change reverts to a floating tag.
 3. Operators must pre-pull the new image on each runner host
-   (`docker pull "$(python -c 'from migration_evals.sandbox_policy import DEFAULT_PROXY_IMAGE; print(DEFAULT_PROXY_IMAGE)')"`).
+   (`docker pull "$(python3 -c 'from migration_evals.sandbox_policy import DEFAULT_PROXY_IMAGE; print(DEFAULT_PROXY_IMAGE)')"`).
    The previous pre-pull recipe in `docs/sandbox_policy.md` is
    updated to point at the constant rather than a hard-coded
    image name, so future digest refreshes do not silently leave

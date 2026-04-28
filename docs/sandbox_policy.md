@@ -108,7 +108,7 @@ adapters:
   `DEFAULT_PROXY_IMAGE` so byte-for-byte parity with the harness is
   preserved):
   ```bash
-  docker pull "$(python -c 'from migration_evals.sandbox_policy import DEFAULT_PROXY_IMAGE; print(DEFAULT_PROXY_IMAGE)')"
+  docker pull "$(python3 -c 'from migration_evals.sandbox_policy import DEFAULT_PROXY_IMAGE; print(DEFAULT_PROXY_IMAGE)')"
   ```
 - Cleanup is best-effort: `destroy_sandbox` removes the workload, then
   the sidecar, then the per-sandbox network (in that order — docker

@@ -747,9 +747,11 @@ class DockerSandboxAdapter:
         Anchored matching prevents a sneaky ``evil-registry-1.docker.io``
         from being accepted via prefix-match against
         ``registry-1.docker.io``. The optional ``:port`` suffix is for
-        tinyproxy version-tolerance: 1.11.0 strips the CONNECT port
-        before regex match, but other builds retain it — accepting both
-        forms keeps allowlisted hosts working across versions.
+        tinyproxy version-tolerance: both 1.11.0 and 1.11.2 (the
+        currently-pinned ``DEFAULT_PROXY_IMAGE``) strip the CONNECT
+        port before regex match, but other builds may retain it —
+        accepting both forms keeps allowlisted hosts working across
+        versions.
         """
         return f"^{re.escape(host)}(:[0-9]+)?$"
 

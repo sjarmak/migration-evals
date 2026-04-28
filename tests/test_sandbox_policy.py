@@ -116,6 +116,15 @@ def test_from_dict_accepts_all_safe_caps() -> None:
         # An unknown / made-up cap name has no place in the allowlist.
         "TOTALLY_FAKE_CAP",
     ],
+    ids=[
+        "sys-admin",
+        "net-admin",
+        "sys-ptrace",
+        "all-wildcard",
+        "lowercase",
+        "mixed-case-safe",
+        "unknown",
+    ],
 )
 def test_from_dict_rejects_cap_add(bad_cap: str) -> None:
     """Each disallowed cap_add value must raise ValueError, and the
@@ -377,13 +386,18 @@ def test_from_dict_normalizes_empty_string_user_to_none() -> None:
 )
 def test_from_dict_rejects_user(bad_user: str | int) -> None:
     """Each disallowed ``user`` value must raise ValueError on the
-    YAML/dict ingest path, and the error message must name the ``user``
-    field so a YAML author can locate the bad entry. Covers the
-    non-root-UID, non-root-GID, must-be-numeric-UID:GID, and
-    must-be-fullmatch contracts of the ingest validator."""
+    YAML/dict ingest path. The error message must name the ``user``
+    field AND include a repr of the offending value (matching the
+    validator's ``{user!r}`` formatter, which escapes whitespace like
+    ``\\n``) so a YAML author can locate the bad entry without
+    reading the validator. Covers the non-root-UID, non-root-GID,
+    must-be-numeric-UID:GID, and must-be-fullmatch contracts of the
+    ingest validator."""
     with pytest.raises(ValueError) as excinfo:
         SandboxPolicy.from_dict({"user": bad_user})
-    assert "user" in str(excinfo.value)
+    msg = str(excinfo.value)
+    assert "user" in msg
+    assert repr(str(bad_user)) in msg
 
 
 def test_constructor_accepts_root_user_directly() -> None:
