@@ -1029,6 +1029,60 @@ def test_anchored_host_regex_tolerates_port_suffix() -> None:
     assert not pattern.match("example.com:abc"), "port must be numeric"
 
 
+def test_anchored_host_regex_documents_zero_port_gap() -> None:
+    """``:0`` is admitted by the pattern — residual numeric-range gap.
+
+    Port 0 is reserved by IANA and not a valid CONNECT target, but the
+    ``[0-9]{1,5}`` quantifier admits it because tightening to a
+    full numeric-range check (1-65535) would require unwieldy
+    alternation in the regex. The OS socket layer rejects ``:0`` at
+    bind/connect time, so there is no real bypass — only a
+    semantically-too-broad allowlist pattern. This test pins the
+    documented gap so a future tightening (e.g. switching to a
+    parser-based check) is a deliberate change, not an accidental
+    behaviour drift.
+    """
+    pattern = re.compile(DockerSandboxAdapter._anchored_host_regex("example.com"))
+    assert pattern.match("example.com:0"), (
+        "regex still admits :0 (reserved, but OS rejects at socket layer)"
+    )
+
+
+def test_anchored_host_regex_documents_high_port_gap() -> None:
+    """``:99999`` is admitted by the pattern — residual numeric-range gap.
+
+    99999 is a 5-digit number above the TCP port ceiling (65535).
+    The ``[0-9]{1,5}`` quantifier accepts any 5-digit run because
+    enforcing the 65535 ceiling at the regex level would require
+    awkward alternation. The OS socket layer rejects out-of-range
+    ports at connect time, so there is no real bypass — only a
+    semantically-too-broad allowlist pattern. This test pins the
+    documented gap.
+    """
+    pattern = re.compile(DockerSandboxAdapter._anchored_host_regex("example.com"))
+    assert pattern.match("example.com:99999"), (
+        "regex still admits :99999 (out of TCP range, but OS rejects)"
+    )
+
+
+def test_anchored_host_regex_rejects_more_than_five_port_digits() -> None:
+    """6+ digit ports must be rejected — this is the actual tightening.
+
+    The previous pattern used ``[0-9]+`` which admitted arbitrarily
+    long runs of digits (e.g. ``:99999999999``). Bounding the
+    quantifier to ``{1,5}`` brings the regex within the
+    same order-of-magnitude as the TCP port space (5-digit max),
+    closing the long-digit-string class of allowlist-pattern bloat
+    without claiming full numeric-range validation (see the two
+    documenting tests above).
+    """
+    pattern = re.compile(DockerSandboxAdapter._anchored_host_regex("example.com"))
+    assert not pattern.match("example.com:999999"), (
+        "regex must reject 6-digit port (beyond 5-digit TCP cap)"
+    )
+    assert not pattern.match("example.com:1234567"), "regex must reject 7-digit port"
+
+
 def test_pull_destroy_removes_proxy_and_network(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

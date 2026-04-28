@@ -742,7 +742,7 @@ class DockerSandboxAdapter:
 
     @staticmethod
     def _anchored_host_regex(host: str) -> str:
-        """Return ``^<re.escape(host)>(:[0-9]+)?$`` so dots are literal.
+        """Return ``^<re.escape(host)>(:[0-9]{1,5})?$`` so dots are literal.
 
         Anchored matching prevents a sneaky ``evil-registry-1.docker.io``
         from being accepted via prefix-match against
@@ -752,8 +752,19 @@ class DockerSandboxAdapter:
         port before regex match, but other builds may retain it —
         accepting both forms keeps allowlisted hosts working across
         versions.
+
+        The port quantifier is ``{1,5}`` — same order-of-magnitude as
+        the TCP port space (max 65535, 5 digits). This rejects long
+        digit-string garbage (``:99999999999``) at the regex level.
+        Residual numeric-range gap: ``:0`` (reserved) and ``:99999``
+        (above 65535) are still admitted by the regex because a full
+        1-65535 range check would require awkward alternation; the OS
+        socket layer rejects them at connect time, so there is no
+        real bypass — only a semantically-too-broad allowlist pattern.
+        See ``test_anchored_host_regex_documents_zero_port_gap`` and
+        ``test_anchored_host_regex_documents_high_port_gap``.
         """
-        return f"^{re.escape(host)}(:[0-9]+)?$"
+        return f"^{re.escape(host)}(:[0-9]{{1,5}})?$"
 
     def _inspect_network_subnet(self, network_name: str) -> str | None:
         """Return the IPAM subnet of a docker network, or None on failure.
