@@ -245,6 +245,29 @@ def _resolve_sandbox_factory(
             "omit it. Never wire it to user-controlled input."
         )
     module = importlib.import_module(module_name)
+    # Defense-in-depth (cni): the prefix allowlist alone is bypassable
+    # if PYTHONPATH includes an attacker-controlled directory containing
+    # a ``tests/`` or ``migration_evals/`` subpackage. After import,
+    # verify the resolved module's ``__file__`` lives under
+    # ``_REPO_ROOT``. Modules without ``__file__`` (built-ins, namespace
+    # packages) cannot be inside the repo and are rejected.
+    module_file = getattr(module, "__file__", None)
+    if module_file is None:
+        raise ValueError(
+            f"--sandbox-factory {spec!r}: module {module_name!r} has no "
+            "__file__ attribute (built-in or namespace package); cannot "
+            "verify it lives inside the repo root. Reject."
+        )
+    repo_root_resolved = _REPO_ROOT.resolve()
+    module_path_resolved = Path(module_file).resolve()
+    if not module_path_resolved.is_relative_to(repo_root_resolved):
+        raise ValueError(
+            f"--sandbox-factory {spec!r}: module file path "
+            f"{module_path_resolved!s} is outside repo root "
+            f"{repo_root_resolved!s}. The allowlist of module-name "
+            "prefixes is bypassable via PYTHONPATH; this check is the "
+            "authoritative gate."
+        )
     factory = getattr(module, attr)
     if not callable(factory):
         raise ValueError(f"--sandbox-factory {spec!r} resolved to non-callable")

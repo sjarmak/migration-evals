@@ -524,6 +524,71 @@ def test_calibrate_resolve_sandbox_factory_unit_accepts_tests_prefix() -> None:
     assert callable(factory)
 
 
+def test_calibrate_resolve_sandbox_factory_rejects_module_file_outside_repo_root(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Defense-in-depth (cni): even when the prefix allowlist accepts a
+    module name (``tests.`` / ``migration_evals.``), the imported
+    module's ``__file__`` must resolve to a path inside ``_REPO_ROOT``.
+
+    Threat model: an attacker-controlled directory on ``PYTHONPATH``
+    containing a ``tests/`` or ``migration_evals/`` subpackage would
+    otherwise be importable through this CLI seam. Verifying
+    ``module.__file__`` defeats that even with a poisoned ``sys.path``.
+    """
+    import types
+
+    calibrate_mod = _import_calibrate_module()
+
+    shadow_dir = tmp_path / "shadow_pkg"
+    shadow_dir.mkdir()
+    shadow_file = shadow_dir / "__init__.py"
+    shadow_file.write_text("def stub_factory(*a, **kw):\n    return None\n")
+
+    fake_module = types.ModuleType("tests.shadow_pkg_fake")
+    fake_module.__file__ = str(shadow_file)
+    fake_module.stub_factory = lambda *a, **kw: None  # type: ignore[attr-defined]
+
+    def _fake_import(name: str) -> types.ModuleType:
+        return fake_module
+
+    monkeypatch.setattr(calibrate_mod.importlib, "import_module", _fake_import)
+
+    with pytest.raises(ValueError) as excinfo:
+        calibrate_mod._resolve_sandbox_factory("tests.shadow_pkg_fake:stub_factory")
+    msg = str(excinfo.value)
+    assert "outside repo root" in msg or "outside the repo root" in msg
+
+
+def test_calibrate_resolve_sandbox_factory_rejects_module_without_file_attr(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A module without a ``__file__`` attribute (built-ins, namespace
+    packages) cannot be inside the repo and must be rejected. The prefix
+    allowlist already excludes built-ins in practice, but the
+    ``__file__`` check is the authoritative gate."""
+    import types
+
+    calibrate_mod = _import_calibrate_module()
+
+    fake_module = types.ModuleType("tests.no_file_fake")
+    # Explicitly clear __file__ — types.ModuleType may have it set to None.
+    if hasattr(fake_module, "__file__"):
+        delattr(fake_module, "__file__")
+    fake_module.stub_factory = lambda *a, **kw: None  # type: ignore[attr-defined]
+
+    def _fake_import(name: str) -> types.ModuleType:
+        return fake_module
+
+    monkeypatch.setattr(calibrate_mod.importlib, "import_module", _fake_import)
+
+    with pytest.raises(ValueError) as excinfo:
+        calibrate_mod._resolve_sandbox_factory("tests.no_file_fake:stub_factory")
+    msg = str(excinfo.value)
+    assert "__file__" in msg or "outside repo root" in msg or "outside the repo root" in msg
+
+
 # ---------------------------------------------------------------------------
 # Live Docker integration (opt-in, x8w)
 # ---------------------------------------------------------------------------
