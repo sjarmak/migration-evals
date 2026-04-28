@@ -87,6 +87,11 @@ DEFAULT_TIER_ORDER: tuple[str, ...] = (
 # Tiers that need a SandboxAdapter to produce any verdict at all.
 _SANDBOX_TIERS: frozenset[str] = frozenset({tier1_compile.TIER_NAME, tier2_tests.TIER_NAME})
 
+# Default container image used for sandbox tiers during calibration.
+# Pinned per migration so calibration runs reproducibly; surfaced as a
+# module-level constant so the default is changed in exactly one place.
+DEFAULT_SANDBOX_IMAGE = "golang:1.22"
+
 
 # ---------------------------------------------------------------------------
 # Recipe loading
@@ -386,7 +391,7 @@ def calibrate(
     notes: str = "",
     recipe: Recipe | None = None,
     sandbox_factory: Callable[..., Any] | None = None,
-    sandbox_image: str = "golang:1.22",
+    sandbox_image: str = DEFAULT_SANDBOX_IMAGE,
 ) -> CalibrationReport:
     """Drive the funnel over every fixture and return a CalibrationReport.
 
@@ -483,9 +488,9 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--sandbox-image",
-        default="golang:1.22",
+        default=DEFAULT_SANDBOX_IMAGE,
         help=(
-            "Container image used for sandbox tiers (default golang:1.22). "
+            f"Container image used for sandbox tiers (default {DEFAULT_SANDBOX_IMAGE}). "
             "Pinned per migration so calibration runs reproducibly."
         ),
     )
