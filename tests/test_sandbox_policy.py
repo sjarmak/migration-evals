@@ -22,6 +22,7 @@ _REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_REPO_ROOT / "src"))
 
 from migration_evals.sandbox_policy import (  # noqa: E402
+    DEFAULT_PROXY_IMAGE,
     SAFE_CAPS,
     SandboxPolicy,
 )
@@ -430,3 +431,29 @@ def test_constructor_accepts_root_user_directly() -> None:
     """
     policy = SandboxPolicy(user="0")
     assert policy.user == "0"
+
+
+# ---------------------------------------------------------------------------
+# DEFAULT_PROXY_IMAGE digest pin (security wave-2 eg8)
+# ---------------------------------------------------------------------------
+#
+# Wave-1 review surfaced that ``DEFAULT_PROXY_IMAGE`` was pinned to the
+# floating ``:latest`` tag. A supply-chain compromise of the upstream
+# tag would give an attacker code execution inside the egress sidecar
+# (which has bridge-network access). The fix is to pin to an immutable
+# ``@sha256:<digest>`` reference so docker resolves the same image
+# bytes every pull. These tests fail loudly if a future change reverts
+# to a floating tag.
+
+
+def test_default_proxy_image_pinned_to_sha256_digest() -> None:
+    """The default proxy image must be pinned by digest, not tag."""
+    assert DEFAULT_PROXY_IMAGE.startswith("vimagick/tinyproxy@sha256:")
+
+
+def test_default_proxy_image_digest_has_expected_length() -> None:
+    """A sha256 digest is exactly 64 lowercase hex chars after the prefix."""
+    prefix = "vimagick/tinyproxy@sha256:"
+    assert len(DEFAULT_PROXY_IMAGE) == len(prefix) + 64
+    digest_hex = DEFAULT_PROXY_IMAGE[len(prefix) :]
+    assert all(c in "0123456789abcdef" for c in digest_hex)
