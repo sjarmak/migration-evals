@@ -1044,6 +1044,101 @@ def test_pull_proxy_run_failure_cleans_up_network(
     assert netrms, "must clean up the per-sandbox network when proxy run fails"
 
 
+def test_pull_setup_egress_filter_waits_for_proxy_ready(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A `docker exec <proxy> sh -c "<bounded nc -z loop>"` runs after the
+    sidecar is bridged but before the workload starts.
+
+    Wave-1 review (security MEDIUM #3): without this, a fast workload
+    (go build, pip install) can race the proxy and hit connection-refused
+    while tinyproxy is still binding its socket. The readiness probe
+    closes that window before _setup_egress_filter returns control to
+    create_sandbox.
+    """
+    policy = SandboxPolicy(
+        network="pull",
+        network_allowlist=("registry-1.docker.io",),
+        proxy_port=8888,
+    )
+    _, recorder, _ = _create_with_recorder(tmp_path, monkeypatch, policy=policy)
+    # The probe is a `docker exec <proxy_container> sh -c "<loop>"` and
+    # must come AFTER `docker network connect bridge <proxy>` but BEFORE
+    # the workload `docker run`.
+    execs = _calls_with_subcommand(recorder, "docker", "exec")
+    assert execs, "expected a docker exec call to probe proxy readiness"
+    probe = execs[0]
+    # argv shape: ["docker", "exec", <proxy_container>, "sh", "-c", "<loop>"]
+    assert probe[3:5] == ["sh", "-c"], f"readiness probe must run via `sh -c`: {probe!r}"
+    script = probe[5]
+    # `nc -z 127.0.0.1 <port>` is the actual TCP probe. Bounded retry
+    # loop (no `while true`): caps total wait at PROXY_READINESS_TIMEOUT_S.
+    assert (
+        "nc -z 127.0.0.1 8888" in script
+    ), f"readiness probe must use `nc -z 127.0.0.1 <port>`: {script!r}"
+    assert "while true" not in script, "readiness loop must be bounded, not `while true`"
+
+    # Ordering: probe runs after `network connect bridge` and before the
+    # workload `docker run`.
+    call_argv = [c["args"] for c in recorder.calls]
+    connect_idx = next(
+        i
+        for i, a in enumerate(call_argv)
+        if a[:3] == ["docker", "network", "connect"] and "bridge" in a
+    )
+    probe_idx = next(i for i, a in enumerate(call_argv) if a[:2] == ["docker", "exec"])
+    workload_idx = next(
+        i
+        for i, a in enumerate(call_argv)
+        if a[:2] == ["docker", "run"] and "build-sandbox:latest" in a
+    )
+    assert connect_idx < probe_idx < workload_idx, (
+        "readiness probe must run AFTER `network connect bridge` and BEFORE "
+        f"the workload `docker run`: connect={connect_idx} probe={probe_idx} "
+        f"workload={workload_idx}"
+    )
+
+
+def test_pull_setup_egress_filter_raises_on_proxy_unready(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """If the readiness probe exits non-zero (proxy never became ready),
+    create_sandbox raises RuntimeError AND the ExitStack-registered
+    teardowns unwind: the proxy sidecar is `docker rm -f`'d and the
+    per-sandbox network is `docker network rm`'d, so we don't leak
+    docker resources when the probe fails."""
+    err = subprocess.CalledProcessError(
+        returncode=1,
+        cmd=["docker", "exec"],
+        output="",
+        stderr="",
+    )
+    recorder = _Recorder(
+        [
+            _StubProc(stdout="netid\n"),  # network create
+            _StubProc(stdout="[]"),  # network inspect (no IPAM)
+            _StubProc(stdout="proxy-cid\n"),  # proxy docker run
+            _StubProc(stdout=""),  # network connect bridge
+            err,  # readiness probe FAILS
+            _StubProc(returncode=0),  # docker rm -f proxy (ExitStack unwind)
+            _StubProc(returncode=0),  # docker network rm (ExitStack unwind)
+        ]
+    )
+    monkeypatch.setattr(subprocess, "run", recorder)
+    policy = SandboxPolicy(network="pull", network_allowlist=("registry-1.docker.io",))
+    adapter = DockerSandboxAdapter(tmp_path, policy=policy)
+    with pytest.raises(RuntimeError, match="proxy"):
+        adapter.create_sandbox(image="build-sandbox:latest")
+    # Both proxy container removal and network removal must appear -
+    # ExitStack unwinds in reverse-registration order.
+    rm_calls = _calls_with_subcommand(recorder, "docker", "rm", "-f")
+    netrms = _calls_with_subcommand(recorder, "docker", "network", "rm")
+    assert any(
+        "proxy-cid" in r for r in rm_calls
+    ), "proxy sidecar must be force-removed when readiness probe fails"
+    assert netrms, "per-sandbox network must be removed when readiness probe fails"
+
+
 # ---------------------------------------------------------------------------
 # Live Docker integration for the egress filter (opt-in).
 # ---------------------------------------------------------------------------

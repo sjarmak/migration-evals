@@ -61,6 +61,14 @@ PROXY_DNS_ALIAS = "proxy"
 # workload-recipe-configurable; routing it through policy would let a
 # recipe accidentally weaken the sidecar's isolation.
 PROXY_SIDECAR_USER = "65534:65534"
+# Proxy readiness loop: 50 iterations × 0.1s = 5s cap. Wave-1 review
+# (security MEDIUM #3): tinyproxy starts in <1s on a healthy host, so
+# 5s is a generous-but-bounded ceiling that closes the race where a
+# fast workload (go build, pip install) hits connection-refused before
+# the sidecar has bound its listen socket. Increase only if a slower
+# proxy image lands; never make this unbounded.
+PROXY_READINESS_ITERATIONS = 50
+PROXY_READINESS_SLEEP_S = "0.1"
 
 
 @dataclass(frozen=True)
@@ -399,6 +407,16 @@ class DockerSandboxAdapter:
 
             self._connect_proxy_to_bridge(proxy_container)
 
+            # Wave-1 review (security MEDIUM #3): block until tinyproxy is
+            # actually listening before returning. Otherwise a fast
+            # workload races the proxy and hits connection-refused. The
+            # probe runs inside the sidecar (so it sees the loopback
+            # interface tinyproxy binds to) and is bounded so a stuck
+            # sidecar fails the sandbox rather than hangs it. Registered
+            # AFTER the proxy + network teardowns so a probe failure
+            # unwinds them.
+            self._wait_for_proxy_ready(proxy_container)
+
             # Success: keep the resources alive for the sandbox lifetime.
             stack.pop_all()
 
@@ -521,6 +539,55 @@ class DockerSandboxAdapter:
             raise RuntimeError(
                 f"could not connect proxy sidecar to default bridge "
                 f"(exit={exc.returncode}): {exc.stderr.strip()}"
+            ) from exc
+
+    def _wait_for_proxy_ready(self, proxy_container: str) -> None:
+        """Block until tinyproxy is listening on its port, or raise.
+
+        Wave-1 review (security MEDIUM #3): ``docker run -d`` returns as
+        soon as the container is created, not when its workload is
+        ready. Without this probe, a fast workload (e.g. ``go build``
+        kicking off ``go mod download`` immediately) can issue its first
+        request before tinyproxy has bound its listen socket and hit
+        connection-refused, masquerading as an allowlist denial.
+
+        The probe runs inside the sidecar via ``docker exec sh -c`` so
+        it observes the same loopback interface tinyproxy binds to. The
+        retry loop is bounded — ``PROXY_READINESS_ITERATIONS`` × ``0.1``
+        seconds — so a wedged sidecar fails the sandbox in 5s rather
+        than hanging the run.
+
+        ``nc -z`` is the probe: alpine's busybox (the base of the
+        default ``vimagick/tinyproxy`` image) ships netcat, so this is
+        portable across the proxy images we support today. The argv is
+        a literal list so the diff is the documentation.
+        """
+        port = self._policy.proxy_port
+        # Bounded retry: exit 0 the first time nc -z succeeds; exit 1
+        # after PROXY_READINESS_ITERATIONS misses. POSIX `sh` (busybox
+        # ash) — no bashisms like /dev/tcp.
+        script = (
+            f"i=0; while [ $i -lt {PROXY_READINESS_ITERATIONS} ]; do "
+            f"nc -z 127.0.0.1 {port} && exit 0; "
+            f"i=$((i+1)); sleep {PROXY_READINESS_SLEEP_S}; "
+            f"done; exit 1"
+        )
+        probe_args = [
+            self._docker_bin,
+            "exec",
+            proxy_container,
+            "sh",
+            "-c",
+            script,
+        ]
+        try:
+            subprocess.run(probe_args, check=True, capture_output=True, text=True)
+        except subprocess.CalledProcessError as exc:
+            raise RuntimeError(
+                f"proxy sidecar {proxy_container} did not become ready on port "
+                f"{port} within {PROXY_READINESS_ITERATIONS} x "
+                f"{PROXY_READINESS_SLEEP_S}s (exit={exc.returncode}): "
+                f"{exc.stderr.strip()}"
             ) from exc
 
     def _remove_network(self, network_name: str) -> None:
