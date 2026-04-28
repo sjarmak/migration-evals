@@ -28,6 +28,7 @@ and :mod:`migration_evals.runner` share one decision point.
 
 from __future__ import annotations
 
+import atexit
 import contextlib
 import json
 import re
@@ -37,7 +38,8 @@ import tempfile
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Mapping, Optional
+from types import TracebackType
+from typing import Any, Mapping, Optional, Type
 
 from migration_evals.sandbox_policy import SandboxPolicy
 
@@ -114,6 +116,53 @@ class DockerSandboxAdapter:
         # network='pull'). Keyed by sandbox id so destroy_sandbox can
         # tear them down in the right order.
         self._egress: dict[str, _EgressFilter] = {}
+        # Crash-safety net: atexit fires for normal interpreter shutdown
+        # paths and SIGTERM-via-handler. Errors are swallowed inside the
+        # handler — at shutdown the docker daemon may be gone or the
+        # user is escalating to SIGKILL anyway, and a traceback from
+        # atexit only obscures the real cause of exit.
+        atexit.register(self._atexit_teardown)
+
+    # ------------------------------------------------------------------
+    # Crash-safe teardown (context manager + atexit)
+    # ------------------------------------------------------------------
+
+    def __enter__(self) -> "DockerSandboxAdapter":
+        return self
+
+    def __exit__(
+        self,
+        exc_type: Optional[Type[BaseException]],
+        exc: Optional[BaseException],
+        tb: Optional[TracebackType],
+    ) -> None:
+        # Never suppress — return None so any in-flight exception
+        # propagates after cleanup.
+        self._teardown_all()
+
+    def _teardown_all(self) -> None:
+        """Destroy every still-tracked sandbox.
+
+        Idempotent by construction: ``destroy_sandbox`` pops each entry
+        from the tracking dicts, so a second call iterates an empty
+        snapshot and is a no-op. This means ``__exit__`` followed by
+        atexit (or two ``__exit__`` calls) issue exactly one teardown
+        per sandbox.
+        """
+        for sandbox_id in list(self._containers.keys()):
+            self.destroy_sandbox(sandbox_id)
+
+    def _atexit_teardown(self) -> None:
+        """Atexit-safe variant of :meth:`_teardown_all` that never raises.
+
+        Interpreter shutdown is the wrong time to discover the docker
+        daemon has gone away; let the OS reap whatever is left rather
+        than spew tracebacks on top of whatever already killed us.
+        """
+        try:
+            self._teardown_all()
+        except BaseException:  # noqa: BLE001 — atexit must not raise
+            pass
 
     # ------------------------------------------------------------------
     # SandboxAdapter Protocol

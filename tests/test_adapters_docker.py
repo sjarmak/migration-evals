@@ -229,6 +229,201 @@ def test_destroy_sandbox_tolerates_rm_failure(
 
 
 # ---------------------------------------------------------------------------
+# Crash-safe teardown: context manager + atexit (cxa wave-2 review LOW #4)
+# ---------------------------------------------------------------------------
+#
+# destroy_sandbox is only invoked on the happy path. If the calling
+# process is killed mid-trial (KeyboardInterrupt / SIGTERM) every tracked
+# sandbox plus its proxy sidecar + internal docker network leak. The
+# adapter therefore supports two safety nets: ``with`` for explicit
+# scoping, and an atexit hook for crash paths. Both must be idempotent
+# so they cannot double-remove the same container.
+
+
+def test_context_manager_cleans_up_tracked_sandboxes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`with DockerSandboxAdapter(...) as adapter:` must call destroy on
+    every sandbox that's still tracked when the block exits. This is the
+    happy-path scope guarantee — callers that forget to call
+    destroy_sandbox still get cleaned up."""
+    recorder = _Recorder(
+        [
+            _StubProc(stdout="c1\n"),  # create #1
+            _StubProc(stdout="c2\n"),  # create #2
+            _StubProc(returncode=0),  # rm c1
+            _StubProc(returncode=0),  # rm c2
+        ]
+    )
+    monkeypatch.setattr(subprocess, "run", recorder)
+    with DockerSandboxAdapter(tmp_path) as adapter:
+        adapter.create_sandbox(image="img")
+        adapter.create_sandbox(image="img")
+    # Both containers must have been removed; order doesn't matter.
+    rm_calls = [c["args"] for c in recorder.calls if c["args"][:3] == ["docker", "rm", "-f"]]
+    removed_ids = {call[-1] for call in rm_calls}
+    assert removed_ids == {"c1", "c2"}
+
+
+def test_context_manager_returns_self(tmp_path: Path) -> None:
+    """`__enter__` must return the adapter so `with X() as a:` works."""
+    adapter = DockerSandboxAdapter(tmp_path)
+    with adapter as bound:
+        assert bound is adapter
+
+
+def test_context_manager_cleans_up_on_exception(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """If the body of the `with` block raises, tracked sandboxes must
+    still be torn down. This is the crash-safety property the test
+    locks in: an exception in the trial body cannot leak containers."""
+    recorder = _Recorder(
+        [
+            _StubProc(stdout="c1\n"),  # create
+            _StubProc(returncode=0),  # rm
+        ]
+    )
+    monkeypatch.setattr(subprocess, "run", recorder)
+    with pytest.raises(RuntimeError, match="boom"):
+        with DockerSandboxAdapter(tmp_path) as adapter:
+            adapter.create_sandbox(image="img")
+            raise RuntimeError("boom")
+    rm_calls = [c["args"] for c in recorder.calls if c["args"][:3] == ["docker", "rm", "-f"]]
+    assert rm_calls == [["docker", "rm", "-f", "c1"]]
+
+
+def test_context_manager_no_op_when_no_sandboxes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Empty `with` block must not call subprocess.run at all — there's
+    nothing tracked to tear down."""
+    recorder = _Recorder([])  # zero responses; any call would assert
+    monkeypatch.setattr(subprocess, "run", recorder)
+    with DockerSandboxAdapter(tmp_path):
+        pass
+    assert recorder.calls == []
+
+
+def test_context_manager_is_idempotent(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A second teardown — whether triggered by a nested with, an atexit
+    hook firing after the with, or an explicit __exit__ call — must not
+    re-invoke `docker rm` for sandboxes already destroyed. The flag
+    that guards this is the same one atexit relies on, so testing it
+    here proves both safety nets compose."""
+    recorder = _Recorder(
+        [
+            _StubProc(stdout="c1\n"),  # create
+            _StubProc(returncode=0),  # rm (first teardown)
+        ]
+    )
+    monkeypatch.setattr(subprocess, "run", recorder)
+    adapter = DockerSandboxAdapter(tmp_path)
+    with adapter:
+        adapter.create_sandbox(image="img")
+    # Calling __exit__ again must be a no-op even though tracking dicts
+    # are empty — the flag short-circuits the iteration entirely.
+    adapter.__exit__(None, None, None)
+    rm_calls = [c["args"] for c in recorder.calls if c["args"][:3] == ["docker", "rm", "-f"]]
+    assert len(rm_calls) == 1
+
+
+def test_atexit_handler_registered(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The adapter must register an atexit handler so a crash path
+    (KeyboardInterrupt outside a `with`, SIGTERM, etc.) still tears down
+    tracked sandboxes. Verified by spying on `atexit.register`."""
+    import atexit
+
+    registered: list[Any] = []
+    monkeypatch.setattr(atexit, "register", lambda fn, *a, **kw: registered.append(fn) or fn)
+    DockerSandboxAdapter(tmp_path)
+    assert registered, "DockerSandboxAdapter.__init__ must register an atexit handler"
+
+
+def test_atexit_handler_tears_down_tracked_sandboxes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Invoking the registered atexit handler directly must clean up the
+    sandboxes that are still tracked — same teardown path as `__exit__`,
+    just driven by the atexit hook instead of the `with` block."""
+    import atexit
+
+    registered: list[Any] = []
+    monkeypatch.setattr(atexit, "register", lambda fn, *a, **kw: registered.append(fn) or fn)
+    recorder = _Recorder(
+        [
+            _StubProc(stdout="c1\n"),  # create
+            _StubProc(returncode=0),  # rm (driven by atexit)
+        ]
+    )
+    monkeypatch.setattr(subprocess, "run", recorder)
+    adapter = DockerSandboxAdapter(tmp_path)
+    adapter.create_sandbox(image="img")
+    assert registered, "expected atexit handler"
+    # Fire the handler manually — simulates interpreter shutdown.
+    registered[0]()
+    rm_calls = [c["args"] for c in recorder.calls if c["args"][:3] == ["docker", "rm", "-f"]]
+    assert rm_calls == [["docker", "rm", "-f", "c1"]]
+
+
+def test_atexit_handler_is_idempotent_after_explicit_destroy(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """If the user (or `__exit__`) already cleaned up before the
+    interpreter shuts down, the atexit handler must not double-remove.
+    Otherwise we'd see spurious `no such container` log noise on every
+    process exit."""
+    import atexit
+
+    registered: list[Any] = []
+    monkeypatch.setattr(atexit, "register", lambda fn, *a, **kw: registered.append(fn) or fn)
+    recorder = _Recorder(
+        [
+            _StubProc(stdout="c1\n"),  # create
+            _StubProc(returncode=0),  # explicit destroy_sandbox rm
+        ]
+    )
+    monkeypatch.setattr(subprocess, "run", recorder)
+    adapter = DockerSandboxAdapter(tmp_path)
+    sid = adapter.create_sandbox(image="img")
+    adapter.destroy_sandbox(sid)
+    pre = len(recorder.calls)
+    # atexit fires after explicit destroy: must be a no-op.
+    registered[0]()
+    assert len(recorder.calls) == pre, "atexit must not re-issue docker rm"
+
+
+def test_atexit_handler_swallows_errors(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """At interpreter shutdown the docker daemon may be gone, the user
+    may already be killing -9, etc. The atexit handler must NEVER raise
+    — propagating an exception out of an atexit callback yields ugly
+    tracebacks that mask the real cause of the crash."""
+    import atexit
+
+    registered: list[Any] = []
+    monkeypatch.setattr(atexit, "register", lambda fn, *a, **kw: registered.append(fn) or fn)
+
+    def boom(*_a: Any, **_kw: Any) -> Any:
+        raise OSError("daemon gone")
+
+    # First call (create) succeeds, then everything blows up.
+    create_proc = _StubProc(stdout="c1\n")
+    calls = {"n": 0}
+
+    def fake_run(*args: Any, **kwargs: Any) -> Any:
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return create_proc
+        raise OSError("daemon gone")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    adapter = DockerSandboxAdapter(tmp_path)
+    adapter.create_sandbox(image="img")
+    # Must not raise even though every teardown subprocess.run blows up.
+    registered[0]()
+
+
+# ---------------------------------------------------------------------------
 # Factory: build_sandbox_adapter
 # ---------------------------------------------------------------------------
 
