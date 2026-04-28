@@ -10,9 +10,10 @@ funnel → CLI → result.json writer) and must be safe to share.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from types import MappingProxyType
-from typing import Any, Mapping, Optional, Tuple
+from typing import Any
 
 
 def _freeze_mapping(m: Mapping[str, Any] | None) -> Mapping[str, Any]:
@@ -55,14 +56,14 @@ class FunnelResult:
     (short-circuit) or the last verdict on the path if everything passed.
     """
 
-    per_tier_verdict: Tuple[Tuple[str, OracleVerdict], ...]
+    per_tier_verdict: tuple[tuple[str, OracleVerdict], ...]
     final_verdict: OracleVerdict
     total_cost_usd: float
-    failure_class: Optional[str]
+    failure_class: str | None
     # Side-channel verdicts emitted by the batch-change quality oracles
     # (dsm). They run alongside the cascade and do NOT short-circuit it -
     # ``passed=False`` here is informational, not a tier failure.
-    quality_verdicts: Tuple[Tuple[str, OracleVerdict], ...] = ()
+    quality_verdicts: tuple[tuple[str, OracleVerdict], ...] = ()
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize to a JSON-friendly dict for result.json inclusion."""

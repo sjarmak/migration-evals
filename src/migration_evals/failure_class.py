@@ -18,10 +18,8 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Optional
 
 from migration_evals.types import FailureClass
-
 
 # Phrases that, when found in status.txt / stderr / stdout, imply the sandbox
 # or container layer failed before the trial could meaningfully run.
@@ -53,6 +51,7 @@ _HARNESS_SIGNATURES = (
 # IO helpers
 # ---------------------------------------------------------------------------
 
+
 def _read_text_if_exists(path: Path) -> str:
     """Return file text lowercased, or empty string if file absent/unreadable."""
     try:
@@ -82,6 +81,7 @@ def _contains_any(haystack: str, needles: tuple[str, ...]) -> bool:
 # ---------------------------------------------------------------------------
 # Per-class signal detectors
 # ---------------------------------------------------------------------------
+
 
 def _has_infra_signal(trial_dir: Path, payload: dict) -> bool:
     if bool(payload.get("infra_error_marker")):
@@ -125,7 +125,8 @@ def _has_oracle_signal(trial_dir: Path, payload: dict) -> bool:
 # Public API
 # ---------------------------------------------------------------------------
 
-def classify(trial_dir: Path) -> Optional[FailureClass]:
+
+def classify(trial_dir: Path) -> FailureClass | None:
     """Return the failure class for a failed trial.
 
     Returns `None` when `result.json` exists and `success=True` - success

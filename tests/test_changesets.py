@@ -14,9 +14,9 @@ from __future__ import annotations
 import contextlib
 import json
 import threading
+from collections.abc import Iterator
 from http.server import HTTPServer, SimpleHTTPRequestHandler
 from pathlib import Path
-from typing import Iterator
 
 import pytest
 
@@ -31,7 +31,6 @@ from migration_evals.changesets import (
     validate_commit_sha,
     validate_instance_id,
 )
-
 
 _META_FIXTURE = {
     "repo_url": "https://github.com/example/foo",
@@ -279,9 +278,7 @@ def test_http_provider_unreachable_host_raises_connection_error() -> None:
     Bound a tight timeout against an unroutable port so the test does
     not hang the suite on misconfigured DNS.
     """
-    provider = HTTPChangesetProvider(
-        "http://127.0.0.1:1", timeout_s=0.5
-    )
+    provider = HTTPChangesetProvider("http://127.0.0.1:1", timeout_s=0.5)
     with pytest.raises((ConnectionError, OSError)):
         provider.fetch("anything")
 
@@ -308,9 +305,7 @@ def test_http_provider_response_size_cap_rejects_oversized(tmp_path: Path) -> No
     (inst_dir / "patch.diff").write_text("X" * 8192)
 
     with _serve_directory(tmp_path) as base_url:
-        provider = HTTPChangesetProvider(
-            base_url, timeout_s=5.0, max_bytes=4096
-        )
+        provider = HTTPChangesetProvider(base_url, timeout_s=5.0, max_bytes=4096)
         with pytest.raises(ValueError, match="exceeded max_bytes=4096"):
             provider.fetch("inst-big")
 
@@ -324,14 +319,12 @@ def test_http_provider_response_size_cap_accepts_at_boundary(tmp_path: Path) -> 
     (inst_dir / "patch.diff").write_text(body)
 
     with _serve_directory(tmp_path) as base_url:
-        provider = HTTPChangesetProvider(
-            base_url, timeout_s=5.0, max_bytes=4096
-        )
+        provider = HTTPChangesetProvider(base_url, timeout_s=5.0, max_bytes=4096)
         cs = provider.fetch("inst-tight")
     assert cs.patch_diff == body
 
 
-def _serve_redirect_to(target_url: str) -> "tuple[str, threading.Event]":
+def _serve_redirect_to(target_url: str) -> tuple[str, threading.Event]:
     """Start an http.server that 302-redirects every GET to target_url.
 
     Returns ``(base_url, shutdown_event)``. Caller sets shutdown_event
@@ -376,9 +369,7 @@ def test_http_provider_refuses_cross_origin_redirect(tmp_path: Path) -> None:
     upstream_root.mkdir()
     _stage_instance(upstream_root, "inst-target")
     with _serve_directory(upstream_root) as upstream_base:
-        redirector_base, shutdown = _serve_redirect_to(
-            f"{upstream_base}/inst-target/meta.json"
-        )
+        redirector_base, shutdown = _serve_redirect_to(f"{upstream_base}/inst-target/meta.json")
         try:
             provider = HTTPChangesetProvider(redirector_base, timeout_s=5.0)
             # The redirect handler raises HTTPError, which urllib
@@ -393,9 +384,7 @@ def test_http_provider_refuses_cross_origin_redirect(tmp_path: Path) -> None:
 
 def test_http_factory_threads_max_bytes_through_config() -> None:
     """get_provider('http', {'max_bytes': N}) must reach the provider."""
-    provider = get_provider(
-        "http", {"base_url": "http://example.invalid", "max_bytes": 1024}
-    )
+    provider = get_provider("http", {"base_url": "http://example.invalid", "max_bytes": 1024})
     assert isinstance(provider, HTTPChangesetProvider)
     assert provider._max_bytes == 1024  # noqa: SLF001 — test-only inspection
 
@@ -420,9 +409,7 @@ def test_register_provider_round_trip() -> None:
 
     register_provider("test_stub_provider", _factory)
     try:
-        provider = get_provider(
-            "test_stub_provider", {"root": "/tmp/whatever"}
-        )
+        provider = get_provider("test_stub_provider", {"root": "/tmp/whatever"})
         assert isinstance(provider, _Stub)
         assert sentinel_root == ["/tmp/whatever"]
     finally:

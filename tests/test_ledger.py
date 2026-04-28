@@ -21,7 +21,6 @@ _REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_REPO_ROOT))
 
 from migration_evals.ledger import (
-    RegressionEntry,
     compute_content_hash,
     compute_regression,
     iter_trial_results,
@@ -39,6 +38,7 @@ LEDGER_V2 = FIXTURES / "ledger_v2"
 # Content hash
 # ---------------------------------------------------------------------------
 
+
 def test_content_hash_is_deterministic() -> None:
     payload_a = {"task_id": "x", "success": True, "n": 1}
     payload_b = {"n": 1, "success": True, "task_id": "x"}
@@ -54,6 +54,7 @@ def test_content_hash_changes_with_any_field() -> None:
 # ---------------------------------------------------------------------------
 # write_ledger_entry + dedup
 # ---------------------------------------------------------------------------
+
 
 def test_write_ledger_entry_creates_file(tmp_path: Path) -> None:
     ledger_root = tmp_path / "ledger"
@@ -105,6 +106,7 @@ def test_write_ledger_entry_missing_result(tmp_path: Path) -> None:
 # iter_trial_results
 # ---------------------------------------------------------------------------
 
+
 def test_iter_trial_results_finds_all_trials() -> None:
     found = list(iter_trial_results(LEDGER_V1))
     task_ids = {payload["task_id"] for _, payload in found}
@@ -114,6 +116,7 @@ def test_iter_trial_results_finds_all_trials() -> None:
 # ---------------------------------------------------------------------------
 # compute_regression
 # ---------------------------------------------------------------------------
+
 
 def test_compute_regression_detects_only_newly_failing() -> None:
     entries = compute_regression(LEDGER_V1, LEDGER_V2)
@@ -134,6 +137,7 @@ def test_regression_entry_captures_prior_provenance() -> None:
 # ---------------------------------------------------------------------------
 # Markdown rendering
 # ---------------------------------------------------------------------------
+
 
 def test_render_regression_markdown_has_one_row_per_entry(tmp_path: Path) -> None:
     entries = compute_regression(LEDGER_V1, LEDGER_V2)
@@ -158,6 +162,7 @@ def test_render_regression_markdown_has_one_row_per_entry(tmp_path: Path) -> Non
 # run_regression + CLI entry
 # ---------------------------------------------------------------------------
 
+
 def test_run_regression_writes_report(tmp_path: Path) -> None:
     out_path = tmp_path / "regressed_tasks.md"
     rc = run_regression(LEDGER_V1, LEDGER_V2, out_path)
@@ -174,6 +179,7 @@ def test_cli_regression_subcommand(tmp_path: Path) -> None:
     env = {"PYTHONPATH": str(_REPO_ROOT / "src")}
     # Inherit PATH for python binary resolution.
     import os
+
     env = {**os.environ, **env}
     result = subprocess.run(
         [

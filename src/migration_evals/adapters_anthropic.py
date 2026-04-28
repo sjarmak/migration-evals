@@ -38,8 +38,9 @@ change.
 from __future__ import annotations
 
 import os
+from collections.abc import Iterable, Mapping
 from pathlib import Path
-from typing import Any, Iterable, Mapping, Optional
+from typing import Any
 
 __all__ = [
     "AnthropicSDKAdapter",
@@ -85,9 +86,7 @@ class BudgetExceededError(RuntimeError):
 # ---------------------------------------------------------------------------
 
 
-def _estimate_input_tokens(
-    messages: Iterable[Mapping[str, Any]], system: Any
-) -> int:
+def _estimate_input_tokens(messages: Iterable[Mapping[str, Any]], system: Any) -> int:
     """Rough char/4 input-token estimate, sufficient for budget guarding.
 
     The Anthropic tokenizer is BPE; 4 chars per token is the documented
@@ -122,7 +121,7 @@ def _worst_case_cost(
     in_tokens_est: int,
     max_tokens: int,
     cost_rates: Mapping[str, Mapping[str, float]],
-) -> Optional[float]:
+) -> float | None:
     """Return USD upper bound for the next call, or None when unknown."""
     rates = cost_rates.get(model)
     if rates is None:
@@ -155,7 +154,7 @@ def _actual_cost(
     return cost
 
 
-def _load_anthropic_client(*, api_key: Optional[str] = None) -> Any:
+def _load_anthropic_client(*, api_key: str | None = None) -> Any:
     """Lazy-import + construct an ``anthropic.Anthropic`` client.
 
     Kept top-level so tests can monkeypatch this single seam instead of
@@ -194,9 +193,9 @@ class AnthropicSDKAdapter:
         self,
         *,
         client: Any = None,
-        api_key: Optional[str] = None,
-        cost_rates: Optional[Mapping[str, Mapping[str, float]]] = None,
-        per_call_budget_usd: Optional[float] = None,
+        api_key: str | None = None,
+        cost_rates: Mapping[str, Mapping[str, float]] | None = None,
+        per_call_budget_usd: float | None = None,
     ) -> None:
         self._client = client
         self._api_key = api_key
@@ -217,9 +216,9 @@ class AnthropicSDKAdapter:
         *,
         model: str,
         messages: Iterable[Mapping[str, Any]],
-        system: Optional[Any] = None,
+        system: Any | None = None,
         max_tokens: int = 1024,
-        cassette: Optional[Any] = None,  # ignored; Protocol artefact
+        cassette: Any | None = None,  # ignored; Protocol artefact
         **kwargs: Any,
     ) -> Mapping[str, Any]:
         materialised_messages = list(messages)
@@ -249,8 +248,10 @@ class AnthropicSDKAdapter:
             **{k: v for k, v in kwargs.items() if k != "cassette"},
         }
 
-        client = self._client if self._client is not None else _load_anthropic_client(
-            api_key=self._api_key
+        client = (
+            self._client
+            if self._client is not None
+            else _load_anthropic_client(api_key=self._api_key)
         )
         if self._client is None:
             self._client = client
@@ -272,9 +273,7 @@ class AnthropicSDKAdapter:
 
         # Post-call cost accounting.
         usage = envelope.get("usage") or {}
-        cost = _actual_cost(
-            model=model, usage=usage, cost_rates=self._cost_rates
-        )
+        cost = _actual_cost(model=model, usage=usage, cost_rates=self._cost_rates)
         self.total_cost_usd += cost
         self.call_count += 1
         return envelope
@@ -289,7 +288,7 @@ def build_anthropic_adapter(
     *,
     repo_path: Path,
     adapters_cfg: Mapping[str, Any],
-    cassette_dir: Optional[Path],
+    cassette_dir: Path | None,
 ) -> Any:
     """Pick the Anthropic adapter implied by ``adapters_cfg``.
 
@@ -330,9 +329,7 @@ def build_anthropic_adapter(
         api_key = adapters_cfg.get("anthropic_api_key")
         per_call_budget = adapters_cfg.get("anthropic_per_call_budget_usd")
         rates_override = adapters_cfg.get("cost_rates_usd_per_mtok")
-        cost_rates = (
-            rates_override if isinstance(rates_override, Mapping) else DEFAULT_COST_RATES
-        )
+        cost_rates = rates_override if isinstance(rates_override, Mapping) else DEFAULT_COST_RATES
         # Adapter lazy-loads the SDK on first call, so importing anthropic
         # only happens at the point a real network call is about to be
         # issued. That keeps cassette-mode users dependency-free.
@@ -343,6 +340,5 @@ def build_anthropic_adapter(
         )
 
     raise ValueError(
-        f"unknown anthropic_provider {provider!r}; expected 'cassette', "
-        f"'claude_code', or 'sdk'"
+        f"unknown anthropic_provider {provider!r}; expected 'cassette', " f"'claude_code', or 'sdk'"
     )

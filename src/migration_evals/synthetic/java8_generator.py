@@ -49,8 +49,8 @@ def _pom_xml(artifact_id: str, extra_deps_xml: str = "") -> str:
         else ""
     )
     return (
-        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
-        "<project xmlns=\"http://maven.apache.org/POM/4.0.0\">\n"
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<project xmlns="http://maven.apache.org/POM/4.0.0">\n'
         "    <modelVersion>4.0.0</modelVersion>\n"
         "    <groupId>com.example</groupId>\n"
         f"    <artifactId>{artifact_id}</artifactId>\n"
@@ -103,9 +103,7 @@ def generate_repo(seed: int, index: int, out_root: Path) -> dict[str, Any]:
             extra_deps_xml = snippet_path.read_text(encoding="utf-8")
 
     artifact_id = f"synthetic-repo-{index:04d}"
-    (repo_dir / "pom.xml").write_text(
-        _pom_xml(artifact_id, extra_deps_xml), encoding="utf-8"
-    )
+    (repo_dir / "pom.xml").write_text(_pom_xml(artifact_id, extra_deps_xml), encoding="utf-8")
 
     manifest: dict[str, Any] = {
         "repo_index": index,

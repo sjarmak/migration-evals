@@ -13,8 +13,9 @@ import os
 import shutil
 import subprocess
 import sys
+from collections.abc import Mapping, Sequence
 from pathlib import Path
-from typing import Any, List, Mapping, Sequence
+from typing import Any
 
 import pytest
 
@@ -22,11 +23,11 @@ _REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_REPO_ROOT))
 
 from migration_evals.adapters import AnthropicAdapter  # noqa: E402
+from migration_evals.adapters_anthropic import build_anthropic_adapter  # noqa: E402
 from migration_evals.adapters_claude_code import (  # noqa: E402
     ClaudeCodeAdapter,
     ClaudeCodeError,
 )
-from migration_evals.adapters_anthropic import build_anthropic_adapter  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # subprocess.run recorder
@@ -43,7 +44,7 @@ class _StubProc:
 class _Recorder:
     def __init__(self, responses: Sequence[Any]) -> None:
         self._responses = list(responses)
-        self.calls: List[Mapping[str, Any]] = []
+        self.calls: list[Mapping[str, Any]] = []
 
     def __call__(self, args: Sequence[str], **kwargs: Any) -> Any:
         self.calls.append({"args": list(args), "kwargs": dict(kwargs)})

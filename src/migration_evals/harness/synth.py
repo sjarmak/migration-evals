@@ -17,9 +17,10 @@ cassette on a cache hit, which is the core property we rely on for the
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Mapping, Optional
+from typing import Any
 
 from migration_evals.harness import cache as cache_mod
 from migration_evals.harness.recipe import Recipe
@@ -43,7 +44,7 @@ _SYSTEM_PROMPT = (
 )
 
 
-def _read_clipped(path: Path) -> Optional[str]:
+def _read_clipped(path: Path) -> str | None:
     try:
         text = path.read_text(encoding="utf-8", errors="replace")
     except OSError:

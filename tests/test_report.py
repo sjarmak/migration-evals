@@ -32,8 +32,7 @@ def _smoke_config(tmp_path: Path, output_root: Path) -> Path:
     raw = yaml.safe_load(SMOKE_CONFIG.read_text())
     raw["output_root"] = str(output_root)
     raw["repos"] = [
-        {"path": str(REPO_ROOT / entry["path"]), "seed": entry["seed"]}
-        for entry in raw["repos"]
+        {"path": str(REPO_ROOT / entry["path"]), "seed": entry["seed"]} for entry in raw["repos"]
     ]
     for key in ("anthropic_cassette_dir", "sandbox_cassette_dir"):
         raw["adapters"][key] = str(REPO_ROOT / raw["adapters"][key])
@@ -346,21 +345,11 @@ def test_efficiency_aggregate_returns_none_when_no_iterator_ids() -> None:
 
 def test_efficiency_aggregate_overall_and_per_iterator() -> None:
     results = [
-        _trial(
-            success=True, tiers=[("compile_only", True)], iterator_id="batch-A"
-        ),
-        _trial(
-            success=False, tiers=[("compile_only", False)], iterator_id="batch-A"
-        ),
-        _trial(
-            success=False, tiers=[("compile_only", False)], iterator_id="batch-A"
-        ),
-        _trial(
-            success=True, tiers=[("compile_only", True)], iterator_id="batch-B"
-        ),
-        _trial(
-            success=True, tiers=[("compile_only", True)], iterator_id="batch-B"
-        ),
+        _trial(success=True, tiers=[("compile_only", True)], iterator_id="batch-A"),
+        _trial(success=False, tiers=[("compile_only", False)], iterator_id="batch-A"),
+        _trial(success=False, tiers=[("compile_only", False)], iterator_id="batch-A"),
+        _trial(success=True, tiers=[("compile_only", True)], iterator_id="batch-B"),
+        _trial(success=True, tiers=[("compile_only", True)], iterator_id="batch-B"),
     ]
     eff = _efficiency_aggregate(results)
     assert eff is not None
@@ -378,12 +367,8 @@ def test_efficiency_aggregate_overall_and_per_iterator() -> None:
 
 def test_efficiency_handles_zero_successes_in_an_iterator() -> None:
     results = [
-        _trial(
-            success=False, tiers=[("compile_only", False)], iterator_id="batch-X"
-        ),
-        _trial(
-            success=False, tiers=[("compile_only", False)], iterator_id="batch-X"
-        ),
+        _trial(success=False, tiers=[("compile_only", False)], iterator_id="batch-X"),
+        _trial(success=False, tiers=[("compile_only", False)], iterator_id="batch-X"),
     ]
     eff = _efficiency_aggregate(results)
     assert eff is not None
@@ -441,9 +426,7 @@ def test_format_report_includes_cost_and_efficiency_sections() -> None:
     assert "[0.100, 0.900]" in md
 
 
-def build_report_data_dict(
-    *, funnel_rows, cost, efficiency
-) -> dict:
+def build_report_data_dict(*, funnel_rows, cost, efficiency) -> dict:
     """Minimal data-dict factory for format_report tests."""
     return {
         "summary": {

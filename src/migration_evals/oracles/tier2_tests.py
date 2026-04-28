@@ -8,8 +8,9 @@ within the coverage of the existing suite.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from pathlib import Path
-from typing import Any, Mapping, Optional
+from typing import Any
 
 from migration_evals.harness.recipe import Recipe
 from migration_evals.oracles.tier1_compile import _coerce_exit_code
@@ -28,9 +29,9 @@ def run(
     *,
     image: str = DEFAULT_IMAGE,
     timeout_s: int = DEFAULT_TIMEOUT_S,
-    cassette: Optional[Any] = None,
+    cassette: Any | None = None,
     cost_usd: float = DEFAULT_COST_USD,
-    env: Optional[Mapping[str, str]] = None,
+    env: Mapping[str, str] | None = None,
 ) -> OracleVerdict:
     """Run the recipe's test command and return a tests verdict."""
     repo_path = Path(repo_path)

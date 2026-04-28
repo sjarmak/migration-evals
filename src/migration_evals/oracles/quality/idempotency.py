@@ -22,8 +22,9 @@ oracle robust on minimal containers.
 from __future__ import annotations
 
 import re
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 
 from migration_evals.oracles.tier0_diff import PATCH_ARTIFACT_NAMES
 from migration_evals.oracles.verdict import OracleVerdict
@@ -81,7 +82,9 @@ def run(repo_path: Path, quality_spec: QualitySpec) -> OracleVerdict:
     agent_path = _find_agent_diff(repo_path)
     if agent_path is None:
         return OracleVerdict(
-            tier=TIER_NAME, passed=True, cost_usd=DEFAULT_COST_USD,
+            tier=TIER_NAME,
+            passed=True,
+            cost_usd=DEFAULT_COST_USD,
             details={
                 "skipped": True,
                 "reason": "no agent patch artifact found",
@@ -104,20 +107,16 @@ def run(repo_path: Path, quality_spec: QualitySpec) -> OracleVerdict:
             continue
         files_checked += 1
         try:
-            file_text = absolute.read_text(
-                encoding="utf-8", errors="replace"
-            )
+            file_text = absolute.read_text(encoding="utf-8", errors="replace")
         except OSError as exc:
             drifts.append(f"{target_path}: unreadable ({exc})")
             files_with_drift += 1
             continue
         added_lines = [
-            line[1:] for line in body
-            if line.startswith("+") and not line.startswith("+++")
+            line[1:] for line in body if line.startswith("+") and not line.startswith("+++")
         ]
         removed_lines = [
-            line[1:] for line in body
-            if line.startswith("-") and not line.startswith("---")
+            line[1:] for line in body if line.startswith("-") and not line.startswith("---")
         ]
         # Every "+" line should already be present in the post-state file
         # (re-applying would be a no-op for it). Every "-" line should be
@@ -125,19 +124,13 @@ def run(repo_path: Path, quality_spec: QualitySpec) -> OracleVerdict:
         local_drifts: list[str] = []
         for plus_line in added_lines:
             if plus_line and plus_line not in file_text:
-                local_drifts.append(
-                    f"missing expected '+': {plus_line[:60]!r}"
-                )
+                local_drifts.append(f"missing expected '+': {plus_line[:60]!r}")
         for minus_line in removed_lines:
             if minus_line and minus_line in file_text:
-                local_drifts.append(
-                    f"unexpected '-' still present: {minus_line[:60]!r}"
-                )
+                local_drifts.append(f"unexpected '-' still present: {minus_line[:60]!r}")
         if local_drifts:
             files_with_drift += 1
-            drifts.extend(
-                f"{target_path}: {d}" for d in local_drifts[:3]
-            )
+            drifts.extend(f"{target_path}: {d}" for d in local_drifts[:3])
 
     idempotent = not drifts
     details: dict[str, Any] = {
@@ -148,7 +141,9 @@ def run(repo_path: Path, quality_spec: QualitySpec) -> OracleVerdict:
     if drifts:
         details["drift_examples"] = drifts[:8]
     return OracleVerdict(
-        tier=TIER_NAME, passed=idempotent, cost_usd=DEFAULT_COST_USD,
+        tier=TIER_NAME,
+        passed=idempotent,
+        cost_usd=DEFAULT_COST_USD,
         details=details,
     )
 

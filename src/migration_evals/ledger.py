@@ -19,14 +19,14 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable, Iterator, Optional
-
 
 # ---------------------------------------------------------------------------
 # Hashing + IO
 # ---------------------------------------------------------------------------
+
 
 def _canonical_json(payload: dict) -> str:
     """Return a deterministic JSON serialization of `payload`.
@@ -46,9 +46,7 @@ def _load_result_json(trial_dir: Path) -> dict:
     """Load `trial_dir/result.json`, raising FileNotFoundError if missing."""
     result_path = trial_dir / "result.json"
     if not result_path.is_file():
-        raise FileNotFoundError(
-            f"result.json not found in trial_dir={trial_dir}"
-        )
+        raise FileNotFoundError(f"result.json not found in trial_dir={trial_dir}")
     with result_path.open("r", encoding="utf-8") as f:
         return json.loads(f.read())
 
@@ -56,6 +54,7 @@ def _load_result_json(trial_dir: Path) -> dict:
 # ---------------------------------------------------------------------------
 # Ledger write path
 # ---------------------------------------------------------------------------
+
 
 def write_ledger_entry(trial_dir: Path, ledger_root: Path) -> Path:
     """Write a ledger entry for a single trial.
@@ -97,6 +96,7 @@ def write_ledger_entry(trial_dir: Path, ledger_root: Path) -> Path:
 # ---------------------------------------------------------------------------
 # Regression diff
 # ---------------------------------------------------------------------------
+
 
 @dataclass(frozen=True)
 class RegressionEntry:
@@ -161,9 +161,7 @@ def compute_regression(
             RegressionEntry(
                 task_id=task_id,
                 trial_dir=cand_trial_dir,
-                prior_agent_version=str(
-                    prior_payload.get("agent_version", "unknown")
-                ),
+                prior_agent_version=str(prior_payload.get("agent_version", "unknown")),
                 prior_model=str(prior_payload.get("agent_model", "unknown")),
             )
         )
@@ -174,7 +172,7 @@ def render_regression_markdown(
     entries: Iterable[RegressionEntry],
     from_dir: Path,
     to_dir: Path,
-    out_path: Optional[Path] = None,
+    out_path: Path | None = None,
 ) -> str:
     """Render a regression report as Markdown.
 
@@ -218,6 +216,7 @@ def render_regression_markdown(
 # CLI helper (invoked from migration_evals.cli)
 # ---------------------------------------------------------------------------
 
+
 def run_regression(
     from_dir: Path,
     to_dir: Path,
@@ -246,9 +245,7 @@ def run_regression(
     with out_path.open("w", encoding="utf-8") as f:
         f.write(markdown)
 
-    print(
-        f"regression: wrote {len(entries)} regressions to {out_path}"
-    )
+    print(f"regression: wrote {len(entries)} regressions to {out_path}")
     return 0
 
 

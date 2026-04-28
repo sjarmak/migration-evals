@@ -15,8 +15,9 @@ import re
 import shutil
 import subprocess
 import sys
+from collections.abc import Mapping, Sequence
 from pathlib import Path
-from typing import Any, List, Mapping, Sequence
+from typing import Any
 
 import pytest
 
@@ -48,7 +49,7 @@ class _Recorder:
 
     def __init__(self, responses: Sequence[Any]) -> None:
         self._responses = list(responses)
-        self.calls: List[Mapping[str, Any]] = []
+        self.calls: list[Mapping[str, Any]] = []
 
     def __call__(self, args: Sequence[str], **kwargs: Any) -> Any:
         self.calls.append({"args": list(args), "kwargs": dict(kwargs)})

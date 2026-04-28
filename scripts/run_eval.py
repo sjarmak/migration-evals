@@ -73,9 +73,10 @@ import argparse
 import json
 import os
 import sys
+from collections.abc import Iterable, Mapping
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Iterable, Mapping
+from typing import Any
 
 import yaml
 
@@ -87,10 +88,10 @@ _SCRIPTS = _REPO_ROOT / "scripts"
 if str(_SCRIPTS) not in sys.path:
     sys.path.insert(0, str(_SCRIPTS))
 
+import pull_changesets  # noqa: E402
+
 from migration_evals.changesets import get_provider  # noqa: E402
 from migration_evals.runner import STAGE_TO_TIER, run_from_config  # noqa: E402
-
-import pull_changesets  # noqa: E402
 
 
 def load_recipe_template(path: Path) -> dict[str, Any]:
@@ -166,10 +167,7 @@ def build_runner_config(
     ``path.name`` as both the trial-dir suffix and the task_id
     discriminator, so each path's basename must be the instance id.
     """
-    repos = [
-        {"path": str(p), "seed": idx + 1}
-        for idx, p in enumerate(funnel_input_paths)
-    ]
+    repos = [{"path": str(p), "seed": idx + 1} for idx, p in enumerate(funnel_input_paths)]
     cfg: dict[str, Any] = {
         "migration_id": template["migration_id"],
         "agent_model": agent_model,
@@ -193,9 +191,7 @@ def build_runner_config(
     return cfg
 
 
-def emit_manifest(
-    output_root: Path, template: Mapping[str, Any], repo_root: Path
-) -> Path:
+def emit_manifest(output_root: Path, template: Mapping[str, Any], repo_root: Path) -> Path:
     """Write ``<output_root>/manifest.json`` from the recipe's stamps block.
 
     Spec paths are rewritten as paths relative to ``output_root`` so the
@@ -222,9 +218,7 @@ def _parse_http_headers(raw: list[str]) -> dict[str, str]:
     headers: dict[str, str] = {}
     for entry in raw:
         if ":" not in entry:
-            raise ValueError(
-                f"--http-header expects KEY:VALUE, got {entry!r}"
-            )
+            raise ValueError(f"--http-header expects KEY:VALUE, got {entry!r}")
         key, _, value = entry.partition(":")
         key = key.strip()
         if not key:
@@ -265,9 +259,7 @@ def _parse_stages(raw: str) -> list[str]:
     stages = [s.strip() for s in raw.split(",") if s.strip()]
     bad = [s for s in stages if s not in STAGE_TO_TIER]
     if bad:
-        raise ValueError(
-            f"unknown stages {bad}; valid: {', '.join(sorted(STAGE_TO_TIER))}"
-        )
+        raise ValueError(f"unknown stages {bad}; valid: {', '.join(sorted(STAGE_TO_TIER))}")
     return stages
 
 
@@ -291,8 +283,7 @@ def _build_parser() -> argparse.ArgumentParser:
         default=[],
         metavar="KEY:VALUE",
         help=(
-            "Add a request header to every http-provider request. "
-            "Repeat for multiple headers."
+            "Add a request header to every http-provider request. " "Repeat for multiple headers."
         ),
     )
     parser.add_argument(
@@ -305,10 +296,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "--http-max-bytes",
         type=int,
         default=None,
-        help=(
-            "Per-response size cap for the http provider in bytes "
-            "(default: 64 MiB)."
-        ),
+        help=("Per-response size cap for the http provider in bytes " "(default: 64 MiB)."),
     )
     parser.add_argument(
         "--eval-root",
@@ -423,9 +411,7 @@ def main(argv: list[str] | None = None) -> int:
     return 2 if pull_failures else 0
 
 
-def _pull_all(
-    provider: Any, ids: Iterable[str], eval_root: Path
-) -> tuple[list[Path], int]:
+def _pull_all(provider: Any, ids: Iterable[str], eval_root: Path) -> tuple[list[Path], int]:
     """Stage each id via pull_changesets, partition into ok/failed."""
     pulled_ok: list[Path] = []
     failures = 0
@@ -441,9 +427,7 @@ def _pull_all(
     return pulled_ok, failures
 
 
-def _build_funnel_input_layout(
-    pulled_ok: list[Path], eval_root: Path
-) -> list[Path]:
+def _build_funnel_input_layout(pulled_ok: list[Path], eval_root: Path) -> list[Path]:
     """Symlink each <eval-root>/<id>/repo into <eval-root>/funnel-input/<id>.
 
     The runner derives both trial_dir and task_id from path.name, so the

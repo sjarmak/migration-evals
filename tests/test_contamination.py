@@ -16,8 +16,8 @@ sys.path.insert(0, str(_REPO_ROOT))
 import pytest  # noqa: E402
 
 from migration_evals.contamination import (  # noqa: E402
-    ContaminationReport,
     WARNING_THRESHOLD_PP,
+    ContaminationReport,
     split_scores,
 )
 

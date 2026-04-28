@@ -39,7 +39,7 @@ def generate(rng: random.Random, out_dir: Path) -> dict[str, Any]:
         f"            {target} {varname} = ({target}) o;\n"
         f"            return {varname}.toString();\n"
         "        }\n"
-        "        return \"other\";\n"
+        '        return "other";\n'
         "    }\n"
         "}\n"
     )

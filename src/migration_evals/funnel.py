@@ -17,8 +17,9 @@ signature. The known keys are ``"sandbox"``, ``"anthropic"``, and
 
 from __future__ import annotations
 
+from collections.abc import Callable, Mapping
 from pathlib import Path
-from typing import Any, Callable, Mapping, Optional
+from typing import Any
 
 from migration_evals.harness.recipe import Recipe
 from migration_evals.oracles import (
@@ -96,7 +97,7 @@ def _failure_class_for(tier_name: str) -> str:
 def _should_run(
     tier_name: str,
     *,
-    stages: Optional[tuple[str, ...]],
+    stages: tuple[str, ...] | None,
     is_synthetic: bool,
     enable_daikon: bool,
 ) -> bool:
@@ -115,7 +116,7 @@ def run_funnel(
     adapters: Mapping[str, Any],
     *,
     is_synthetic: bool = False,
-    stages: Optional[tuple[str, ...]] = None,
+    stages: tuple[str, ...] | None = None,
 ) -> FunnelResult:
     """Cascade ``repo`` through the tiered funnel and return a :class:`FunnelResult`.
 
@@ -172,9 +173,7 @@ def run_funnel(
         verdicts.append((tier_name, verdict))
         total_cost += float(verdict.cost_usd)
         if not verdict.passed:
-            quality_verdicts = _run_quality_oracles_safe(
-                repo_path, adapters
-            )
+            quality_verdicts = _run_quality_oracles_safe(repo_path, adapters)
             return FunnelResult(
                 per_tier_verdict=tuple(verdicts),
                 final_verdict=verdict,
@@ -228,6 +227,7 @@ def _run_quality_oracles_safe(
     # transitively imports verdict.py which imports nothing from funnel,
     # but keeping it deferred makes the lazy boundary explicit).
     from migration_evals.oracles.quality import run_quality_oracles
+
     try:
         return run_quality_oracles(repo_path, quality_spec)
     except Exception as exc:  # pragma: no cover - defensive

@@ -22,9 +22,10 @@ Loaded from the recipe YAML (``configs/recipes/<mig>.yaml``):
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Mapping, Optional, Tuple
+from typing import Any
 
 ALLOWED_BASELINE_TOOLS = ("sed", "comby", "gopls")
 ALLOWED_TOUCHED_PATHS_MODES = ("warn", "enforce")
@@ -39,7 +40,7 @@ class BaselinePattern:
     files: str = "**/*"  # glob applied within the repo
 
     @classmethod
-    def from_dict(cls, data: Mapping[str, Any]) -> "BaselinePattern":
+    def from_dict(cls, data: Mapping[str, Any]) -> BaselinePattern:
         return cls(
             match=str(data["match"]),
             replace=str(data["replace"]),
@@ -55,17 +56,14 @@ class QualitySpec:
     bits they have ground truth for.
     """
 
-    ground_truth_diff: Optional[Path] = None
-    touched_paths_allowlist: Optional[Tuple[str, ...]] = None
+    ground_truth_diff: Path | None = None
+    touched_paths_allowlist: tuple[str, ...] | None = None
     touched_paths_allowlist_mode: str = "warn"
-    baseline_tool: Optional[str] = None
-    baseline_pattern: Optional[BaselinePattern] = None
+    baseline_tool: str | None = None
+    baseline_pattern: BaselinePattern | None = None
 
     def __post_init__(self) -> None:
-        if (
-            self.baseline_tool is not None
-            and self.baseline_tool not in ALLOWED_BASELINE_TOOLS
-        ):
+        if self.baseline_tool is not None and self.baseline_tool not in ALLOWED_BASELINE_TOOLS:
             raise ValueError(
                 f"baseline_tool must be one of {ALLOWED_BASELINE_TOOLS}; "
                 f"got {self.baseline_tool!r}"
@@ -78,31 +76,23 @@ class QualitySpec:
             )
 
     @classmethod
-    def empty(cls) -> "QualitySpec":
+    def empty(cls) -> QualitySpec:
         return cls()
 
     @classmethod
-    def from_dict(
-        cls, data: Mapping[str, Any] | None
-    ) -> "QualitySpec":
+    def from_dict(cls, data: Mapping[str, Any] | None) -> QualitySpec:
         if not data:
             return cls.empty()
         ground_truth_raw = data.get("ground_truth_diff")
-        ground_truth = (
-            Path(str(ground_truth_raw)) if ground_truth_raw else None
-        )
+        ground_truth = Path(str(ground_truth_raw)) if ground_truth_raw else None
         allowlist_raw = data.get("touched_paths_allowlist")
-        allowlist: Optional[Tuple[str, ...]] = (
-            tuple(str(item) for item in allowlist_raw)
-            if allowlist_raw
-            else None
+        allowlist: tuple[str, ...] | None = (
+            tuple(str(item) for item in allowlist_raw) if allowlist_raw else None
         )
         baseline_tool = data.get("baseline_tool")
         baseline_pattern_raw = data.get("baseline_pattern")
         baseline_pattern = (
-            BaselinePattern.from_dict(baseline_pattern_raw)
-            if baseline_pattern_raw
-            else None
+            BaselinePattern.from_dict(baseline_pattern_raw) if baseline_pattern_raw else None
         )
         mode_raw = data.get("touched_paths_allowlist_mode") or "warn"
         return cls(

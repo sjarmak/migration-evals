@@ -43,7 +43,6 @@ from migration_evals.quality_spec import (  # noqa: E402
     QualitySpec,
 )
 
-
 # ---------------------------------------------------------------------------
 # diff_minimality
 # ---------------------------------------------------------------------------
@@ -56,8 +55,7 @@ def _write(repo: Path, name: str, content: str) -> None:
 
 
 def _agent_diff_one_file() -> str:
-    return dedent(
-        """\
+    return dedent("""\
         --- a/main.go
         +++ b/main.go
         @@ -3,5 +3,5 @@
@@ -67,8 +65,7 @@ def _agent_diff_one_file() -> str:
         -\t"github.com/foo/oldpkg"
         +\t"github.com/foo/newpkg"
          )
-        """
-    )
+        """)
 
 
 def _ground_truth_one_file_same() -> str:
@@ -78,8 +75,7 @@ def _ground_truth_one_file_same() -> str:
 
 def _agent_diff_with_extra_file() -> str:
     """Agent edits main.go AND extras.go - over-edit beyond ground truth."""
-    return dedent(
-        """\
+    return dedent("""\
         --- a/main.go
         +++ b/main.go
         @@ -3,5 +3,5 @@
@@ -90,8 +86,7 @@ def _agent_diff_with_extra_file() -> str:
         @@ -1,1 +1,1 @@
         -package extras
         +package extra2
-        """
-    )
+        """)
 
 
 def test_diff_minimality_clean_pass(tmp_path: Path) -> None:
@@ -132,9 +127,7 @@ def test_diff_minimality_breach_over_edit(tmp_path: Path) -> None:
     # over_edit_pct = 1/2 = 0.5 > 0.25 -> breach
     assert verdict.passed is False
     assert verdict.details["over_edit_pct"] == 0.5
-    assert any(
-        "over_edit_pct" in b for b in verdict.details["breaches"]
-    )
+    assert any("over_edit_pct" in b for b in verdict.details["breaches"])
 
 
 def test_diff_minimality_breach_diff_size_ratio(tmp_path: Path) -> None:
@@ -145,8 +138,7 @@ def test_diff_minimality_breach_diff_size_ratio(tmp_path: Path) -> None:
     _write(
         repo,
         "patch.diff",
-        dedent(
-            """\
+        dedent("""\
             --- a/main.go
             +++ b/main.go
             @@ -1,1 +1,7 @@
@@ -157,28 +149,21 @@ def test_diff_minimality_breach_diff_size_ratio(tmp_path: Path) -> None:
             +import "log"
             +import "time"
             +import "errors"
-            """
-        ),
+            """),
     )
     gt_path = tmp_path / "ground_truth.diff"
-    gt_path.write_text(
-        dedent(
-            """\
+    gt_path.write_text(dedent("""\
             --- a/main.go
             +++ b/main.go
             @@ -1,1 +1,2 @@
              package main
             +import "fmt"
-            """
-        )
-    )
+            """))
     verdict = diff_minimality.run(repo, QualitySpec(ground_truth_diff=gt_path))
     assert verdict.passed is False
     assert verdict.details["diff_size_ratio"] is not None
     assert verdict.details["diff_size_ratio"] > 2.0
-    assert any(
-        "diff_size_ratio" in b for b in verdict.details["breaches"]
-    )
+    assert any("diff_size_ratio" in b for b in verdict.details["breaches"])
 
 
 # ---------------------------------------------------------------------------
@@ -194,8 +179,7 @@ def test_idempotency_clean_post_state(tmp_path: Path) -> None:
     _write(
         repo,
         "main.go",
-        dedent(
-            """\
+        dedent("""\
             package main
 
             import (
@@ -203,8 +187,7 @@ def test_idempotency_clean_post_state(tmp_path: Path) -> None:
 
             \t"github.com/foo/newpkg"
             )
-            """
-        ),
+            """),
     )
     _write(repo, "patch.diff", _agent_diff_one_file())
     verdict = idempotency.run(repo, QualitySpec.empty())
@@ -222,8 +205,7 @@ def test_idempotency_drift_when_minus_line_still_present(
     _write(
         repo,
         "main.go",
-        dedent(
-            """\
+        dedent("""\
             package main
 
             import (
@@ -232,16 +214,13 @@ def test_idempotency_drift_when_minus_line_still_present(
             \t"github.com/foo/oldpkg"
             \t"github.com/foo/newpkg"
             )
-            """
-        ),
+            """),
     )
     _write(repo, "patch.diff", _agent_diff_one_file())
     verdict = idempotency.run(repo, QualitySpec.empty())
     assert verdict.passed is False
     assert verdict.details["idempotent"] is False
-    assert any(
-        "still present" in d for d in verdict.details["drift_examples"]
-    )
+    assert any("still present" in d for d in verdict.details["drift_examples"])
 
 
 def test_idempotency_drift_when_plus_line_missing(tmp_path: Path) -> None:
@@ -251,23 +230,19 @@ def test_idempotency_drift_when_plus_line_missing(tmp_path: Path) -> None:
     _write(
         repo,
         "main.go",
-        dedent(
-            """\
+        dedent("""\
             package main
 
             import (
             \t"fmt"
             )
-            """
-        ),
+            """),
     )
     _write(repo, "patch.diff", _agent_diff_one_file())
     verdict = idempotency.run(repo, QualitySpec.empty())
     assert verdict.passed is False
     assert verdict.details["idempotent"] is False
-    assert any(
-        "missing expected" in d for d in verdict.details["drift_examples"]
-    )
+    assert any("missing expected" in d for d in verdict.details["drift_examples"])
 
 
 def test_idempotency_skipped_when_no_patch(tmp_path: Path) -> None:
@@ -371,8 +346,7 @@ def test_baseline_sed_disagrees_when_pattern_still_matches(
 
 def _agent_diff_with_md_file() -> str:
     """Agent edits main.go AND a docs/README.md outside a Go-only allowlist."""
-    return dedent(
-        """\
+    return dedent("""\
         --- a/main.go
         +++ b/main.go
         @@ -3,5 +3,5 @@
@@ -383,21 +357,18 @@ def _agent_diff_with_md_file() -> str:
         @@ -1,1 +1,1 @@
         -old docs
         +new docs
-        """
-    )
+        """)
 
 
 def _agent_diff_nested_go() -> str:
     """Agent touches a deeply-nested Go file (`internal/pkg/foo.go`)."""
-    return dedent(
-        """\
+    return dedent("""\
         --- a/internal/pkg/foo.go
         +++ b/internal/pkg/foo.go
         @@ -1,1 +1,1 @@
         -package foo
         +package foo2
-        """
-    )
+        """)
 
 
 def _agent_diff_with_deletion() -> str:
@@ -407,8 +378,7 @@ def _agent_diff_with_deletion() -> str:
     from the ``--- a/`` lines. The allowlist oracle should record both
     source paths but never the literal ``/dev/null`` token.
     """
-    return dedent(
-        """\
+    return dedent("""\
         --- a/legacy.go
         +++ /dev/null
         @@ -1,1 +0,0 @@
@@ -422,8 +392,7 @@ def _agent_diff_with_deletion() -> str:
         @@ -1,1 +1,1 @@
         -old
         +new
-        """
-    )
+        """)
 
 
 def test_touched_paths_skipped_when_no_allowlist(tmp_path: Path) -> None:
@@ -604,15 +573,13 @@ def test_touched_paths_records_both_sides_of_rename(tmp_path: Path) -> None:
     side but not the other surfaces the violation."""
     repo = tmp_path / "repo"
     repo.mkdir()
-    rename_diff = dedent(
-        """\
+    rename_diff = dedent("""\
         --- a/old_pkg/foo.go
         +++ b/new_pkg/foo.go
         @@ -1,1 +1,1 @@
         -package old_pkg
         +package new_pkg
-        """
-    )
+        """)
     _write(repo, "patch.diff", rename_diff)
     spec = QualitySpec(
         touched_paths_allowlist=("new_pkg/**",),
@@ -667,7 +634,8 @@ def test_touched_paths_strips_git_metadata_after_tab(tmp_path: Path) -> None:
 
 
 def test_touched_paths_skipped_when_diff_exceeds_size_cap(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A hostile multi-megabyte diff must not OOM the host."""
     repo = tmp_path / "repo"
@@ -711,14 +679,18 @@ def test_run_funnel_attaches_quality_verdicts(tmp_path: Path) -> None:
     repo.mkdir()
     _write(repo, "patch.diff", _agent_diff_one_file())
     recipe = Recipe(
-        dockerfile="FROM scratch", build_cmd="true", test_cmd="true",
+        dockerfile="FROM scratch",
+        build_cmd="true",
+        test_cmd="true",
         harness_provenance={
-            "model": "test", "prompt_version": "v1",
+            "model": "test",
+            "prompt_version": "v1",
             "timestamp": "2026-04-26",
         },
     )
     fr = run_funnel(
-        repo, recipe,
+        repo,
+        recipe,
         adapters={"quality_spec": QualitySpec.empty()},
         is_synthetic=False,
         stages=("diff_valid",),
@@ -744,15 +716,10 @@ def test_calibration_corpus_exercises_quality_oracles() -> None:
     each oracle (so they are observably wired to real inputs, not just
     silent no-ops).
     """
-    fixtures = (
-        _REPO_ROOT
-        / "tests" / "fixtures" / "calibration" / "go_import_rewrite"
-    )
+    fixtures = _REPO_ROOT / "tests" / "fixtures" / "calibration" / "go_import_rewrite"
     spec = QualitySpec(
         ground_truth_diff=(
-            _REPO_ROOT
-            / "configs" / "recipes"
-            / "go_import_rewrite.ground_truth.diff"
+            _REPO_ROOT / "configs" / "recipes" / "go_import_rewrite.ground_truth.diff"
         ),
         touched_paths_allowlist=("**/*.go",),
         baseline_tool="sed",
@@ -792,15 +759,21 @@ def test_run_funnel_omits_quality_when_no_spec(tmp_path: Path) -> None:
     repo.mkdir()
     _write(repo, "patch.diff", _agent_diff_one_file())
     recipe = Recipe(
-        dockerfile="FROM scratch", build_cmd="true", test_cmd="true",
+        dockerfile="FROM scratch",
+        build_cmd="true",
+        test_cmd="true",
         harness_provenance={
-            "model": "test", "prompt_version": "v1",
+            "model": "test",
+            "prompt_version": "v1",
             "timestamp": "2026-04-26",
         },
     )
     fr = run_funnel(
-        repo, recipe, adapters={},
-        is_synthetic=False, stages=("diff_valid",),
+        repo,
+        recipe,
+        adapters={},
+        is_synthetic=False,
+        stages=("diff_valid",),
     )
     assert fr.quality_verdicts == ()
     assert fr.to_dict()["quality_verdicts"] == []

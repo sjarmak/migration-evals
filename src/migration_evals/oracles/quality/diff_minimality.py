@@ -77,13 +77,17 @@ def run(repo_path: Path, quality_spec: QualitySpec) -> OracleVerdict:
     repo_path = Path(repo_path)
     if quality_spec.ground_truth_diff is None:
         return OracleVerdict(
-            tier=TIER_NAME, passed=True, cost_usd=DEFAULT_COST_USD,
+            tier=TIER_NAME,
+            passed=True,
+            cost_usd=DEFAULT_COST_USD,
             details={"skipped": True, "reason": "no ground_truth_diff"},
         )
     ground_truth = Path(quality_spec.ground_truth_diff)
     if not ground_truth.is_file():
         return OracleVerdict(
-            tier=TIER_NAME, passed=True, cost_usd=DEFAULT_COST_USD,
+            tier=TIER_NAME,
+            passed=True,
+            cost_usd=DEFAULT_COST_USD,
             details={
                 "skipped": True,
                 "reason": "ground_truth_diff missing on disk",
@@ -94,13 +98,13 @@ def run(repo_path: Path, quality_spec: QualitySpec) -> OracleVerdict:
     agent_path = _find_agent_diff(repo_path)
     if agent_path is None:
         return OracleVerdict(
-            tier=TIER_NAME, passed=False, cost_usd=DEFAULT_COST_USD,
+            tier=TIER_NAME,
+            passed=False,
+            cost_usd=DEFAULT_COST_USD,
             details={"reason": "no agent patch artifact found"},
         )
 
-    agent_added, agent_removed, agent_files = _diff_summary(
-        _read_diff(agent_path)
-    )
+    agent_added, agent_removed, agent_files = _diff_summary(_read_diff(agent_path))
     gt_added, gt_removed, gt_files = _diff_summary(_read_diff(ground_truth))
 
     agent_total = agent_added + agent_removed
@@ -116,9 +120,7 @@ def run(repo_path: Path, quality_spec: QualitySpec) -> OracleVerdict:
     if not union_files:
         touched_files_overlap = None
     else:
-        touched_files_overlap = (
-            len(agent_files & gt_files) / len(union_files)
-        )
+        touched_files_overlap = len(agent_files & gt_files) / len(union_files)
 
     over_edit_pct: float | None
     if not agent_files:
@@ -127,29 +129,15 @@ def run(repo_path: Path, quality_spec: QualitySpec) -> OracleVerdict:
         over_edit_pct = len(agent_files - gt_files) / len(agent_files)
 
     breaches: list[str] = []
-    if (
-        diff_size_ratio is not None
-        and diff_size_ratio > DEFAULT_MAX_DIFF_SIZE_RATIO
-    ):
+    if diff_size_ratio is not None and diff_size_ratio > DEFAULT_MAX_DIFF_SIZE_RATIO:
         breaches.append(
-            f"diff_size_ratio={diff_size_ratio:.2f} > "
-            f"{DEFAULT_MAX_DIFF_SIZE_RATIO}"
+            f"diff_size_ratio={diff_size_ratio:.2f} > " f"{DEFAULT_MAX_DIFF_SIZE_RATIO}"
         )
-    if (
-        over_edit_pct is not None
-        and over_edit_pct > DEFAULT_MAX_OVER_EDIT_PCT
-    ):
+    if over_edit_pct is not None and over_edit_pct > DEFAULT_MAX_OVER_EDIT_PCT:
+        breaches.append(f"over_edit_pct={over_edit_pct:.2f} > " f"{DEFAULT_MAX_OVER_EDIT_PCT}")
+    if touched_files_overlap is not None and touched_files_overlap < DEFAULT_MIN_FILES_OVERLAP:
         breaches.append(
-            f"over_edit_pct={over_edit_pct:.2f} > "
-            f"{DEFAULT_MAX_OVER_EDIT_PCT}"
-        )
-    if (
-        touched_files_overlap is not None
-        and touched_files_overlap < DEFAULT_MIN_FILES_OVERLAP
-    ):
-        breaches.append(
-            f"touched_files_overlap={touched_files_overlap:.2f} < "
-            f"{DEFAULT_MIN_FILES_OVERLAP}"
+            f"touched_files_overlap={touched_files_overlap:.2f} < " f"{DEFAULT_MIN_FILES_OVERLAP}"
         )
     passed = not breaches
     details: dict[str, Any] = {
@@ -171,7 +159,9 @@ def run(repo_path: Path, quality_spec: QualitySpec) -> OracleVerdict:
     if breaches:
         details["breaches"] = breaches
     return OracleVerdict(
-        tier=TIER_NAME, passed=passed, cost_usd=DEFAULT_COST_USD,
+        tier=TIER_NAME,
+        passed=passed,
+        cost_usd=DEFAULT_COST_USD,
         details=details,
     )
 

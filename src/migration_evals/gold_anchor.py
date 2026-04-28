@@ -28,9 +28,10 @@ from __future__ import annotations
 import json
 import math
 import random
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Mapping, Sequence
+from typing import Any
 
 ACCEPT = "accept"
 REJECT = "reject"
@@ -105,15 +106,12 @@ def load_gold_set(path: Path) -> list[GoldEntry]:
     with path.open() as fh:
         data = json.load(fh)
     if not isinstance(data, list):
-        raise ValueError(
-            f"gold set at {path} must be a JSON array; got {type(data).__name__}"
-        )
+        raise ValueError(f"gold set at {path} must be a JSON array; got {type(data).__name__}")
     entries: list[GoldEntry] = []
     for idx, raw in enumerate(data):
         if not isinstance(raw, dict):
             raise ValueError(
-                f"gold set entry #{idx} at {path} must be an object; "
-                f"got {type(raw).__name__}"
+                f"gold set entry #{idx} at {path} must be an object; " f"got {type(raw).__name__}"
             )
         try:
             entry = GoldEntry(
@@ -155,9 +153,7 @@ def _phi(x: Sequence[int], y: Sequence[int]) -> float:
     if any(part == 0 for part in denom_parts):
         # Degenerate: one marginal is empty; Phi is undefined. Treat as 0.
         return 0.0
-    denom = math.sqrt(
-        denom_parts[0] * denom_parts[1] * denom_parts[2] * denom_parts[3]
-    )
+    denom = math.sqrt(denom_parts[0] * denom_parts[1] * denom_parts[2] * denom_parts[3])
     return numerator / denom
 
 

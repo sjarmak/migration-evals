@@ -22,7 +22,6 @@ thresholds are breached. The remaining oracles are informational.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Tuple
 
 from migration_evals.oracles.quality import (
     baseline_comparison,
@@ -43,7 +42,7 @@ QUALITY_ORACLES = (
 
 def run_quality_oracles(
     repo_path: Path, quality_spec: QualitySpec
-) -> Tuple[Tuple[str, OracleVerdict], ...]:
+) -> tuple[tuple[str, OracleVerdict], ...]:
     """Run every quality oracle in a fixed order.
 
     The order is ``diff_minimality``, ``idempotency``,

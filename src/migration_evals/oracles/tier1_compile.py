@@ -13,8 +13,9 @@ replay cassette. The only contract is ``exec(...)`` returning a dict with
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from pathlib import Path
-from typing import Any, Mapping, Optional
+from typing import Any
 
 from migration_evals.harness.recipe import Recipe
 from migration_evals.oracles.verdict import OracleVerdict
@@ -47,9 +48,9 @@ def run(
     *,
     image: str = DEFAULT_IMAGE,
     timeout_s: int = DEFAULT_TIMEOUT_S,
-    cassette: Optional[Any] = None,
+    cassette: Any | None = None,
     cost_usd: float = DEFAULT_COST_USD,
-    env: Optional[Mapping[str, str]] = None,
+    env: Mapping[str, str] | None = None,
 ) -> OracleVerdict:
     """Run the recipe's build command and return a compile-only verdict."""
     repo_path = Path(repo_path)

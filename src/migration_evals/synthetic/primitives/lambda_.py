@@ -14,7 +14,11 @@ NAME = "lambda"
 
 _FUNCTIONAL_INTERFACES = (
     ("Runnable", "void run()", ""),
-    ("java.util.concurrent.Callable<String>", "String call() throws Exception", "return \"{literal}\";"),
+    (
+        "java.util.concurrent.Callable<String>",
+        "String call() throws Exception",
+        'return "{literal}";',
+    ),
     ("java.util.function.Supplier<Integer>", "Integer get()", "return {literal_int};"),
 )
 

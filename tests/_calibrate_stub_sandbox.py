@@ -28,14 +28,15 @@ from __future__ import annotations
 
 import json
 import os
+from collections.abc import Mapping
 from pathlib import Path
-from typing import Any, Mapping, Optional
+from typing import Any
 
 LOG_ENV_VAR = "CALIBRATE_STUB_LOG"
 SCRIPT_ENV_VAR = "CALIBRATE_STUB_SCRIPT"
 
 
-def _log_path() -> Optional[Path]:
+def _log_path() -> Path | None:
     raw = os.environ.get(LOG_ENV_VAR)
     return Path(raw) if raw else None
 
@@ -78,8 +79,8 @@ class ScriptedSandbox:
         self,
         *,
         image: str,
-        env: Optional[Mapping[str, str]] = None,
-        cassette: Optional[Any] = None,
+        env: Mapping[str, str] | None = None,
+        cassette: Any | None = None,
     ) -> str:
         self._next_id += 1
         sandbox_id = f"stub-{self._fixture_id}-{self._next_id}"
@@ -100,7 +101,7 @@ class ScriptedSandbox:
         *,
         command: str,
         timeout_s: int = 600,
-        cassette: Optional[Any] = None,
+        cassette: Any | None = None,
     ) -> Mapping[str, Any]:
         # Pick the first scripted entry whose key appears in the
         # command. Mechanical substring match — keeps this stub honest

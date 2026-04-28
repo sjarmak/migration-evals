@@ -13,9 +13,10 @@ absolute value) the ``warning_flag`` is raised.
 
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date, datetime
-from typing import Any, Mapping, Sequence
+from typing import Any
 
 WARNING_THRESHOLD_PP = 5.0
 

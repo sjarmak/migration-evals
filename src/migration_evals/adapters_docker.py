@@ -37,10 +37,11 @@ import subprocess
 import sys
 import tempfile
 import uuid
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from types import TracebackType
-from typing import Any, Mapping, Optional
+from typing import Any
 
 from migration_evals.sandbox_policy import SandboxPolicy
 
@@ -125,7 +126,7 @@ class DockerSandboxAdapter:
         *,
         docker_bin: str = DEFAULT_DOCKER_BIN,
         workdir: str = DEFAULT_WORKDIR,
-        policy: Optional[SandboxPolicy] = None,
+        policy: SandboxPolicy | None = None,
     ) -> None:
         self._repo_path = Path(repo_path).resolve()
         self._docker_bin = docker_bin
@@ -208,8 +209,8 @@ class DockerSandboxAdapter:
         self,
         *,
         image: str,
-        env: Optional[Mapping[str, str]] = None,
-        cassette: Optional[Any] = None,
+        env: Mapping[str, str] | None = None,
+        cassette: Any | None = None,
     ) -> str:
         """Start a detached, hardened container and return its id.
 
@@ -229,7 +230,7 @@ class DockerSandboxAdapter:
             # BEFORE the workload runs, so the workload can be attached
             # to the internal network with HTTP_PROXY env vars in one
             # shot.
-            egress: Optional[_EgressFilter] = None
+            egress: _EgressFilter | None = None
             if self._policy.network == "pull":
                 egress = self._setup_egress_filter(scratch_host)
                 stack.callback(self._teardown_egress_filter, egress)
@@ -257,8 +258,8 @@ class DockerSandboxAdapter:
         *,
         image: str,
         scratch_host: Path,
-        egress: Optional[_EgressFilter],
-        env: Optional[Mapping[str, str]],
+        egress: _EgressFilter | None,
+        env: Mapping[str, str] | None,
     ) -> list[str]:
         """Compose the full ``docker run`` argv for the workload container.
 
@@ -746,7 +747,7 @@ class DockerSandboxAdapter:
         *,
         command: str,
         timeout_s: int = 600,
-        cassette: Optional[Any] = None,
+        cassette: Any | None = None,
     ) -> Mapping[str, Any]:
         """Execute ``command`` inside the sandbox via ``sh -c``."""
         container_id = self._containers[sandbox_id]
@@ -821,7 +822,7 @@ def build_sandbox_adapter(
     *,
     repo_path: Path,
     adapters_cfg: Mapping[str, Any],
-    cassette_dir: Optional[Path],
+    cassette_dir: Path | None,
 ) -> Any:
     """Pick the sandbox adapter implied by ``adapters_cfg``.
 

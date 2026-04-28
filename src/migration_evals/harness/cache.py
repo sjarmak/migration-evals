@@ -21,7 +21,7 @@ import json
 import shutil
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Final, Optional
+from typing import Final
 
 from migration_evals.harness.recipe import Recipe
 
@@ -82,7 +82,7 @@ def _entry_dir(content_hash_value: str, root: Path) -> Path:
     return root / content_hash_value
 
 
-def lookup(content_hash_value: str, root: Path) -> Optional[Recipe]:
+def lookup(content_hash_value: str, root: Path) -> Recipe | None:
     """Return the cached recipe for a hash, or ``None`` if absent/corrupt.
 
     A corrupt cache entry (unreadable JSON, missing fields) is treated as a
@@ -112,7 +112,7 @@ def store(content_hash_value: str, recipe: Recipe, root: Path) -> Path:
     return recipe_path
 
 
-def cached_at(content_hash_value: str, root: Path) -> Optional[datetime]:
+def cached_at(content_hash_value: str, root: Path) -> datetime | None:
     """Return the ``cached_at`` timestamp of a cache entry, or ``None``."""
     recipe_path = _entry_dir(content_hash_value, root) / RECIPE_FILE_NAME
     if not recipe_path.is_file():

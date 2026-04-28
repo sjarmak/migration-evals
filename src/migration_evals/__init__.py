@@ -1,4 +1,4 @@
-""" migration eval framework (scaffold)."""
+"""migration eval framework (scaffold)."""
 
 from migration_evals.types import FailureClass, OracleTier
 

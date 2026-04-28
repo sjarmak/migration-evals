@@ -178,14 +178,22 @@ def test_main_runs_funnel_tier0_and_writes_result_jsons(
 
     rc = re_mod.main(
         [
-            "--migration", migration_id,
-            "--provider", "filesystem",
-            "--root", str(staged),
-            "--eval-root", str(eval_root),
-            "--output-root", str(out_root),
-            "--variant", "smoke",
-            "--stages", "diff",
-            "good", "bad",
+            "--migration",
+            migration_id,
+            "--provider",
+            "filesystem",
+            "--root",
+            str(staged),
+            "--eval-root",
+            str(eval_root),
+            "--output-root",
+            str(out_root),
+            "--variant",
+            "smoke",
+            "--stages",
+            "diff",
+            "good",
+            "bad",
         ]
     )
     assert rc == 0
@@ -226,13 +234,20 @@ def test_main_emits_manifest_and_passes_publication_gate(
 
     rc = re_mod.main(
         [
-            "--migration", "java8_17",
-            "--provider", "filesystem",
-            "--root", str(staged),
-            "--eval-root", str(eval_root),
-            "--output-root", str(out_root),
-            "--variant", "smoke",
-            "--stages", "diff",
+            "--migration",
+            "java8_17",
+            "--provider",
+            "filesystem",
+            "--root",
+            str(staged),
+            "--eval-root",
+            str(eval_root),
+            "--output-root",
+            str(out_root),
+            "--variant",
+            "smoke",
+            "--stages",
+            "diff",
             "good",
         ]
     )
@@ -246,9 +261,7 @@ def test_main_emits_manifest_and_passes_publication_gate(
         # Paths are written relative to output_root and must resolve to
         # a real committed file.
         resolved = (out_root / manifest[key]).resolve()
-        assert resolved.is_file(), (
-            f"manifest[{key!r}] points at non-existent file: {resolved}"
-        )
+        assert resolved.is_file(), f"manifest[{key!r}] points at non-existent file: {resolved}"
 
     # Publication gate must pass against the run dir straight from the
     # driver - no manual stamping or post-processing.
@@ -266,8 +279,7 @@ def test_main_emits_manifest_and_passes_publication_gate(
         env={**os.environ, "PYTHONPATH": str(_REPO_ROOT / "src")},
     )
     assert proc.returncode == 0, (
-        f"gate failed on driver output: stdout={proc.stdout!r} "
-        f"stderr={proc.stderr!r}"
+        f"gate failed on driver output: stdout={proc.stdout!r} " f"stderr={proc.stderr!r}"
     )
 
 
@@ -285,19 +297,27 @@ def test_main_skips_pull_failures_and_returns_partial_exit(
 
     rc = re_mod.main(
         [
-            "--migration", "java8_17",
-            "--provider", "filesystem",
-            "--root", str(staged),
-            "--eval-root", str(eval_root),
-            "--output-root", str(out_root),
-            "--variant", "smoke",
-            "--stages", "diff",
-            "good", "missing",
+            "--migration",
+            "java8_17",
+            "--provider",
+            "filesystem",
+            "--root",
+            str(staged),
+            "--eval-root",
+            str(eval_root),
+            "--output-root",
+            str(out_root),
+            "--variant",
+            "smoke",
+            "--stages",
+            "diff",
+            "good",
+            "missing",
         ]
     )
     # Pull fail counts as a non-zero exit; result.json still emitted for "good".
     assert rc == 2
-    assert (list(out_root.glob("good_*/result.json"))), "good instance must still produce result.json"
+    assert list(out_root.glob("good_*/result.json")), "good instance must still produce result.json"
 
 
 # -- batch-change-canonical fixtures --------------------------------------
@@ -368,21 +388,26 @@ def test_canonical_example_passes_tier0(
     url, sha = request.getfixturevalue(remote_fixture)
     example = _CANONICAL_EXAMPLES / example_subpath
     staged = tmp_path / "staged"
-    _stage_canonical(
-        staged, instance_id, example_dir=example, repo_url=url, sha=sha
-    )
+    _stage_canonical(staged, instance_id, example_dir=example, repo_url=url, sha=sha)
     eval_root = tmp_path / "eval"
     out_root = tmp_path / "out"
 
     rc = re_mod.main(
         [
-            "--migration", migration_id,
-            "--provider", "filesystem",
-            "--root", str(staged),
-            "--eval-root", str(eval_root),
-            "--output-root", str(out_root),
-            "--variant", "canonical",
-            "--stages", "diff",
+            "--migration",
+            migration_id,
+            "--provider",
+            "filesystem",
+            "--root",
+            str(staged),
+            "--eval-root",
+            str(eval_root),
+            "--output-root",
+            str(out_root),
+            "--variant",
+            "canonical",
+            "--stages",
+            "diff",
             instance_id,
         ]
     )
@@ -391,9 +416,7 @@ def test_canonical_example_passes_tier0(
     written = sorted(out_root.glob("*/result.json"))
     assert len(written) == 1
     payload = json.loads(written[0].read_text())
-    assert payload["success"] is True, (
-        f"canonical {migration_id} must pass tier 0; got {payload}"
-    )
+    assert payload["success"] is True, f"canonical {migration_id} must pass tier 0; got {payload}"
     assert payload["migration_id"] == migration_id
 
 
@@ -404,10 +427,14 @@ def test_build_provider_config_filesystem_requires_root(re_mod) -> None:
     parser = re_mod._build_parser()
     args = parser.parse_args(
         [
-            "--migration", "java8_17",
-            "--provider", "filesystem",
-            "--output-root", "/tmp/out",
-            "--variant", "v",
+            "--migration",
+            "java8_17",
+            "--provider",
+            "filesystem",
+            "--output-root",
+            "/tmp/out",
+            "--variant",
+            "v",
             "x",
         ]
     )
@@ -419,10 +446,14 @@ def test_build_provider_config_http_requires_base_url(re_mod) -> None:
     parser = re_mod._build_parser()
     args = parser.parse_args(
         [
-            "--migration", "java8_17",
-            "--provider", "http",
-            "--output-root", "/tmp/out",
-            "--variant", "v",
+            "--migration",
+            "java8_17",
+            "--provider",
+            "http",
+            "--output-root",
+            "/tmp/out",
+            "--variant",
+            "v",
             "x",
         ]
     )
@@ -434,15 +465,24 @@ def test_build_provider_config_http_threads_through_optionals(re_mod) -> None:
     parser = re_mod._build_parser()
     args = parser.parse_args(
         [
-            "--migration", "java8_17",
-            "--provider", "http",
-            "--base-url", "https://artifacts.example.com",
-            "--http-header", "Authorization: Bearer xyz",
-            "--http-header", "X-Trace: abc",
-            "--http-timeout-s", "5.0",
-            "--http-max-bytes", "1024",
-            "--output-root", "/tmp/out",
-            "--variant", "v",
+            "--migration",
+            "java8_17",
+            "--provider",
+            "http",
+            "--base-url",
+            "https://artifacts.example.com",
+            "--http-header",
+            "Authorization: Bearer xyz",
+            "--http-header",
+            "X-Trace: abc",
+            "--http-timeout-s",
+            "5.0",
+            "--http-max-bytes",
+            "1024",
+            "--output-root",
+            "/tmp/out",
+            "--variant",
+            "v",
             "x",
         ]
     )
@@ -465,12 +505,18 @@ def test_parse_http_headers_rejects_malformed(re_mod) -> None:
 def test_main_unknown_migration_returns_exit_1(re_mod, tmp_path: Path) -> None:
     rc = re_mod.main(
         [
-            "--migration", "bogus_migration",
-            "--provider", "filesystem",
-            "--root", str(tmp_path),
-            "--eval-root", str(tmp_path / "eval"),
-            "--output-root", str(tmp_path / "out"),
-            "--variant", "smoke",
+            "--migration",
+            "bogus_migration",
+            "--provider",
+            "filesystem",
+            "--root",
+            str(tmp_path),
+            "--eval-root",
+            str(tmp_path / "eval"),
+            "--output-root",
+            str(tmp_path / "out"),
+            "--variant",
+            "smoke",
             "good",
         ]
     )

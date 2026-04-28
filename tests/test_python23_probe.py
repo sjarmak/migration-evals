@@ -23,9 +23,7 @@ import pytest
 from migration_evals import python23_probe
 from migration_evals.synthetic import python2_generator
 
-_FIXTURE_REPOS = (
-    Path(__file__).resolve().parent / "fixtures" / "python2_repos"
-)
+_FIXTURE_REPOS = Path(__file__).resolve().parent / "fixtures" / "python2_repos"
 
 
 def test_generator_emits_three_distinct_case_types(tmp_path: Path) -> None:
@@ -39,9 +37,9 @@ def test_generator_emits_three_distinct_case_types(tmp_path: Path) -> None:
         meta = json.loads((repo_dir / "python2_meta.json").read_text())
         observed.add(meta["case_type"])
 
-    assert {"str_bytes", "setup_py_div", "two_to_three"}.issubset(observed), (
-        f"expected all three case types, got {observed}"
-    )
+    assert {"str_bytes", "setup_py_div", "two_to_three"}.issubset(
+        observed
+    ), f"expected all three case types, got {observed}"
     # Each emitted repo carries a setup.py (no pyproject.toml - that absence
     # is part of the falsification surface for the harness module).
     for repo_dir in repos:
@@ -95,9 +93,9 @@ def test_schema_revision_required_true_branch_real_probe_run(
     assert findings["schema_revision_required"] is True
 
     modules_with_mismatches = set(findings["modules_with_mismatches"])
-    assert len(modules_with_mismatches) >= 2, (
-        f"expected ≥2 modules with mismatches; got {modules_with_mismatches}"
-    )
+    assert (
+        len(modules_with_mismatches) >= 2
+    ), f"expected ≥2 modules with mismatches; got {modules_with_mismatches}"
 
     # Specifically: synthetic and ledger must trip naturally on a Python repo
     # set against the Java-shaped schemas. (Harness also trips because Recipe
@@ -124,16 +122,10 @@ def test_schema_revision_required_false_branch_synthetic_injection() -> None:
         "synthetic": [],
         "ledger": [],
     }
-    assert (
-        python23_probe.compute_schema_revision_required(one_module_mismatch)
-        is False
-    )
+    assert python23_probe.compute_schema_revision_required(one_module_mismatch) is False
 
     zero_modules_mismatch = {"harness": [], "synthetic": [], "ledger": []}
-    assert (
-        python23_probe.compute_schema_revision_required(zero_modules_mismatch)
-        is False
-    )
+    assert python23_probe.compute_schema_revision_required(zero_modules_mismatch) is False
 
     # Sanity: two distinct modules → True.
     two_modules_mismatch = {
@@ -155,10 +147,7 @@ def test_schema_revision_required_false_branch_synthetic_injection() -> None:
         ],
         "ledger": [],
     }
-    assert (
-        python23_probe.compute_schema_revision_required(two_modules_mismatch)
-        is True
-    )
+    assert python23_probe.compute_schema_revision_required(two_modules_mismatch) is True
 
 
 def test_probe_findings_capture_python_runtime_tier_in_ledger_mismatch(

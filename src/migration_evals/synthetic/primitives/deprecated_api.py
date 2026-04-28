@@ -34,7 +34,9 @@ def generate(rng: random.Random, out_dir: Path) -> dict[str, Any]:
         elif kind == "date_ctor":
             lines.append(
                 "        "
-                + tpl.format(year=rng.randint(70, 120), month=rng.randint(0, 11), day=rng.randint(1, 28))
+                + tpl.format(
+                    year=rng.randint(70, 120), month=rng.randint(0, 11), day=rng.randint(1, 28)
+                )
             )
         else:
             lines.append("        Thread t = new Thread(() -> {});")
@@ -48,7 +50,7 @@ def generate(rng: random.Random, out_dir: Path) -> dict[str, Any]:
         "package com.example;\n"
         "\n"
         f"public class {class_name} {{\n"
-        "    @SuppressWarnings(\"deprecation\")\n"
+        '    @SuppressWarnings("deprecation")\n'
         "    public void run() {\n"
         f"{body}\n"
         "    }\n"

@@ -40,8 +40,7 @@ def generate(rng: random.Random, out_dir: Path) -> dict[str, Any]:
     (java_dir / f"{enum_name}.java").write_text(enum_source, encoding="utf-8")
 
     case_bodies = "\n".join(
-        f"            case {c}:\n                return \"{c.lower()}\";"
-        for c in cases
+        f'            case {c}:\n                return "{c.lower()}";' for c in cases
     )
     class_source = (
         "package com.example;\n"
@@ -51,7 +50,7 @@ def generate(rng: random.Random, out_dir: Path) -> dict[str, Any]:
         "        switch (value) {\n"
         f"{case_bodies}\n"
         "            default:\n"
-        "                return \"unknown\";\n"
+        '                return "unknown";\n'
         "        }\n"
         "    }\n"
         "}\n"

@@ -3,7 +3,7 @@
 
 
 def emit_payload():
-    payload = "foo".encode()
+    payload = "foo".encode()  # noqa: UP012 — fixture exemplifies py2 str-is-bytes idiom
     # Python 2 happily concatenates a str (bytes) with another str.
     # Python 3 forbids bytes + str without explicit decode/encode.
     return payload + b"-bar"

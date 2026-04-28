@@ -65,9 +65,7 @@ def _read_text(path: Path) -> str:
         return ""
 
 
-def _apply_baseline_sed(
-    pre_state: str, pattern: BaselinePattern
-) -> tuple[str, int]:
+def _apply_baseline_sed(pre_state: str, pattern: BaselinePattern) -> tuple[str, int]:
     """Apply the ``sed``-style regex once and return (output, n_subs)."""
     return re.subn(pattern.match, pattern.replace, pre_state)
 
@@ -80,17 +78,20 @@ def run(repo_path: Path, quality_spec: QualitySpec) -> OracleVerdict:
     repo_path = Path(repo_path)
     if quality_spec.baseline_tool is None:
         return OracleVerdict(
-            tier=TIER_NAME, passed=True, cost_usd=DEFAULT_COST_USD,
+            tier=TIER_NAME,
+            passed=True,
+            cost_usd=DEFAULT_COST_USD,
             details={"skipped": True, "reason": "no baseline_tool"},
         )
     if quality_spec.baseline_tool != "sed":
         return OracleVerdict(
-            tier=TIER_NAME, passed=True, cost_usd=DEFAULT_COST_USD,
+            tier=TIER_NAME,
+            passed=True,
+            cost_usd=DEFAULT_COST_USD,
             details={
                 "skipped": True,
                 "reason": (
-                    f"baseline_tool {quality_spec.baseline_tool!r} not "
-                    "implemented in this ship"
+                    f"baseline_tool {quality_spec.baseline_tool!r} not " "implemented in this ship"
                 ),
                 "baseline_tool": quality_spec.baseline_tool,
             },
@@ -98,7 +99,9 @@ def run(repo_path: Path, quality_spec: QualitySpec) -> OracleVerdict:
     pattern = quality_spec.baseline_pattern
     if pattern is None:
         return OracleVerdict(
-            tier=TIER_NAME, passed=True, cost_usd=DEFAULT_COST_USD,
+            tier=TIER_NAME,
+            passed=True,
+            cost_usd=DEFAULT_COST_USD,
             details={
                 "skipped": True,
                 "reason": "baseline_tool=sed but baseline_pattern missing",
@@ -107,7 +110,9 @@ def run(repo_path: Path, quality_spec: QualitySpec) -> OracleVerdict:
     agent_path = _find_agent_diff(repo_path)
     if agent_path is None:
         return OracleVerdict(
-            tier=TIER_NAME, passed=True, cost_usd=DEFAULT_COST_USD,
+            tier=TIER_NAME,
+            passed=True,
+            cost_usd=DEFAULT_COST_USD,
             details={
                 "skipped": True,
                 "reason": "no agent patch artifact to compare against",
@@ -116,9 +121,7 @@ def run(repo_path: Path, quality_spec: QualitySpec) -> OracleVerdict:
 
     diff_text = _read_text(agent_path)
     touched = _files_touched_by_diff(diff_text)
-    matched_targets = [
-        t for t in touched if _file_matches_glob(t, pattern.files)
-    ]
+    matched_targets = [t for t in touched if _file_matches_glob(t, pattern.files)]
 
     n_files = 0
     n_baseline_substitutions = 0
@@ -160,9 +163,7 @@ def run(repo_path: Path, quality_spec: QualitySpec) -> OracleVerdict:
     # substitutions on every post-state file (i.e. the post-state
     # already has the canonical replacement) AND the agent also touched
     # those files, the agent's effect equals the baseline's effect.
-    baseline_passed = (
-        n_files > 0 and n_baseline_substitutions == 0 and not differs
-    )
+    baseline_passed = n_files > 0 and n_baseline_substitutions == 0 and not differs
     agent_lift = 0.0 if baseline_passed else 1.0
     details: dict[str, Any] = {
         "baseline_tool": "sed",
@@ -182,7 +183,9 @@ def run(repo_path: Path, quality_spec: QualitySpec) -> OracleVerdict:
     # ran, not that the agent beat the baseline. The decision belongs
     # in the report rendering / human review.
     return OracleVerdict(
-        tier=TIER_NAME, passed=True, cost_usd=DEFAULT_COST_USD,
+        tier=TIER_NAME,
+        passed=True,
+        cost_usd=DEFAULT_COST_USD,
         details=details,
     )
 

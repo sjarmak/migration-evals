@@ -15,10 +15,10 @@ rebuild step is represented here by :func:`_rebuild_ok`, which returns
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Callable, Optional
 
 from migration_evals.harness import cache as cache_mod
 from migration_evals.harness.recipe import Recipe
@@ -56,7 +56,7 @@ def revalidate(
     harness_root: Path,
     ttl_days: int = 7,
     *,
-    rebuild_check: Optional[Callable[[Recipe], bool]] = None,
+    rebuild_check: Callable[[Recipe], bool] | None = None,
 ) -> DriftReport:
     """Flag and evict cache entries older than ``ttl_days``.
 

@@ -33,10 +33,10 @@ from __future__ import annotations
 
 import json
 import math
-from dataclasses import dataclass, field
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Iterable, Mapping, Optional, Sequence
 
 UNBATCHED_KEY = "<unbatched>"
 
@@ -56,13 +56,13 @@ class IteratorReport:
     completion_rate: float
     failure_class_breakdown: Mapping[str, int]
     oracle_tier_breakdown: Mapping[str, int]
-    total_cost_usd: Optional[float]
-    p50_cost_usd: Optional[float]
-    p95_cost_usd: Optional[float]
-    p50_duration_s: Optional[float]
-    p95_duration_s: Optional[float]
-    agent_model: Optional[str]
-    agent_runner: Optional[str]
+    total_cost_usd: float | None
+    p50_cost_usd: float | None
+    p95_cost_usd: float | None
+    p50_duration_s: float | None
+    p95_duration_s: float | None
+    agent_model: str | None
+    agent_runner: str | None
 
 
 # ---------------------------------------------------------------------------
@@ -99,7 +99,7 @@ def _group_by_iterator(results: Sequence[Mapping]) -> dict[str, list[dict]]:
     return groups
 
 
-def _percentile(values: Sequence[float], pct: float) -> Optional[float]:
+def _percentile(values: Sequence[float], pct: float) -> float | None:
     if not values:
         return None
     sorted_v = sorted(values)
@@ -115,7 +115,7 @@ def _percentile(values: Sequence[float], pct: float) -> Optional[float]:
     return sorted_v[lo] * (1 - frac) + sorted_v[hi] * frac
 
 
-def _trial_cost(payload: Mapping) -> Optional[float]:
+def _trial_cost(payload: Mapping) -> float | None:
     funnel = payload.get("funnel")
     if not isinstance(funnel, Mapping):
         return None
@@ -125,7 +125,7 @@ def _trial_cost(payload: Mapping) -> Optional[float]:
     return None
 
 
-def _trial_duration_seconds(payload: Mapping) -> Optional[float]:
+def _trial_duration_seconds(payload: Mapping) -> float | None:
     started = payload.get("started_at")
     finished = payload.get("finished_at")
     if not started or not finished:
@@ -159,20 +159,14 @@ def _build_one(iterator_id: str, trials: Sequence[Mapping]) -> IteratorReport:
     p50_cost = round(_percentile(costs, 50), 6) if costs else None
     p95_cost = round(_percentile(costs, 95), 6) if costs else None
 
-    durations = [
-        d for d in (_trial_duration_seconds(t) for t in trials) if d is not None
-    ]
+    durations = [d for d in (_trial_duration_seconds(t) for t in trials) if d is not None]
     p50_duration = round(_percentile(durations, 50), 3) if durations else None
     p95_duration = round(_percentile(durations, 95), 3) if durations else None
 
     # First non-empty agent_model / agent_runner wins; mismatches across
     # trials are rare in a single iterator but possible.
-    agent_model = next(
-        (str(t["agent_model"]) for t in trials if t.get("agent_model")), None
-    )
-    agent_runner = next(
-        (str(t["agent_runner"]) for t in trials if t.get("agent_runner")), None
-    )
+    agent_model = next((str(t["agent_model"]) for t in trials if t.get("agent_model")), None)
+    agent_runner = next((str(t["agent_runner"]) for t in trials if t.get("agent_runner")), None)
 
     return IteratorReport(
         iterator_id=iterator_id,
@@ -205,7 +199,7 @@ def build_iterator_reports(results: Sequence[Mapping]) -> list[IteratorReport]:
 # ---------------------------------------------------------------------------
 
 
-def _fmt_optional(value: Optional[float], fmt: str = "{:.4f}") -> str:
+def _fmt_optional(value: float | None, fmt: str = "{:.4f}") -> str:
     if value is None:
         return "-"
     return fmt.format(value)
@@ -232,9 +226,7 @@ def format_report(reports: Sequence[IteratorReport]) -> str:
         "p50 dur (s) | p95 dur (s) | total cost ($) | p95 cost ($) | "
         "agent_model | agent_runner |"
     )
-    lines.append(
-        "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- | --- |"
-    )
+    lines.append("| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- | --- |")
     for r in reports:
         lines.append(
             f"| {r.iterator_id} | {r.n_total} | {r.n_completed} | {r.n_failed} | "
@@ -252,9 +244,7 @@ def format_report(reports: Sequence[IteratorReport]) -> str:
     for r in reports:
         lines.append(f"### `{r.iterator_id}`")
         lines.append("")
-        lines.append(
-            f"- **Failure classes:** {_format_breakdown(r.failure_class_breakdown)}"
-        )
+        lines.append(f"- **Failure classes:** {_format_breakdown(r.failure_class_breakdown)}")
         lines.append(
             f"- **Oracle tier (terminating):** {_format_breakdown(r.oracle_tier_breakdown)}"
         )

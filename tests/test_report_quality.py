@@ -31,9 +31,7 @@ def _trial(
         "agent_model": "x",
         "migration_id": "go_import_rewrite",
         "funnel": {
-            "per_tier_verdict": [
-                {"tier": "compile_only", "passed": True, "details": {}}
-            ],
+            "per_tier_verdict": [{"tier": "compile_only", "passed": True, "details": {}}],
             "quality_verdicts": quality or [],
         },
     }
@@ -55,39 +53,48 @@ def _quality_verdict(
 
 def test_quality_aggregate_counts_pass_and_skip() -> None:
     results = [
-        _trial(quality=[
-            _quality_verdict(
-                "diff_minimality",
-                passed=True,
-                details={
-                    "diff_size_ratio": 1.2,
-                    "over_edit_pct": 0.1,
-                    "touched_files_overlap": 0.9,
-                },
-            ),
-            _quality_verdict(
-                "idempotency", passed=True,
-                details={"idempotent": True},
-            ),
-            _quality_verdict(
-                "baseline_comparison", passed=True,
-                details={"baseline_passed": True, "agent_lift": 0.0},
-            ),
-        ]),
-        _trial(quality=[
-            _quality_verdict(
-                "diff_minimality", passed=True,
-                details={"skipped": True, "reason": "no gt"},
-            ),
-            _quality_verdict(
-                "idempotency", passed=False,
-                details={"idempotent": False},
-            ),
-            _quality_verdict(
-                "baseline_comparison", passed=True,
-                details={"baseline_passed": False, "agent_lift": 1.0},
-            ),
-        ]),
+        _trial(
+            quality=[
+                _quality_verdict(
+                    "diff_minimality",
+                    passed=True,
+                    details={
+                        "diff_size_ratio": 1.2,
+                        "over_edit_pct": 0.1,
+                        "touched_files_overlap": 0.9,
+                    },
+                ),
+                _quality_verdict(
+                    "idempotency",
+                    passed=True,
+                    details={"idempotent": True},
+                ),
+                _quality_verdict(
+                    "baseline_comparison",
+                    passed=True,
+                    details={"baseline_passed": True, "agent_lift": 0.0},
+                ),
+            ]
+        ),
+        _trial(
+            quality=[
+                _quality_verdict(
+                    "diff_minimality",
+                    passed=True,
+                    details={"skipped": True, "reason": "no gt"},
+                ),
+                _quality_verdict(
+                    "idempotency",
+                    passed=False,
+                    details={"idempotent": False},
+                ),
+                _quality_verdict(
+                    "baseline_comparison",
+                    passed=True,
+                    details={"baseline_passed": False, "agent_lift": 1.0},
+                ),
+            ]
+        ),
     ]
     rows = _quality_aggregate(results)
     by_tier = {r["tier_name"]: r for r in rows}
@@ -125,22 +132,29 @@ def test_format_report_includes_quality_section(tmp_path: Path) -> None:
     run_dir = tmp_path / "run"
     trial_dir = run_dir / "trial_001"
     trial_dir.mkdir(parents=True)
-    payload = _trial(quality=[
-        _quality_verdict(
-            "diff_minimality", passed=True,
-            details={"diff_size_ratio": 1.0,
-                     "over_edit_pct": 0.0,
-                     "touched_files_overlap": 1.0},
-        ),
-        _quality_verdict(
-            "idempotency", passed=True,
-            details={"idempotent": True},
-        ),
-        _quality_verdict(
-            "baseline_comparison", passed=True,
-            details={"baseline_passed": True, "agent_lift": 0.0},
-        ),
-    ])
+    payload = _trial(
+        quality=[
+            _quality_verdict(
+                "diff_minimality",
+                passed=True,
+                details={
+                    "diff_size_ratio": 1.0,
+                    "over_edit_pct": 0.0,
+                    "touched_files_overlap": 1.0,
+                },
+            ),
+            _quality_verdict(
+                "idempotency",
+                passed=True,
+                details={"idempotent": True},
+            ),
+            _quality_verdict(
+                "baseline_comparison",
+                passed=True,
+                details={"baseline_passed": True, "agent_lift": 0.0},
+            ),
+        ]
+    )
     (trial_dir / "result.json").write_text(json.dumps(payload))
     data = build_report_data(run_dir)
     md = format_report(data)

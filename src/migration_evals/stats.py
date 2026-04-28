@@ -15,16 +15,14 @@ from __future__ import annotations
 
 import math
 import random
-from typing import Sequence
+from collections.abc import Sequence
 
 # 97.5 percentile of the standard normal distribution. Hard-coded so we
 # don't drag in scipy for a single constant.
 Z_95 = 1.959963984540054
 
 
-def wilson_interval(
-    k: int, n: int, *, z: float = Z_95
-) -> tuple[float, float]:
+def wilson_interval(k: int, n: int, *, z: float = Z_95) -> tuple[float, float]:
     """Return the Wilson score interval ``(lo, hi)`` for ``k`` of ``n``.
 
     Returns ``(0.0, 0.0)`` when ``n <= 0`` so callers can render a
@@ -39,9 +37,7 @@ def wilson_interval(
     z2 = z * z
     denom = 1.0 + z2 / n
     center = (p_hat + z2 / (2.0 * n)) / denom
-    half = (
-        z * math.sqrt(p_hat * (1.0 - p_hat) / n + z2 / (4.0 * n * n))
-    ) / denom
+    half = (z * math.sqrt(p_hat * (1.0 - p_hat) / n + z2 / (4.0 * n * n))) / denom
     lo = max(0.0, center - half)
     hi = min(1.0, center + half)
     return (lo, hi)

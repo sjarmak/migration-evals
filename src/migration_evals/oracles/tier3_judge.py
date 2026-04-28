@@ -17,8 +17,9 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Mapping
 from pathlib import Path
-from typing import Any, Mapping, Optional
+from typing import Any
 
 from migration_evals.harness.recipe import Recipe
 from migration_evals.oracles.verdict import OracleVerdict
@@ -103,7 +104,7 @@ def run(
     *,
     model: str = DEFAULT_MODEL,
     max_tokens: int = DEFAULT_MAX_TOKENS,
-    cassette: Optional[Any] = None,
+    cassette: Any | None = None,
     cost_usd: float = DEFAULT_COST_USD,
 ) -> OracleVerdict:
     """Call the judge and return a judge-tier verdict."""

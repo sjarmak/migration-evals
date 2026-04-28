@@ -119,19 +119,14 @@ def run(repo_path: Path, quality_spec: QualitySpec) -> OracleVerdict:
             cost_usd=DEFAULT_COST_USD,
             details={
                 "skipped": True,
-                "reason": (
-                    f"patch.diff exceeds MAX_DIFF_BYTES "
-                    f"({size} > {MAX_DIFF_BYTES})"
-                ),
+                "reason": (f"patch.diff exceeds MAX_DIFF_BYTES " f"({size} > {MAX_DIFF_BYTES})"),
             },
         )
 
     diff_text = agent_path.read_text(encoding="utf-8", errors="replace")
     touched = _extract_touched_paths(diff_text)
     violations = [
-        path
-        for path in touched
-        if not any(fnmatch(path, pattern) for pattern in allowlist)
+        path for path in touched if not any(fnmatch(path, pattern) for pattern in allowlist)
     ]
     mode = quality_spec.touched_paths_allowlist_mode
     passed = True if mode == "warn" else not violations

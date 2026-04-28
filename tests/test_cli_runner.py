@@ -9,7 +9,6 @@ import sys
 import time
 from pathlib import Path
 
-import pytest
 import yaml
 from jsonschema import Draft7Validator
 
@@ -38,8 +37,7 @@ def _smoke_config(tmp_path: Path, output_root: Path) -> Path:
     raw["output_root"] = str(output_root)
     # Resolve repo paths against REPO_ROOT so tests can run from any cwd.
     raw["repos"] = [
-        {"path": str(REPO_ROOT / entry["path"]), "seed": entry["seed"]}
-        for entry in raw["repos"]
+        {"path": str(REPO_ROOT / entry["path"]), "seed": entry["seed"]} for entry in raw["repos"]
     ]
     # Same for cassette + stamp paths.
     for key in ("anthropic_cassette_dir", "sandbox_cassette_dir"):
@@ -86,9 +84,7 @@ def test_run_from_config_writes_three_valid_results(tmp_path: Path) -> None:
     for trial in trial_dirs:
         payload = json.loads((trial / "result.json").read_text())
         errors = sorted(validator.iter_errors(payload), key=lambda e: list(e.path))
-        assert not errors, (
-            f"{trial}/result.json fails schema: {[e.message for e in errors]}"
-        )
+        assert not errors, f"{trial}/result.json fails schema: {[e.message for e in errors]}"
         assert payload["migration_id"] == "java8_17"
         assert payload["agent_model"] == "claude-sonnet-4-6"
         assert payload["task_id"].startswith("java8_17::")
@@ -152,9 +148,7 @@ def test_cli_run_config_smoke_under_two_minutes(tmp_path: Path) -> None:
     )
     elapsed = time.perf_counter() - start
 
-    assert proc.returncode == 0, (
-        f"CLI failed: stdout={proc.stdout!r} stderr={proc.stderr!r}"
-    )
+    assert proc.returncode == 0, f"CLI failed: stdout={proc.stdout!r} stderr={proc.stderr!r}"
     assert elapsed < 120, f"smoke took {elapsed:.1f}s; AC caps at 120s"
 
     validator = _validator()

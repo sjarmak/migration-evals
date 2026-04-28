@@ -83,9 +83,7 @@ def _load_manifest(run_dir: Path) -> dict | None:
         raise ValueError("manifest.json must be a JSON object")
     missing = [k for k in REQUIRED_MANIFEST_KEYS if k not in data]
     if missing:
-        raise ValueError(
-            f"manifest.json missing required keys: {', '.join(missing)}"
-        )
+        raise ValueError(f"manifest.json missing required keys: {', '.join(missing)}")
     return data
 
 
@@ -96,9 +94,7 @@ def _resolve_spec_path(run_dir: Path, raw: str) -> Path:
     return candidate
 
 
-def _check_gold_anchor(
-    run_dir: Path, *, require: bool
-) -> int | None:
+def _check_gold_anchor(run_dir: Path, *, require: bool) -> int | None:
     """Inspect summary.json for a gold_anchor_correlation section.
 
     Returns:
@@ -109,8 +105,7 @@ def _check_gold_anchor(
     if not summary_path.is_file():
         if require:
             return _fail(
-                f"summary.json missing under {run_dir} - required by "
-                "--require-gold-anchor"
+                f"summary.json missing under {run_dir} - required by " "--require-gold-anchor"
             )
         return None
     try:
@@ -130,33 +125,23 @@ def _check_gold_anchor(
             )
         return None
     if section is None:
-        return _fail(
-            f"{summary_path}: missing gold_anchor_correlation (section is null)"
-        )
+        return _fail(f"{summary_path}: missing gold_anchor_correlation (section is null)")
     if not isinstance(section, dict):
         return _fail(
-            f"{summary_path}: missing gold_anchor_correlation "
-            "(section is not an object)"
+            f"{summary_path}: missing gold_anchor_correlation " "(section is not an object)"
         )
-    missing_fields = [
-        f for f in GOLD_ANCHOR_REQUIRED_FIELDS if section.get(f) is None
-    ]
+    missing_fields = [f for f in GOLD_ANCHOR_REQUIRED_FIELDS if section.get(f) is None]
     if missing_fields:
         return _fail(
             f"{summary_path}: missing gold_anchor_correlation fields: "
             f"{', '.join(missing_fields)}"
         )
     if section["eval_broken"] is True:
-        return _fail(
-            f"{summary_path}: gold_anchor_correlation reports "
-            "eval_broken=true"
-        )
+        return _fail(f"{summary_path}: gold_anchor_correlation reports " "eval_broken=true")
     return None
 
 
-def _check_calibration(
-    run_dir: Path, manifest: dict, *, require: bool
-) -> int | None:
+def _check_calibration(run_dir: Path, manifest: dict, *, require: bool) -> int | None:
     """Enforce the per-recipe calibration contract (m1w).
 
     When ``--require-calibration`` is set, the manifest must declare a
@@ -177,15 +162,11 @@ def _check_calibration(
         )
     calibration_path = _resolve_spec_path(run_dir, raw)
     if not calibration_path.is_file():
-        return _fail(
-            f"calibration_report file missing: {calibration_path}"
-        )
+        return _fail(f"calibration_report file missing: {calibration_path}")
     try:
         report = CalibrationReport.from_path(calibration_path)
     except (ValueError, KeyError, json.JSONDecodeError) as exc:
-        return _fail(
-            f"{calibration_path}: cannot load calibration report ({exc})"
-        )
+        return _fail(f"{calibration_path}: cannot load calibration report ({exc})")
 
     hypotheses_path = _resolve_spec_path(run_dir, manifest["hypotheses"])
     if not hypotheses_path.is_file():
@@ -201,8 +182,7 @@ def _check_calibration(
     violations = validate_against_thresholds(report, thresholds)
     if violations:
         return _fail(
-            f"{calibration_path}: calibration violates thresholds: "
-            + "; ".join(violations)
+            f"{calibration_path}: calibration violates thresholds: " + "; ".join(violations)
         )
     return None
 
@@ -224,9 +204,7 @@ def check_run(
     if manifest is None:
         return _fail(f"manifest.json missing under {run_dir}")
 
-    calibration_failure = _check_calibration(
-        run_dir, manifest, require=require_calibration
-    )
+    calibration_failure = _check_calibration(run_dir, manifest, require=require_calibration)
     if calibration_failure is not None:
         return calibration_failure
 
@@ -237,20 +215,14 @@ def check_run(
     for stamp_field, manifest_key in STAMP_FIELDS.items():
         spec_path = _resolve_spec_path(run_dir, manifest[manifest_key])
         if not spec_path.is_file():
-            return _fail(
-                f"manifest references missing file for {manifest_key!r}: "
-                f"{spec_path}"
-            )
+            return _fail(f"manifest references missing file for {manifest_key!r}: " f"{spec_path}")
         expected_shas[stamp_field] = compute_spec_sha(spec_path)
     for stamp_field, manifest_key in OPTIONAL_STAMP_FIELDS.items():
         if manifest_key not in manifest:
             continue
         spec_path = _resolve_spec_path(run_dir, manifest[manifest_key])
         if not spec_path.is_file():
-            return _fail(
-                f"manifest references missing file for {manifest_key!r}: "
-                f"{spec_path}"
-            )
+            return _fail(f"manifest references missing file for {manifest_key!r}: " f"{spec_path}")
         expected_shas[stamp_field] = compute_spec_sha(spec_path)
 
     result_paths = sorted(run_dir.rglob("result.json"))
@@ -269,9 +241,7 @@ def check_run(
         for stamp_field, expected in expected_shas.items():
             stored = payload.get(stamp_field)
             if not stored:
-                return _fail(
-                    f"{result_path}: missing stamp {stamp_field!r}"
-                )
+                return _fail(f"{result_path}: missing stamp {stamp_field!r}")
             if stored != expected:
                 return _fail(
                     f"{result_path}: stale stamp {stamp_field!r} "

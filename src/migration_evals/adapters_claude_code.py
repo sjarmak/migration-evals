@@ -44,7 +44,8 @@ from __future__ import annotations
 import json
 import shutil
 import subprocess
-from typing import Any, Iterable, Mapping, Optional
+from collections.abc import Iterable, Mapping
+from typing import Any
 
 __all__ = ["ClaudeCodeAdapter", "ClaudeCodeError"]
 
@@ -91,9 +92,9 @@ class ClaudeCodeAdapter:
         *,
         model: str,
         messages: Iterable[Mapping[str, Any]],
-        system: Optional[Any] = None,
+        system: Any | None = None,
         max_tokens: int = 1024,
-        cassette: Optional[Any] = None,  # ignored; Protocol artefact
+        cassette: Any | None = None,  # ignored; Protocol artefact
         **kwargs: Any,
     ) -> Mapping[str, Any]:
         materialised = list(messages)

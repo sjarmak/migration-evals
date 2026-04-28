@@ -14,8 +14,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
-
 from migration_evals.harness.recipe import Recipe
 from migration_evals.oracles import tier0_diff
 
@@ -110,9 +108,7 @@ def _make_synthetic_pair(root: Path, *, valid: bool) -> Path:
         if valid
         else "class Foo { void bar( ) { unbalanced \n"  # missing brace + paren
     )
-    (repo / "migrated" / "src" / "main" / "java" / "com" / "Foo.java").write_text(
-        migrated_content
-    )
+    (repo / "migrated" / "src" / "main" / "java" / "com" / "Foo.java").write_text(migrated_content)
     return repo
 
 

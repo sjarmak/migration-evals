@@ -50,8 +50,9 @@ from __future__ import annotations
 import argparse
 import importlib
 import sys
+from collections.abc import Callable, Iterable, Mapping
 from pathlib import Path
-from typing import Any, Callable, Iterable, Mapping, Optional
+from typing import Any
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 _SRC = _REPO_ROOT / "src"
@@ -167,8 +168,8 @@ class _ImageOverridingSandbox:
         self,
         *,
         image: str,  # noqa: ARG002 - intentionally ignored
-        env: Optional[Mapping[str, str]] = None,
-        cassette: Optional[Any] = None,
+        env: Mapping[str, str] | None = None,
+        cassette: Any | None = None,
     ) -> str:
         return self._inner.create_sandbox(image=self._image, env=env, cassette=cassette)
 
@@ -178,7 +179,7 @@ class _ImageOverridingSandbox:
         *,
         command: str,
         timeout_s: int = 600,
-        cassette: Optional[Any] = None,
+        cassette: Any | None = None,
     ) -> Mapping[str, Any]:
         return self._inner.exec(
             sandbox_id,
@@ -217,7 +218,7 @@ _SANDBOX_FACTORY_ALLOWED_PREFIXES: tuple[str, ...] = (
 
 
 def _resolve_sandbox_factory(
-    spec: Optional[str],
+    spec: str | None,
 ) -> Callable[..., Any]:
     """Translate ``--sandbox-factory`` into a callable.
 
@@ -272,7 +273,7 @@ def _resolve_stages(raw: str | None) -> tuple[str, ...] | None:
     return tuple(dict.fromkeys(requested))
 
 
-def _stages_need_sandbox(stages: Optional[tuple[str, ...]]) -> bool:
+def _stages_need_sandbox(stages: tuple[str, ...] | None) -> bool:
     """True iff at least one requested stage needs a sandbox adapter.
 
     ``None`` (run-all) always needs a sandbox because tier-1 / tier-2
@@ -307,8 +308,8 @@ def _iter_fixtures(root: Path) -> Iterable[tuple[Path, FixtureLabel]]:
 
 def _effective_stages(
     label: FixtureLabel,
-    stages: Optional[tuple[str, ...]],
-) -> Optional[tuple[str, ...]]:
+    stages: tuple[str, ...] | None,
+) -> tuple[str, ...] | None:
     """Narrow the global ``stages`` set to those the fixture is valid for.
 
     Returns ``None`` (run-all) when neither the CLI nor the label
@@ -332,7 +333,7 @@ def _run_one(
     *,
     stages: tuple[str, ...] | None,
     recipe: Recipe,
-    sandbox_factory: Optional[Callable[..., Any]],
+    sandbox_factory: Callable[..., Any] | None,
     sandbox_image: str,
 ) -> FixtureObservation:
     """Run the funnel for one fixture and return its observation."""
@@ -359,8 +360,8 @@ def calibrate(
     fixtures_root: Path,
     stages: tuple[str, ...] | None,
     notes: str = "",
-    recipe: Optional[Recipe] = None,
-    sandbox_factory: Optional[Callable[..., Any]] = None,
+    recipe: Recipe | None = None,
+    sandbox_factory: Callable[..., Any] | None = None,
     sandbox_image: str = "golang:1.22",
 ) -> CalibrationReport:
     """Drive the funnel over every fixture and return a CalibrationReport.
@@ -503,7 +504,7 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 1
 
-    recipe: Optional[Recipe] = None
+    recipe: Recipe | None = None
     if args.recipe is not None:
         try:
             recipe = _load_recipe_from_yaml(args.recipe)
@@ -511,7 +512,7 @@ def main(argv: list[str] | None = None) -> int:
             print(f"calibrate: {exc}", file=sys.stderr)
             return 1
 
-    sandbox_factory: Optional[Callable[..., Any]] = None
+    sandbox_factory: Callable[..., Any] | None = None
     if _stages_need_sandbox(stages):
         if recipe is None:
             print(

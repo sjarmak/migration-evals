@@ -23,9 +23,10 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Mapping, Optional, Sequence
+from typing import Any
 
 SCHEMA_VERSION = "v1"
 PASS_ALL = "pass_all"
@@ -61,8 +62,8 @@ class FixtureLabel:
 
     fixture_id: str
     expected_outcome: str
-    expected_reject_tier: Optional[str] = None
-    applicable_tiers: Optional[tuple[str, ...]] = None
+    expected_reject_tier: str | None = None
+    applicable_tiers: tuple[str, ...] | None = None
     notes: str = ""
 
     def __post_init__(self) -> None:
@@ -73,13 +74,11 @@ class FixtureLabel:
             )
         if self.expected_outcome == REJECT and not self.expected_reject_tier:
             raise ValueError(
-                "fixtures with expected_outcome='reject' must declare "
-                "expected_reject_tier"
+                "fixtures with expected_outcome='reject' must declare " "expected_reject_tier"
             )
         if self.expected_outcome == PASS_ALL and self.expected_reject_tier:
             raise ValueError(
-                "fixtures with expected_outcome='pass_all' must not "
-                "declare expected_reject_tier"
+                "fixtures with expected_outcome='pass_all' must not " "declare expected_reject_tier"
             )
         if (
             self.expected_outcome == REJECT
@@ -99,31 +98,27 @@ class FixtureLabel:
         return tier in self.applicable_tiers
 
     @classmethod
-    def from_dict(cls, data: Mapping[str, Any]) -> "FixtureLabel":
+    def from_dict(cls, data: Mapping[str, Any]) -> FixtureLabel:
         raw_tiers = data.get("applicable_tiers")
-        applicable_tiers: Optional[tuple[str, ...]]
+        applicable_tiers: tuple[str, ...] | None
         if raw_tiers is None:
             applicable_tiers = None
         else:
             applicable_tiers = tuple(str(t) for t in raw_tiers)
             if not applicable_tiers:
-                raise ValueError(
-                    "applicable_tiers, when present, must be non-empty"
-                )
+                raise ValueError("applicable_tiers, when present, must be non-empty")
         return cls(
             fixture_id=str(data["fixture_id"]),
             expected_outcome=str(data["expected_outcome"]),
             expected_reject_tier=(
-                str(data["expected_reject_tier"])
-                if data.get("expected_reject_tier")
-                else None
+                str(data["expected_reject_tier"]) if data.get("expected_reject_tier") else None
             ),
             applicable_tiers=applicable_tiers,
             notes=str(data.get("notes", "")),
         )
 
     @classmethod
-    def from_path(cls, path: Path) -> "FixtureLabel":
+    def from_path(cls, path: Path) -> FixtureLabel:
         return cls.from_dict(json.loads(Path(path).read_text()))
 
 
@@ -163,8 +158,8 @@ class TierCalibration:
     fn: int
     n_known_good_observed: int
     n_known_bad_targeted_observed: int
-    fpr: Optional[float]
-    fnr: Optional[float]
+    fpr: float | None
+    fnr: float | None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -174,9 +169,7 @@ class TierCalibration:
             "tn": self.tn,
             "fn": self.fn,
             "n_known_good_observed": self.n_known_good_observed,
-            "n_known_bad_targeted_observed": (
-                self.n_known_bad_targeted_observed
-            ),
+            "n_known_bad_targeted_observed": (self.n_known_bad_targeted_observed),
             "fpr": self.fpr,
             "fnr": self.fnr,
         }
@@ -217,7 +210,7 @@ class CalibrationReport:
         return json.dumps(self.to_dict(), indent=2, sort_keys=True)
 
     @classmethod
-    def from_dict(cls, data: Mapping[str, Any]) -> "CalibrationReport":
+    def from_dict(cls, data: Mapping[str, Any]) -> CalibrationReport:
         per_tier = tuple(
             TierCalibration(
                 tier=str(t["tier"]),
@@ -226,15 +219,9 @@ class CalibrationReport:
                 tn=int(t["tn"]),
                 fn=int(t["fn"]),
                 n_known_good_observed=int(t["n_known_good_observed"]),
-                n_known_bad_targeted_observed=int(
-                    t["n_known_bad_targeted_observed"]
-                ),
-                fpr=(
-                    None if t.get("fpr") is None else float(t["fpr"])
-                ),
-                fnr=(
-                    None if t.get("fnr") is None else float(t["fnr"])
-                ),
+                n_known_bad_targeted_observed=int(t["n_known_bad_targeted_observed"]),
+                fpr=(None if t.get("fpr") is None else float(t["fpr"])),
+                fnr=(None if t.get("fnr") is None else float(t["fnr"])),
             )
             for t in data.get("per_tier", [])
         )
@@ -248,7 +235,7 @@ class CalibrationReport:
         )
 
     @classmethod
-    def from_path(cls, path: Path) -> "CalibrationReport":
+    def from_path(cls, path: Path) -> CalibrationReport:
         return cls.from_dict(json.loads(Path(path).read_text()))
 
 
@@ -271,7 +258,7 @@ class CalibrationThresholds:
 # ---------------------------------------------------------------------------
 
 
-def _safe_rate(numerator: int, denominator: int) -> Optional[float]:
+def _safe_rate(numerator: int, denominator: int) -> float | None:
     if denominator == 0:
         return None
     return numerator / denominator
@@ -314,12 +301,8 @@ def compute_calibration(
     short-circuited the cascade) contribute neither numerator nor
     denominator for that tier.
     """
-    n_known_good = sum(
-        1 for o in observations if o.label.expected_outcome == PASS_ALL
-    )
-    n_known_bad = sum(
-        1 for o in observations if o.label.expected_outcome == REJECT
-    )
+    n_known_good = sum(1 for o in observations if o.label.expected_outcome == PASS_ALL)
+    n_known_bad = sum(1 for o in observations if o.label.expected_outcome == REJECT)
 
     entries: list[TierCalibration] = []
     for tier in tier_order:
@@ -487,9 +470,7 @@ def validate_against_thresholds(
         try:
             tier = report.tier(tier_name)
         except KeyError:
-            violations.append(
-                f"tier {tier_name!r}: missing from calibration report"
-            )
+            violations.append(f"tier {tier_name!r}: missing from calibration report")
             continue
         if "max_fpr" in limits:
             if tier.fpr is None:

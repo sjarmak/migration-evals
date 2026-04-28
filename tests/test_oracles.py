@@ -7,8 +7,9 @@ funnel-orchestration tests live in ``test_funnel.py``.
 from __future__ import annotations
 
 import sys
+from collections.abc import Iterable, Mapping
 from pathlib import Path
-from typing import Any, Iterable, Mapping, Optional
+from typing import Any
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_REPO_ROOT))
@@ -59,7 +60,9 @@ class FakeSandboxCassette:
         self.created.append(sid)
         return sid
 
-    def exec(self, sandbox_id: str, *, command: str, timeout_s: int = 600, cassette: Any = None) -> Mapping[str, Any]:
+    def exec(
+        self, sandbox_id: str, *, command: str, timeout_s: int = 600, cassette: Any = None
+    ) -> Mapping[str, Any]:
         self.executed.append((sandbox_id, command))
         if command not in self._records:
             raise AssertionError(f"FakeSandboxCassette: no record for command {command!r}")

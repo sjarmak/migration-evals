@@ -63,9 +63,9 @@ def _emit_setup_py(repo_dir: Path, name: str, modules: list[str]) -> None:
         "from distutils.core import setup\n"
         "\n"
         "setup(\n"
-        f"    name=\"{name}\",\n"
-        "    version=\"0.1.0\",\n"
-        "    description=\"Synthetic Python 2 fixture for the M9 falsification probe.\",\n"
+        f'    name="{name}",\n'
+        '    version="0.1.0",\n'
+        '    description="Synthetic Python 2 fixture for the M9 falsification probe.",\n'
         f"    py_modules={modules!r},\n"
         ")\n"
     )
@@ -80,12 +80,12 @@ def _emit_str_bytes_case(rng: random.Random, repo_dir: Path) -> dict[str, Any]:
         "# Python 2 str-is-bytes; relies on implicit ASCII coerce.\n"
         "\n"
         "def emit_payload():\n"
-        "    payload = \"foo\".encode()\n"
-        "    return payload + b\"-bar\"\n"
+        '    payload = "foo".encode()\n'
+        '    return payload + b"-bar"\n'
         "\n"
         "def join_with(label):\n"
         "    # Py2: silent ASCII coerce; py3: TypeError without explicit decode.\n"
-        "    return label + emit_payload().decode(\"ascii\")\n"
+        '    return label + emit_payload().decode("ascii")\n'
     )
     (repo_dir / "app.py").write_text(src, encoding="utf-8")
     return {"case_type": "str_bytes", "files": ["setup.py", "app.py"], "name": name}
@@ -96,10 +96,10 @@ def _emit_setup_py_div_case(rng: random.Random, repo_dir: Path) -> dict[str, Any
     name = f"py2_setup_py_div_{suffix}"
     _emit_setup_py(repo_dir, name, ["legacy_module"])
     src = (
-        "\"\"\"Legacy Python 2 module. Migration includes packaging shift.\"\"\"\n"
+        '"""Legacy Python 2 module. Migration includes packaging shift."""\n'
         "\n"
         "def greet(person):\n"
-        "    return \"hello \" + person\n"
+        '    return "hello " + person\n'
     )
     (repo_dir / "legacy_module.py").write_text(src, encoding="utf-8")
     # Deliberately NO pyproject.toml - that absence IS the case.

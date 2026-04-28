@@ -30,7 +30,6 @@ from __future__ import annotations
 import copy
 import hashlib
 from pathlib import Path
-from typing import Optional
 
 
 def compute_spec_sha(path: Path) -> str:
@@ -52,7 +51,7 @@ def stamp_result(
     oracle_spec: Path,
     recipe_spec: Path,
     hypotheses: Path,
-    prompt_spec: Optional[Path] = None,
+    prompt_spec: Path | None = None,
 ) -> dict:
     """Return a deep copy of ``result`` with the PRD M8-lite SHA stamps.
 

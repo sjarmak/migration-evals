@@ -43,9 +43,7 @@ def pc():
 
 def _git(cmd: list[str], cwd: Path) -> str:
     """Local git helper used for end-to-end assertions inside test bodies."""
-    proc = subprocess.run(
-        ["git", *cmd], cwd=cwd, capture_output=True, text=True, check=True
-    )
+    proc = subprocess.run(["git", *cmd], cwd=cwd, capture_output=True, text=True, check=True)
     return proc.stdout.strip()
 
 
@@ -100,12 +98,12 @@ def _stage_provider_dir(
 # -- stage_instance end-to-end --------------------------------------------
 
 
-def test_stage_instance_valid_patch_populates_layout(
-    pc, tmp_path: Path, seeded_remote
-) -> None:
+def test_stage_instance_valid_patch_populates_layout(pc, tmp_path: Path, seeded_remote) -> None:
     url, sha = seeded_remote
     staged = tmp_path / "staged"
-    _stage_provider_dir(staged, "inst-ok", repo_url=url, commit_sha=sha, patch=_valid_patch_for_seed())
+    _stage_provider_dir(
+        staged, "inst-ok", repo_url=url, commit_sha=sha, patch=_valid_patch_for_seed()
+    )
     out_root = tmp_path / "eval"
 
     provider = FilesystemChangesetProvider(staged)
@@ -165,9 +163,7 @@ def test_stage_instance_rejects_traversal_instance_id(pc, tmp_path: Path) -> Non
     assert sentinel.is_file(), "traversal id must not lead to filesystem mutation"
 
 
-def test_stage_instance_missing_in_provider_returns_fetch_error(
-    pc, tmp_path: Path
-) -> None:
+def test_stage_instance_missing_in_provider_returns_fetch_error(pc, tmp_path: Path) -> None:
     staged = tmp_path / "staged"
     staged.mkdir()
     out_root = tmp_path / "eval"
@@ -187,15 +183,22 @@ def test_main_stages_multiple_instances(pc, tmp_path: Path, seeded_remote) -> No
     url, sha = seeded_remote
     staged = tmp_path / "staged"
     for iid in ("a", "b", "c"):
-        _stage_provider_dir(staged, iid, repo_url=url, commit_sha=sha, patch=_valid_patch_for_seed())
+        _stage_provider_dir(
+            staged, iid, repo_url=url, commit_sha=sha, patch=_valid_patch_for_seed()
+        )
     out_root = tmp_path / "eval"
 
     rc = pc.main(
         [
-            "--provider", "filesystem",
-            "--root", str(staged),
-            "--out-root", str(out_root),
-            "a", "b", "c",
+            "--provider",
+            "filesystem",
+            "--root",
+            str(staged),
+            "--out-root",
+            str(out_root),
+            "a",
+            "b",
+            "c",
         ]
     )
     assert rc == 0
@@ -219,10 +222,14 @@ def test_main_mixed_pass_fail_returns_exit_2(pc, tmp_path: Path, seeded_remote) 
 
     rc = pc.main(
         [
-            "--provider", "filesystem",
-            "--root", str(staged),
-            "--out-root", str(out_root),
-            "good", "bad",
+            "--provider",
+            "filesystem",
+            "--root",
+            str(staged),
+            "--out-root",
+            str(out_root),
+            "good",
+            "bad",
         ]
     )
     assert rc == 2
@@ -247,10 +254,14 @@ def test_main_instance_ids_file(pc, tmp_path: Path, seeded_remote) -> None:
 
     rc = pc.main(
         [
-            "--provider", "filesystem",
-            "--root", str(staged),
-            "--out-root", str(out_root),
-            "--instance-ids-file", str(ids_file),
+            "--provider",
+            "filesystem",
+            "--root",
+            str(staged),
+            "--out-root",
+            str(out_root),
+            "--instance-ids-file",
+            str(ids_file),
         ]
     )
     assert rc == 0

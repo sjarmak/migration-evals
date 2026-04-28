@@ -31,7 +31,7 @@ import re
 import shutil
 import subprocess
 from pathlib import Path
-from typing import Any, Mapping, Optional
+from typing import Any
 
 from migration_evals.harness.recipe import Recipe
 from migration_evals.oracles.verdict import OracleVerdict
@@ -55,7 +55,7 @@ _HUNK_RE = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@")
 def run(
     repo_path: Path,
     harness_recipe: Recipe,
-    sandbox_adapter: Optional[Any] = None,
+    sandbox_adapter: Any | None = None,
     *,
     cost_usd: float = DEFAULT_COST_USD,
 ) -> OracleVerdict:
@@ -101,7 +101,7 @@ def run(
 # ---------------------------------------------------------------------------
 
 
-def _find_patch_artifact(repo_path: Path) -> Optional[Path]:
+def _find_patch_artifact(repo_path: Path) -> Path | None:
     for name in PATCH_ARTIFACT_NAMES:
         candidate = repo_path / name
         if candidate.is_file():
@@ -109,9 +109,7 @@ def _find_patch_artifact(repo_path: Path) -> Optional[Path]:
     return None
 
 
-def _check_patch_artifact(
-    repo_path: Path, patch_path: Path
-) -> tuple[bool, dict[str, Any]]:
+def _check_patch_artifact(repo_path: Path, patch_path: Path) -> tuple[bool, dict[str, Any]]:
     try:
         text = patch_path.read_text(encoding="utf-8", errors="replace")
     except OSError as exc:
@@ -267,9 +265,7 @@ def _check_orig_vs_migrated(orig: Path, migrated: Path) -> tuple[bool, dict[str,
 
 def _check_repo_structural(repo_path: Path) -> tuple[bool, dict[str, Any]]:
     files = [p for p in repo_path.rglob("*") if p.is_file()]
-    source_files = [
-        p for p in files if p.suffix.lower() in _PAREN_LANG_EXTENSIONS
-    ]
+    source_files = [p for p in files if p.suffix.lower() in _PAREN_LANG_EXTENSIONS]
     if not source_files:
         # No source file = nothing to validate. Pass with a note so the
         # caller can see why the tier did not contribute signal.

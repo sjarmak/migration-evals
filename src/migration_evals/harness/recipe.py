@@ -17,8 +17,9 @@ but the three required keys are validated on deserialization.
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 from dataclasses import asdict, dataclass, field
-from typing import Any, Mapping
+from typing import Any
 
 _REQUIRED_PROVENANCE_KEYS = ("model", "prompt_version", "timestamp")
 
@@ -45,7 +46,7 @@ class Recipe:
         return json.dumps(asdict(self), sort_keys=True, indent=2)
 
     @classmethod
-    def from_json(cls, payload: str) -> "Recipe":
+    def from_json(cls, payload: str) -> Recipe:
         """Parse a JSON string produced by :meth:`to_json`.
 
         Extra keys are ignored so that forward-compatible fields added by

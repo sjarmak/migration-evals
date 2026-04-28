@@ -26,8 +26,9 @@ restrictive useful set:
 from __future__ import annotations
 
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any, Mapping
+from typing import Any
 
 ALLOWED_NETWORK_MODES = ("none", "pull")
 DEFAULT_USER = "1000:1000"
@@ -193,12 +194,12 @@ class SandboxPolicy:
             raise ValueError("network_allowlist must be empty when network='none'")
 
     @classmethod
-    def hardened_default(cls) -> "SandboxPolicy":
+    def hardened_default(cls) -> SandboxPolicy:
         """The locked-down preset every trial gets unless overridden."""
         return cls()
 
     @classmethod
-    def from_dict(cls, data: Mapping[str, Any] | None) -> "SandboxPolicy":
+    def from_dict(cls, data: Mapping[str, Any] | None) -> SandboxPolicy:
         if not data:
             return cls.hardened_default()
         kwargs: dict[str, Any] = {}

@@ -29,11 +29,7 @@ def generate(rng: random.Random, out_dir: Path) -> dict[str, Any]:
     field_decls = "\n".join(f"    private final {t} {n};" for n, t in fields)
     ctor_assigns = "\n".join(f"        this.{n} = {n};" for n, _t in fields)
     getters = "\n\n".join(
-        (
-            f"    public {t} get{n[0].upper()}{n[1:]}() {{\n"
-            f"        return this.{n};\n"
-            "    }"
-        )
+        (f"    public {t} get{n[0].upper()}{n[1:]}() {{\n" f"        return this.{n};\n" "    }")
         for n, t in fields
     )
 

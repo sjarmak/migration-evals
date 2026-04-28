@@ -23,13 +23,11 @@ sys.path.insert(0, str(_REPO_ROOT / "src"))
 
 from migration_evals.iterator_report import (  # noqa: E402
     UNBATCHED_KEY,
-    IteratorReport,
     build_iterator_reports,
     format_report,
     generate_report,
     load_results,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -48,9 +46,7 @@ def _make_trial(
     agent_runner: str | None = "claude_code",
 ) -> dict:
     started = datetime(2026, 4, 24, tzinfo=timezone.utc)
-    finished = (
-        started + timedelta(seconds=duration_s) if duration_s is not None else None
-    )
+    finished = started + timedelta(seconds=duration_s) if duration_s is not None else None
     payload: dict = {
         "task_id": "java8_17::repo01",
         "agent_model": agent_model,
@@ -66,7 +62,12 @@ def _make_trial(
         "finished_at": finished.isoformat() if finished is not None else None,
         "funnel": {
             "per_tier_verdict": [],
-            "final_verdict": {"tier": oracle_tier, "passed": success, "cost_usd": cost or 0.0, "details": {}},
+            "final_verdict": {
+                "tier": oracle_tier,
+                "passed": success,
+                "cost_usd": cost or 0.0,
+                "details": {},
+            },
             "total_cost_usd": cost,
             "failure_class": failure_class,
         },

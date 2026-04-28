@@ -46,7 +46,7 @@ def generate(rng: random.Random, out_dir: Path) -> dict[str, Any]:
             f"public final class {sub} extends {base_name} {{\n"
             "    @Override\n"
             "    public String describe() {\n"
-            f"        return \"{sub}\";\n"
+            f'        return "{sub}";\n'
             "    }\n"
             "}\n"
         )

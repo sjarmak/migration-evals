@@ -22,9 +22,10 @@ from __future__ import annotations
 
 import json
 import sys
+from collections.abc import Iterable, Mapping, Sequence
 from datetime import date
 from pathlib import Path
-from typing import Any, Iterable, Mapping, Optional, Sequence
+from typing import Any
 
 from migration_evals.contamination import split_scores
 from migration_evals.gold_anchor import CorrelationReport, correlate, load_gold_set
@@ -69,7 +70,7 @@ def _load_summary(run_dir: Path) -> dict[str, Any]:
         return {}
 
 
-def _coerce_cutoff(raw: Any) -> Optional[date]:
+def _coerce_cutoff(raw: Any) -> date | None:
     if raw is None:
         return None
     if isinstance(raw, date):
@@ -231,32 +232,27 @@ def _quality_aggregate(
             "n_observed": n_observed,
             "n_passed": n_passed,
             "n_skipped": n_skipped,
-            "pass_rate": (
-                round(n_passed / n_observed, 6) if n_observed > 0 else None
-            ),
+            "pass_rate": (round(n_passed / n_observed, 6) if n_observed > 0 else None),
         }
         if tier == "diff_minimality":
             row_out["mean_diff_size_ratio"] = (
                 round(sum(ratios) / len(ratios), 6) if ratios else None
             )
             row_out["mean_over_edit_pct"] = (
-                round(sum(over_edits) / len(over_edits), 6)
-                if over_edits else None
+                round(sum(over_edits) / len(over_edits), 6) if over_edits else None
             )
             row_out["mean_touched_files_overlap"] = (
-                round(sum(overlaps) / len(overlaps), 6)
-                if overlaps else None
+                round(sum(overlaps) / len(overlaps), 6) if overlaps else None
             )
         if tier == "baseline_comparison":
             row_out["baseline_passed_rate"] = (
-                round(baseline_passes / n_observed, 6)
-                if n_observed > 0 else None
+                round(baseline_passes / n_observed, 6) if n_observed > 0 else None
             )
         rows.append(row_out)
     return rows
 
 
-def _coerce_seconds(started: Any, finished: Any) -> Optional[float]:
+def _coerce_seconds(started: Any, finished: Any) -> float | None:
     if not started or not finished:
         return None
     try:
@@ -270,7 +266,7 @@ def _coerce_seconds(started: Any, finished: Any) -> Optional[float]:
     return delta if delta >= 0 else None
 
 
-def _percentile(values: Sequence[float], pct: float) -> Optional[float]:
+def _percentile(values: Sequence[float], pct: float) -> float | None:
     if not values:
         return None
     sorted_v = sorted(values)
@@ -288,7 +284,7 @@ def _percentile(values: Sequence[float], pct: float) -> Optional[float]:
     return sorted_v[lo] * (1 - frac) + sorted_v[hi] * frac
 
 
-def _trial_total_cost_usd(payload: Mapping[str, Any]) -> Optional[float]:
+def _trial_total_cost_usd(payload: Mapping[str, Any]) -> float | None:
     funnel = payload.get("funnel")
     if not isinstance(funnel, Mapping):
         return None
@@ -298,7 +294,7 @@ def _trial_total_cost_usd(payload: Mapping[str, Any]) -> Optional[float]:
     return None
 
 
-def _trial_total_tokens(payload: Mapping[str, Any]) -> Optional[int]:
+def _trial_total_tokens(payload: Mapping[str, Any]) -> int | None:
     """Best-effort: sum input + output tokens across per-tier verdicts.
 
     Tokens land in result.json only when the underlying agent adapter
@@ -353,17 +349,12 @@ def _cost_aggregate(results: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
     costs = [c for c in (_trial_total_cost_usd(r) for r in results) if c is not None]
     total_cost = round(sum(costs), 6) if costs else None
     dollars_per_success = (
-        round(total_cost / n_success, 6)
-        if (total_cost is not None and n_success > 0)
-        else None
+        round(total_cost / n_success, 6) if (total_cost is not None and n_success > 0) else None
     )
 
     latencies = [
         d
-        for d in (
-            _coerce_seconds(r.get("started_at"), r.get("finished_at"))
-            for r in results
-        )
+        for d in (_coerce_seconds(r.get("started_at"), r.get("finished_at")) for r in results)
         if d is not None
     ]
     p50_lat = _percentile(latencies, 50.0)
@@ -374,9 +365,7 @@ def _cost_aggregate(results: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
     tokens = [t for t in (_trial_total_tokens(r) for r in results) if t is not None]
     total_tokens = sum(tokens) if tokens else None
     tokens_per_success = (
-        round(total_tokens / n_success, 3)
-        if (total_tokens is not None and n_success > 0)
-        else None
+        round(total_tokens / n_success, 3) if (total_tokens is not None and n_success > 0) else None
     )
 
     return {
@@ -393,7 +382,7 @@ def _cost_aggregate(results: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
 
 def _efficiency_aggregate(
     results: Sequence[Mapping[str, Any]],
-) -> Optional[dict[str, Any]]:
+) -> dict[str, Any] | None:
     """Tries-per-success when at least one trial has an iterator_id.
 
     Iterator runs fan a single migration intent across many repos; the
@@ -407,9 +396,7 @@ def _efficiency_aggregate(
         return None
     n_total = len(iter_trials)
     n_success = sum(1 for r in iter_trials if bool(r.get("success")))
-    tries_per_success = (
-        round(n_total / n_success, 4) if n_success > 0 else None
-    )
+    tries_per_success = round(n_total / n_success, 4) if n_success > 0 else None
 
     by_iter: dict[str, dict[str, int]] = {}
     for r in iter_trials:
@@ -424,9 +411,7 @@ def _efficiency_aggregate(
             "n_total": bucket["n"],
             "n_success": bucket["ok"],
             "tries_per_success": (
-                round(bucket["n"] / bucket["ok"], 4)
-                if bucket["ok"] > 0
-                else None
+                round(bucket["n"] / bucket["ok"], 4) if bucket["ok"] > 0 else None
             ),
         }
         for key, bucket in sorted(by_iter.items())
@@ -554,16 +539,14 @@ def _format_cost_section(cost: Mapping[str, Any]) -> str:
     )
 
 
-def _format_efficiency_section(eff: Optional[Mapping[str, Any]]) -> str:
+def _format_efficiency_section(eff: Mapping[str, Any] | None) -> str:
     if eff is None:
         return "- (no trials carry an `iterator_id`; section omitted)"
     n_total = eff["n_total"]
     n_success = eff["n_success"]
     overall_tps = eff["tries_per_success"]
     per_iter = eff.get("per_iterator") or []
-    overall = (
-        f"{overall_tps:.4f}" if overall_tps is not None else "-"
-    )
+    overall = f"{overall_tps:.4f}" if overall_tps is not None else "-"
     lines = [
         f"- iterator_trials: {n_total}",
         f"- iterator_successes: {n_success}",
@@ -595,7 +578,7 @@ def _format_contamination(contam: Mapping[str, Any]) -> str:
     )
 
 
-def _format_gold_section(report: Optional[CorrelationReport]) -> Optional[str]:
+def _format_gold_section(report: CorrelationReport | None) -> str | None:
     if report is None:
         return None
     broken = "YES" if report.eval_broken else "no"
@@ -633,13 +616,9 @@ def _format_quality_table(rows: Sequence[Mapping[str, Any]]) -> str:
         if n_obs == 0:
             lines.append(f"- **{row['tier_name']}**: not observed")
             continue
-        skipped_note = (
-            f" (skipped: {row['n_skipped']})" if row["n_skipped"] else ""
-        )
+        skipped_note = f" (skipped: {row['n_skipped']})" if row["n_skipped"] else ""
         pass_rate = row.get("pass_rate")
-        pass_str = (
-            f"{pass_rate:.4f}" if pass_rate is not None else "n/a"
-        )
+        pass_str = f"{pass_rate:.4f}" if pass_rate is not None else "n/a"
         lines.append(
             f"- **{row['tier_name']}**: pass {row['n_passed']}/{n_obs} "
             f"({pass_str}){skipped_note}"
@@ -649,17 +628,11 @@ def _format_quality_table(rows: Sequence[Mapping[str, Any]]) -> str:
             mean_over = row.get("mean_over_edit_pct")
             mean_overlap = row.get("mean_touched_files_overlap")
             if mean_ratio is not None:
-                lines.append(
-                    f"  - mean diff_size_ratio: {mean_ratio:.4f}"
-                )
+                lines.append(f"  - mean diff_size_ratio: {mean_ratio:.4f}")
             if mean_over is not None:
-                lines.append(
-                    f"  - mean over_edit_pct: {mean_over:.4f}"
-                )
+                lines.append(f"  - mean over_edit_pct: {mean_over:.4f}")
             if mean_overlap is not None:
-                lines.append(
-                    f"  - mean touched_files_overlap: {mean_overlap:.4f}"
-                )
+                lines.append(f"  - mean touched_files_overlap: {mean_overlap:.4f}")
         if row["tier_name"] == "baseline_comparison":
             baseline_rate = row.get("baseline_passed_rate")
             if baseline_rate is not None:
@@ -763,8 +736,8 @@ def format_report(data: Mapping[str, Any]) -> str:
 def build_report_data(
     run_dir: Path,
     *,
-    model_cutoff_date: Optional[date] = None,
-    gold_path: Optional[Path] = None,
+    model_cutoff_date: date | None = None,
+    gold_path: Path | None = None,
 ) -> dict[str, Any]:
     """Aggregate ``run_dir`` into the dict consumed by :func:`format_report`."""
     run_dir = Path(run_dir)
@@ -772,9 +745,7 @@ def build_report_data(
     summary = _load_summary(run_dir)
 
     cutoff = (
-        model_cutoff_date
-        or _coerce_cutoff(summary.get("model_cutoff_date"))
-        or _DEFAULT_CUTOFF
+        model_cutoff_date or _coerce_cutoff(summary.get("model_cutoff_date")) or _DEFAULT_CUTOFF
     )
 
     funnel_rows = _funnel_counts(results)
@@ -782,7 +753,7 @@ def build_report_data(
     failure_classes = _failure_class_counts(results)
     stamps = _stamp_block(results, summary)
 
-    gold_report: Optional[CorrelationReport] = None
+    gold_report: CorrelationReport | None = None
     if gold_path is not None:
         gold = load_gold_set(Path(gold_path))
         gold_report = correlate(results, gold)
@@ -805,8 +776,8 @@ def generate_report(
     run_dir: Path,
     out_path: Path,
     *,
-    model_cutoff_date: Optional[date] = None,
-    gold_path: Optional[Path] = None,
+    model_cutoff_date: date | None = None,
+    gold_path: Path | None = None,
 ) -> int:
     """Aggregate ``run_dir`` and write a markdown report to ``out_path``."""
     run_dir = Path(run_dir)

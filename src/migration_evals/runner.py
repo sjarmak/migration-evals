@@ -24,10 +24,11 @@ from __future__ import annotations
 import json
 import logging
 import sys
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date, datetime, timezone
 from pathlib import Path
-from typing import Any, Mapping, Optional, Sequence
+from typing import Any
 
 import yaml
 
@@ -39,8 +40,8 @@ from migration_evals.cli import (
 )
 from migration_evals.failure_class import classify as classify_failure
 from migration_evals.funnel import run_funnel
-from migration_evals.quality_spec import QualitySpec
 from migration_evals.pre_reg import stamp_result
+from migration_evals.quality_spec import QualitySpec
 from migration_evals.types import FailureClass
 
 LOG = logging.getLogger(__name__)
@@ -77,7 +78,7 @@ def _parse_repo_entries(raw: Sequence[Mapping[str, Any]]) -> list[RepoEntry]:
     return entries
 
 
-def _resolve_stages_for_config(stages_cfg: Optional[Sequence[str]]) -> Optional[tuple[str, ...]]:
+def _resolve_stages_for_config(stages_cfg: Sequence[str] | None) -> tuple[str, ...] | None:
     """Convert the config's ``stages`` list to funnel tier names.
 
     Returns ``None`` when the config omits the key (run every tier the
@@ -90,8 +91,7 @@ def _resolve_stages_for_config(stages_cfg: Optional[Sequence[str]]) -> Optional[
         tier = STAGE_TO_TIER.get(str(stage))
         if tier is None:
             raise ValueError(
-                f"unknown stage {stage!r} in config; expected one of "
-                f"{sorted(STAGE_TO_TIER)}"
+                f"unknown stage {stage!r} in config; expected one of " f"{sorted(STAGE_TO_TIER)}"
             )
         tiers.append(tier)
     return tuple(tiers)
@@ -104,19 +104,19 @@ def _build_payload(
     funnel_result: Any,
     migration_id: str,
     agent_model: str,
-    agent_runner: Optional[str],
-    iterator_id: Optional[str],
-    started_at: Optional[str],
-    finished_at: Optional[str],
+    agent_runner: str | None,
+    iterator_id: str | None,
+    started_at: str | None,
+    finished_at: str | None,
     variant: str,
-    model_cutoff_date: Optional[date],
+    model_cutoff_date: date | None,
 ) -> dict[str, Any]:
     """Compose the base result payload (pre-stamp)."""
     success = bool(funnel_result.final_verdict.passed)
     score = 1.0 if success else 0.0
     repo_created_at = repo_meta.get("repo_created_at")
-    pre_score: Optional[float] = None
-    post_score: Optional[float] = None
+    pre_score: float | None = None
+    post_score: float | None = None
     # Per-trial pre/post fields: the repo is pre-cutoff iff its created
     # date is strictly before the model cutoff. Both fields are populated
     # (one as the trial's score, the other as ``null``) so the aggregate
@@ -160,7 +160,7 @@ def _build_payload(
     return payload
 
 
-def _parse_date(raw: Any) -> Optional[date]:
+def _parse_date(raw: Any) -> date | None:
     if raw is None:
         return None
     if isinstance(raw, date):
@@ -173,14 +173,14 @@ def _parse_date(raw: Any) -> Optional[date]:
         return None
 
 
-def _coerce_cutoff(raw: Any) -> Optional[date]:
+def _coerce_cutoff(raw: Any) -> date | None:
     return _parse_date(raw)
 
 
 def _finalize_failure_class(
     payload: Mapping[str, Any],
     trial_dir: Path,
-) -> Optional[str]:
+) -> str | None:
     """Pick the final failure_class value for the trial.
 
     * Success trials => always ``None``.
@@ -232,13 +232,9 @@ def run_from_config(config_path: Path) -> int:
         return 2
 
     agent_runner_raw = raw_cfg.get("agent_runner")
-    agent_runner: Optional[str] = (
-        str(agent_runner_raw) if agent_runner_raw else None
-    )
+    agent_runner: str | None = str(agent_runner_raw) if agent_runner_raw else None
     iterator_id_raw = raw_cfg.get("iterator_id")
-    iterator_id: Optional[str] = (
-        str(iterator_id_raw) if iterator_id_raw else None
-    )
+    iterator_id: str | None = str(iterator_id_raw) if iterator_id_raw else None
 
     if not isinstance(repos_raw, Sequence) or not repos_raw:
         print("error: config 'repos' must be a non-empty list", file=sys.stderr)
@@ -261,8 +257,7 @@ def run_from_config(config_path: Path) -> int:
     prompt_spec = _as_path(stamps_cfg.get("prompt_spec"))
     if oracle_spec is None or recipe_spec is None or hypotheses is None:
         print(
-            "error: config 'stamps' must include oracle_spec, recipe_spec, "
-            "and hypotheses paths",
+            "error: config 'stamps' must include oracle_spec, recipe_spec, " "and hypotheses paths",
             file=sys.stderr,
         )
         return 2
@@ -324,9 +319,7 @@ def run_from_config(config_path: Path) -> int:
             variant=variant,
             model_cutoff_date=cutoff,
         )
-        stamped = stamp_result(
-            base_payload, oracle_spec, recipe_spec, hypotheses, prompt_spec
-        )
+        stamped = stamp_result(base_payload, oracle_spec, recipe_spec, hypotheses, prompt_spec)
 
         trial_dir = output_root / f"{repo_entry.path.name}_{repo_entry.seed}"
         trial_dir.mkdir(parents=True, exist_ok=True)
@@ -361,9 +354,7 @@ def run_from_config(config_path: Path) -> int:
         "model_cutoff_date": raw_cfg.get("model_cutoff_date"),
         "stamps": summary_stamps,
     }
-    (output_root / "summary.json").write_text(
-        json.dumps(summary, indent=2, sort_keys=True) + "\n"
-    )
+    (output_root / "summary.json").write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n")
     print(
         f"run: wrote {written} result.json files under {output_root}",
         file=sys.stderr,
@@ -371,7 +362,7 @@ def run_from_config(config_path: Path) -> int:
     return 0
 
 
-def _as_path(raw: Any) -> Optional[Path]:
+def _as_path(raw: Any) -> Path | None:
     if raw is None:
         return None
     if isinstance(raw, Path):
@@ -382,7 +373,7 @@ def _as_path(raw: Any) -> Optional[Path]:
 
 
 def _load_recipe_template_sandbox_policy(
-    recipe_spec: Optional[Path],
+    recipe_spec: Path | None,
 ) -> Mapping[str, Any]:
     """Return the recipe template's top-level ``sandbox_policy`` block.
 
@@ -408,8 +399,8 @@ def _load_recipe_template_sandbox_policy(
 
 def _merge_sandbox_policy(
     recipe_policy: Mapping[str, Any],
-    smoke_policy: Optional[Mapping[str, Any]],
-) -> Optional[Mapping[str, Any]]:
+    smoke_policy: Mapping[str, Any] | None,
+) -> Mapping[str, Any] | None:
     """Shallow-merge a recipe-template policy with a smoke-YAML policy.
 
     Smoke wins per key — recipe values fill in keys the smoke config

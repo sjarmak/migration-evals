@@ -85,10 +85,11 @@ import json
 import shutil
 import subprocess
 import sys
+from collections.abc import Iterable
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 
 DEFAULT_MIN_DAYS_SURVIVED = 30
 DEFAULT_REVERT_KEYWORDS = ("revert", "rollback", "back out")
@@ -103,24 +104,15 @@ BUILT_IN_RECIPES: dict[str, dict[str, Any]] = {
         "migration_id": "java8_17",
         "search_queries": [
             {
-                "q": (
-                    "is:pr is:merged language:java "
-                    '"java 17" in:title,body'
-                ),
+                "q": ("is:pr is:merged language:java " '"java 17" in:title,body'),
                 "limit": 100,
             },
             {
-                "q": (
-                    "is:pr is:merged language:java "
-                    '"upgrade to java 17" in:title,body'
-                ),
+                "q": ("is:pr is:merged language:java " '"upgrade to java 17" in:title,body'),
                 "limit": 100,
             },
             {
-                "q": (
-                    "is:pr is:closed is:unmerged language:java "
-                    '"java 17" in:title,body'
-                ),
+                "q": ("is:pr is:closed is:unmerged language:java " '"java 17" in:title,body'),
                 "limit": 50,
             },
         ],
@@ -132,8 +124,7 @@ BUILT_IN_RECIPES: dict[str, dict[str, Any]] = {
         "search_queries": [
             {
                 "q": (
-                    "is:pr is:merged language:python "
-                    '"python 3" "drop python 2" in:title,body'
+                    "is:pr is:merged language:python " '"python 3" "drop python 2" in:title,body'
                 ),
                 "limit": 100,
             },
@@ -192,8 +183,7 @@ def _run_gh(args: list[str]) -> str:
     )
     if proc.returncode != 0:
         raise RuntimeError(
-            f"gh {' '.join(args)} exited {proc.returncode}\n"
-            f"stderr: {proc.stderr.strip()}"
+            f"gh {' '.join(args)} exited {proc.returncode}\n" f"stderr: {proc.stderr.strip()}"
         )
     return proc.stdout
 
@@ -699,10 +689,7 @@ def _finalize(
     write_output(entries, out_path)
     n_accept = sum(1 for e in entries if e["human_verdict"] == "accept")
     n_reject = len(entries) - n_accept
-    print(
-        f"wrote {len(entries)} entries ({n_accept} accept / {n_reject} reject) "
-        f"to {out_path}"
-    )
+    print(f"wrote {len(entries)} entries ({n_accept} accept / {n_reject} reject) " f"to {out_path}")
     stats_line = " ".join(f"{k}={v}" for k, v in sorted(stats.items()))
     print(f"stats: {stats_line}")
     if len(entries) < args.target_count:

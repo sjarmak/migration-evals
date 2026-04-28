@@ -12,8 +12,9 @@ import os
 import subprocess
 import sys
 import time
+from collections.abc import Mapping
 from pathlib import Path
-from typing import Any, Iterable, Mapping
+from typing import Any
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_REPO_ROOT))
@@ -25,7 +26,6 @@ from migration_evals.funnel import run_funnel  # noqa: E402
 from migration_evals.harness.recipe import Recipe  # noqa: E402
 from migration_evals.oracles.verdict import (  # noqa: E402
     FunnelResult,
-    OracleVerdict,
 )
 
 REPO_ROOT = _REPO_ROOT
@@ -75,9 +75,16 @@ class StubAnthropic:
         self.last_request: dict[str, Any] = {}
         self.call_count = 0
 
-    def messages_create(self, *, model, messages, system=None, max_tokens=1024, cassette=None, **kwargs):
+    def messages_create(
+        self, *, model, messages, system=None, max_tokens=1024, cassette=None, **kwargs
+    ):
         self.call_count += 1
-        self.last_request = {"model": model, "messages": list(messages), "system": system, "max_tokens": max_tokens}
+        self.last_request = {
+            "model": model,
+            "messages": list(messages),
+            "system": system,
+            "max_tokens": max_tokens,
+        }
         return {"content": [{"type": "text", "text": self._text}]}
 
 

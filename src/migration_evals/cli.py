@@ -20,8 +20,9 @@ import argparse
 import json
 import os
 import sys
+from collections.abc import Iterable, Mapping, Sequence
 from pathlib import Path
-from typing import Any, Iterable, Mapping, Optional, Sequence
+from typing import Any
 
 SUBCOMMANDS = ("run", "report", "regression", "harness", "probe")
 
@@ -259,7 +260,7 @@ class _CassetteSandboxAdapter:
     cassette is absent is to return a successful exit envelope.
     """
 
-    def __init__(self, repo_name: str, cassette_dir: Optional[Path]) -> None:
+    def __init__(self, repo_name: str, cassette_dir: Path | None) -> None:
         self._repo_name = repo_name
         self._cassette_dir = cassette_dir
         self._records: dict[str, Mapping[str, Any]] = {}
@@ -276,7 +277,9 @@ class _CassetteSandboxAdapter:
         self._sandbox_counter += 1
         return f"sandbox-{self._repo_name}-{self._sandbox_counter}"
 
-    def exec(self, sandbox_id: str, *, command: str, timeout_s: int = 600, cassette: Any = None) -> Mapping[str, Any]:
+    def exec(
+        self, sandbox_id: str, *, command: str, timeout_s: int = 600, cassette: Any = None
+    ) -> Mapping[str, Any]:
         record = self._records.get(command)
         if record is None:
             # Default: pretend the command succeeded. This keeps fixture
@@ -297,7 +300,7 @@ class _CassetteAnthropicAdapter:
     PASS envelope when no cassette is present so the funnel never blocks.
     """
 
-    def __init__(self, repo_name: str, cassette_dir: Optional[Path]) -> None:
+    def __init__(self, repo_name: str, cassette_dir: Path | None) -> None:
         self._repo_name = repo_name
         self._cassette_dir = cassette_dir
         self.last_request: dict[str, Any] = {}
@@ -346,7 +349,9 @@ def _build_recipe_from_meta(meta: Mapping[str, Any]):
     """Construct a :class:`Recipe` from a fixture repo's ``meta.json``."""
     from migration_evals.harness.recipe import Recipe
 
-    dockerfile = meta.get("dockerfile") or "FROM maven:3.9-eclipse-temurin-17\nWORKDIR /src\nCOPY . .\n"
+    dockerfile = (
+        meta.get("dockerfile") or "FROM maven:3.9-eclipse-temurin-17\nWORKDIR /src\nCOPY . .\n"
+    )
     build_cmd = meta.get("build_cmd") or "mvn -B -e compile"
     test_cmd = meta.get("test_cmd") or "mvn -B -e test"
     provenance = meta.get("harness_provenance") or {
@@ -362,7 +367,7 @@ def _build_recipe_from_meta(meta: Mapping[str, Any]):
     )
 
 
-def _resolve_stages(stage: str) -> Optional[tuple[str, ...]]:
+def _resolve_stages(stage: str) -> tuple[str, ...] | None:
     from migration_evals.funnel import STAGE_ALIASES
 
     if stage == "all":
@@ -495,7 +500,7 @@ def _handle_report(args: argparse.Namespace) -> int:
         print("error: report requires --run and --out", file=sys.stderr)
         return 2
 
-    cutoff: Optional[Any] = None
+    cutoff: Any | None = None
     if args.cutoff:
         try:
             cutoff = _date.fromisoformat(args.cutoff)
@@ -596,8 +601,7 @@ def _handle_probe(args: argparse.Namespace) -> int:
         )
         flag = findings.get("schema_revision_required", False)
         print(
-            f"probe: wrote {out_dir / 'findings.json'} "
-            f"(schema_revision_required={flag})",
+            f"probe: wrote {out_dir / 'findings.json'} " f"(schema_revision_required={flag})",
             file=sys.stderr,
         )
         if flag:
@@ -650,7 +654,7 @@ def _handle_iterator_report(args: argparse.Namespace) -> int:
     return generate_report(Path(args.run_dir), Path(args.out))
 
 
-def main(argv: Optional[Sequence[str]] = None) -> int:
+def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     if not args.command:

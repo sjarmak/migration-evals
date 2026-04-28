@@ -32,9 +32,10 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Mapping, Protocol, runtime_checkable
+from typing import Any, Protocol, runtime_checkable
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlsplit
 from urllib.request import (
@@ -58,9 +59,7 @@ _REQUIRED_META_KEYS: tuple[str, ...] = (
 # alphanumeric so `.` and `-` cannot appear at the boundary (Windows
 # strips trailing dots from path components, which would otherwise let
 # `id.` and `id` collide).
-_INSTANCE_ID_RE = re.compile(
-    r"^[A-Za-z0-9](?:[A-Za-z0-9._\-]{0,126}[A-Za-z0-9])?$"
-)
+_INSTANCE_ID_RE = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9._\-]{0,126}[A-Za-z0-9])?$")
 _SHA1_RE = re.compile(r"^[0-9a-f]{40}$")
 
 
@@ -75,9 +74,7 @@ def validate_instance_id(instance_id: str) -> None:
 def validate_commit_sha(commit_sha: str) -> None:
     """Raise ValueError if ``commit_sha`` is not a 40-char lowercase hex SHA-1."""
     if not isinstance(commit_sha, str) or not _SHA1_RE.fullmatch(commit_sha):
-        raise ValueError(
-            f"commit_sha must be a 40-char lowercase hex SHA-1; got {commit_sha!r}"
-        )
+        raise ValueError(f"commit_sha must be a 40-char lowercase hex SHA-1; got {commit_sha!r}")
 
 
 @dataclass(frozen=True)
@@ -111,9 +108,7 @@ def _build_changeset(
         ) from exc
     for key in _REQUIRED_META_KEYS:
         if key not in meta:
-            raise KeyError(
-                f"meta.json for {instance_id!r} is missing required key {key!r}"
-            )
+            raise KeyError(f"meta.json for {instance_id!r} is missing required key {key!r}")
     commit_sha = str(meta["commit_sha"])
     validate_commit_sha(commit_sha)
     return Changeset(
@@ -263,27 +258,19 @@ class HTTPChangesetProvider:
                 data = resp.read(self._max_bytes + 1)
         except HTTPError as exc:
             if exc.code == 404:
-                raise FileNotFoundError(
-                    f"{what} not found at {url} (HTTP 404)"
-                ) from exc
+                raise FileNotFoundError(f"{what} not found at {url} (HTTP 404)") from exc
             raise
         except URLError as exc:
-            raise ConnectionError(
-                f"could not fetch {what} at {url}: {exc.reason}"
-            ) from exc
+            raise ConnectionError(f"could not fetch {what} at {url}: {exc.reason}") from exc
         if len(data) > self._max_bytes:
-            raise ValueError(
-                f"{what} at {url} exceeded max_bytes={self._max_bytes}"
-            )
+            raise ValueError(f"{what} at {url} exceeded max_bytes={self._max_bytes}")
         return data.decode("utf-8")
 
 
 # Provider registry. Built-ins are registered at module import; external
 # pipelines plug in their own factories via register_provider() before
 # calling get_provider().
-_PROVIDER_FACTORIES: dict[
-    str, Callable[[Mapping[str, Any]], ChangesetProvider]
-] = {}
+_PROVIDER_FACTORIES: dict[str, Callable[[Mapping[str, Any]], ChangesetProvider]] = {}
 
 
 def register_provider(
@@ -347,7 +334,5 @@ def get_provider(name: str, config: Mapping[str, Any]) -> ChangesetProvider:
     factory = _PROVIDER_FACTORIES.get(name)
     if factory is None:
         known = ", ".join(sorted(_PROVIDER_FACTORIES))
-        raise ValueError(
-            f"unknown provider {name!r}; known providers: {known}"
-        )
+        raise ValueError(f"unknown provider {name!r}; known providers: {known}")
     return factory(config)

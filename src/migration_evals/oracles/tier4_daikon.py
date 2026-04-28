@@ -9,7 +9,7 @@ the tier in/out without ``ImportError``; calling :func:`run` raises
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from migration_evals.harness.recipe import Recipe
 from migration_evals.oracles.verdict import OracleVerdict
@@ -23,7 +23,7 @@ def run(
     harness_recipe: Recipe,
     sandbox_adapter: Any,
     *,
-    cassette: Optional[Any] = None,
+    cassette: Any | None = None,
     cost_usd: float = DEFAULT_COST_USD,
 ) -> OracleVerdict:
     """Raise :class:`NotImplementedError` - the funnel skips this tier.

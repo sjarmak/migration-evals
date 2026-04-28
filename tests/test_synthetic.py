@@ -15,7 +15,6 @@ from pathlib import Path
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_REPO_ROOT))
 
-import pytest
 
 from migration_evals.synthetic import java8_generator
 from migration_evals.synthetic.primitives import ALL_MODULES

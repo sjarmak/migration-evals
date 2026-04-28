@@ -19,9 +19,7 @@ sys.path.insert(0, str(_REPO_ROOT))
 from migration_evals.failure_class import classify
 from migration_evals.types import FailureClass
 
-CASES_DIR = (
-    _REPO_ROOT / "tests" / "fixtures" / "failure_class_cases"
-)
+CASES_DIR = _REPO_ROOT / "tests" / "fixtures" / "failure_class_cases"
 
 PRECISION_THRESHOLD = 0.90
 MIN_CASES_TOTAL = 20
@@ -41,16 +39,16 @@ def _iter_cases() -> list[tuple[Path, FailureClass]]:
 
 def test_fixture_coverage() -> None:
     cases = _iter_cases()
-    assert len(cases) >= MIN_CASES_TOTAL, (
-        f"need at least {MIN_CASES_TOTAL} labeled cases, got {len(cases)}"
-    )
+    assert (
+        len(cases) >= MIN_CASES_TOTAL
+    ), f"need at least {MIN_CASES_TOTAL} labeled cases, got {len(cases)}"
     per_class: dict[FailureClass, int] = {c: 0 for c in FailureClass}
     for _, expected in cases:
         per_class[expected] += 1
     for cls, count in per_class.items():
-        assert count >= MIN_CASES_PER_CLASS, (
-            f"need at least {MIN_CASES_PER_CLASS} cases for {cls.value}, got {count}"
-        )
+        assert (
+            count >= MIN_CASES_PER_CLASS
+        ), f"need at least {MIN_CASES_PER_CLASS} cases for {cls.value}, got {count}"
 
 
 def test_classifier_precision_meets_threshold() -> None:
@@ -62,11 +60,11 @@ def test_classifier_precision_meets_threshold() -> None:
         if actual == expected:
             correct += 1
         else:
-            mismatches.append(
-                f"  {case_dir.name}: expected={expected.value}, got={actual}"
-            )
+            mismatches.append(f"  {case_dir.name}: expected={expected.value}, got={actual}")
     precision = correct / len(cases)
-    msg = f"precision={precision:.2%} ({correct}/{len(cases)}); mismatches:\n" + "\n".join(mismatches)
+    msg = f"precision={precision:.2%} ({correct}/{len(cases)}); mismatches:\n" + "\n".join(
+        mismatches
+    )
     assert precision >= PRECISION_THRESHOLD, msg
 
 
@@ -74,14 +72,10 @@ def test_classifier_precision_meets_threshold() -> None:
 def test_each_case(case_dir: Path, expected: FailureClass) -> None:
     """Per-case smoke test - surface exactly which fixtures break."""
     actual = classify(case_dir)
-    assert isinstance(actual, FailureClass), (
-        f"classify() returned {actual!r} for {case_dir}"
-    )
+    assert isinstance(actual, FailureClass), f"classify() returned {actual!r} for {case_dir}"
     # We assert each case matches its label; in aggregate the precision test
     # is the real gate, but per-case failures give clearer diagnostics.
-    assert actual == expected, (
-        f"{case_dir.name}: expected={expected.value}, got={actual.value}"
-    )
+    assert actual == expected, f"{case_dir.name}: expected={expected.value}, got={actual.value}"
 
 
 def test_classify_returns_none_on_success(tmp_path: Path) -> None:

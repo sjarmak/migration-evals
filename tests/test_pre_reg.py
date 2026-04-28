@@ -39,9 +39,7 @@ GATE_SCRIPT = REPO_ROOT / "src" / "migration_evals" / "publication_gate.py"
 HYPOTHESES_PATH = REPO_ROOT / "docs" / "hypotheses_and_thresholds.md"
 
 
-def _run_gate(
-    run_dir: Path, *extra_args: str
-) -> subprocess.CompletedProcess[str]:
+def _run_gate(run_dir: Path, *extra_args: str) -> subprocess.CompletedProcess[str]:
     # Invoke via -m so Python's import machinery does not put
     # src/migration_evals/ on sys.path[0]; otherwise this package's
     # types.py shadows the stdlib types module and breaks argparse.
@@ -122,12 +120,8 @@ def test_stamp_result_populates_fields() -> None:
         recipe_spec=RUN_STAMPED / "recipe_spec.yaml",
         hypotheses=HYPOTHESES_PATH,
     )
-    assert stamped["oracle_spec_sha"] == compute_spec_sha(
-        RUN_STAMPED / "oracle_spec.yaml"
-    )
-    assert stamped["recipe_spec_sha"] == compute_spec_sha(
-        RUN_STAMPED / "recipe_spec.yaml"
-    )
+    assert stamped["oracle_spec_sha"] == compute_spec_sha(RUN_STAMPED / "oracle_spec.yaml")
+    assert stamped["recipe_spec_sha"] == compute_spec_sha(RUN_STAMPED / "recipe_spec.yaml")
     assert stamped["pre_reg_sha"] == compute_spec_sha(HYPOTHESES_PATH)
     # Existing keys preserved.
     assert stamped["task_id"] == "t-1"
@@ -169,9 +163,9 @@ def test_stamp_result_deep_copies_nested_structures() -> None:
 
 def test_gate_passes_on_stamped_run() -> None:
     result = _run_gate(RUN_STAMPED)
-    assert result.returncode == 0, (
-        f"expected pass; stdout={result.stdout!r} stderr={result.stderr!r}"
-    )
+    assert (
+        result.returncode == 0
+    ), f"expected pass; stdout={result.stdout!r} stderr={result.stderr!r}"
 
 
 def test_gate_fails_on_missing_stamp() -> None:
@@ -216,9 +210,7 @@ def test_gate_fails_on_nonexistent_dir(tmp_path: Path) -> None:
     assert "does not exist" in result.stderr
 
 
-@pytest.mark.parametrize(
-    "field", ["oracle_spec_sha", "recipe_spec_sha", "pre_reg_sha"]
-)
+@pytest.mark.parametrize("field", ["oracle_spec_sha", "recipe_spec_sha", "pre_reg_sha"])
 def test_gate_names_each_stale_stamp_field(tmp_path: Path, field: str) -> None:
     staged = _stage_run(RUN_STAMPED, tmp_path / f"run_stale_{field}")
     trial_result = staged / "trial_001" / "result.json"

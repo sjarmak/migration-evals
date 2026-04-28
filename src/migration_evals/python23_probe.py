@@ -30,7 +30,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from migration_evals.synthetic import (
     java8_generator,
@@ -47,9 +47,7 @@ PYTHON_2TO3_RUNTIME_TIER: str = "python_2to3_runtime"
 MODULES: tuple[str, ...] = ("harness", "synthetic", "ledger")
 
 # Path to the result schema we validate against.
-_SCHEMA_PATH = (
-    Path(__file__).resolve().parent.parent.parent / "schemas" / "mig_result.schema.json"
-)
+_SCHEMA_PATH = Path(__file__).resolve().parent.parent.parent / "schemas" / "mig_result.schema.json"
 
 
 def compute_schema_revision_required(
@@ -60,9 +58,7 @@ def compute_schema_revision_required(
     Threshold logic is intentionally extracted so tests can exercise the
     True/False branches without running the full probe.
     """
-    distinct = sum(
-        1 for module in MODULES if mismatches_by_module.get(module)
-    )
+    distinct = sum(1 for module in MODULES if mismatches_by_module.get(module))
     return distinct >= 2
 
 
@@ -83,7 +79,7 @@ def _load_oracle_tier_enum() -> list[str]:
     return ["compile_only", "tests", "ast_conformance", "judge", "daikon"]
 
 
-def _load_repo_case_type(repo_dir: Path) -> Optional[str]:
+def _load_repo_case_type(repo_dir: Path) -> str | None:
     """Return the ``case_type`` recorded in ``python2_meta.json``, or ``None``."""
     meta_path = repo_dir / "python2_meta.json"
     if not meta_path.is_file():
@@ -223,9 +219,7 @@ def run(
         repo_dirs = python2_generator.generate(repos_root, count, seed)
         repo_dirs = sorted(repo_dirs)
 
-    mismatches_by_module: dict[str, list[dict[str, str]]] = {
-        module: [] for module in MODULES
-    }
+    mismatches_by_module: dict[str, list[dict[str, str]]] = {module: [] for module in MODULES}
 
     # Harness + synthetic checks are per-repo. We dedupe identical entries
     # so the findings file does not balloon - the probe records the schema
@@ -256,9 +250,7 @@ def run(
         "n_repos": len(repo_dirs),
         "primitive_coverage": primitive_coverage,
         "mismatches_by_module": mismatches_by_module,
-        "modules_with_mismatches": sorted(
-            m for m in MODULES if mismatches_by_module[m]
-        ),
+        "modules_with_mismatches": sorted(m for m in MODULES if mismatches_by_module[m]),
         "intent": (
             "Falsification probe (PRD M9). NOT a credible Python eval number. "
             "Surfaces schema inadequacies in M2/M3/M5 interfaces."

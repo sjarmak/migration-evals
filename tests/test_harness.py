@@ -17,9 +17,10 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
+from collections.abc import Iterable, Mapping
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Iterable, Mapping, Optional
+from typing import Any
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_REPO_ROOT))
@@ -61,7 +62,7 @@ class FakeAnthropicCassette:
         *,
         model: str,
         messages: Iterable[Mapping[str, Any]],
-        system: Optional[str] = None,
+        system: str | None = None,
         max_tokens: int = 1024,
         cassette: Any = None,
         **kwargs: Any,
@@ -74,8 +75,7 @@ class FakeAnthropicCassette:
         cassette_path = self._cassette_dir / f"{key}.json"
         if not cassette_path.is_file():
             raise AssertionError(
-                f"No cassette recorded for hash {key} "
-                f"(looked for {cassette_path})"
+                f"No cassette recorded for hash {key} " f"(looked for {cassette_path})"
             )
         return json.loads(cassette_path.read_text())
 

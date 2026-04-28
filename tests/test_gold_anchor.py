@@ -173,9 +173,7 @@ def test_correlate_random_trips_ci_low_branch() -> None:
     rng = random.Random(7)
     pattern: list[tuple[bool, str]] = []
     for _ in range(40):
-        pattern.append(
-            (bool(rng.getrandbits(1)), "accept" if rng.getrandbits(1) else "reject")
-        )
+        pattern.append((bool(rng.getrandbits(1)), "accept" if rng.getrandbits(1) else "reject"))
     results, gold = _build_pairs(pattern)
     report = correlate(results, gold)
     # Random noise: point near zero, CI wide. ci_low < 0.5 must hold.

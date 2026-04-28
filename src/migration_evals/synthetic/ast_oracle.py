@@ -39,8 +39,8 @@ import argparse
 import json
 import re
 import time
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable
 
 # PRD D5: this set MUST remain a strict subset (≤ 50%) of the generator's
 # GENERATOR_PRIMITIVES. Do not expand without rebalancing the generator or

@@ -10,9 +10,10 @@ from __future__ import annotations
 
 import os
 import sys
+from collections.abc import Mapping
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any, List, Mapping
+from typing import Any
 
 import pytest
 
@@ -27,7 +28,6 @@ from migration_evals.adapters_anthropic import (  # noqa: E402
     build_anthropic_adapter,
 )
 
-
 # ---------------------------------------------------------------------------
 # Fake client
 # ---------------------------------------------------------------------------
@@ -36,7 +36,7 @@ from migration_evals.adapters_anthropic import (  # noqa: E402
 class _FakeMessages:
     def __init__(self, response: Any) -> None:
         self._response = response
-        self.calls: List[Mapping[str, Any]] = []
+        self.calls: list[Mapping[str, Any]] = []
 
     def create(self, **kwargs: Any) -> Any:
         self.calls.append(kwargs)
@@ -48,7 +48,9 @@ class _FakeClient:
         self.messages = _FakeMessages(response)
 
 
-def _stub_response(text: str = "PASS judge agrees", *, in_tokens: int = 100, out_tokens: int = 20) -> Any:
+def _stub_response(
+    text: str = "PASS judge agrees", *, in_tokens: int = 100, out_tokens: int = 20
+) -> Any:
     """Mimic the SDK Pydantic-shape with ``model_dump`` + nested fields."""
 
     def model_dump() -> dict:
@@ -271,9 +273,7 @@ def test_constructor_does_not_import_anthropic_when_client_passed(
 def test_build_anthropic_adapter_defaults_to_cassette(tmp_path: Path) -> None:
     from migration_evals.cli import _CassetteAnthropicAdapter
 
-    adapter = build_anthropic_adapter(
-        repo_path=tmp_path, adapters_cfg={}, cassette_dir=None
-    )
+    adapter = build_anthropic_adapter(repo_path=tmp_path, adapters_cfg={}, cassette_dir=None)
     assert isinstance(adapter, _CassetteAnthropicAdapter)
 
 

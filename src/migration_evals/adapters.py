@@ -24,7 +24,8 @@ subclassing is not required.
 
 from __future__ import annotations
 
-from typing import Any, Iterable, Mapping, Optional, Protocol, runtime_checkable
+from collections.abc import Iterable, Mapping
+from typing import Any, Protocol, runtime_checkable
 
 
 @runtime_checkable
@@ -60,9 +61,9 @@ class AnthropicAdapter(Protocol):
         *,
         model: str,
         messages: Iterable[Mapping[str, Any]],
-        system: Optional[str] = None,
+        system: str | None = None,
         max_tokens: int = 1024,
-        cassette: Optional[Cassette] = None,
+        cassette: Cassette | None = None,
         **kwargs: Any,
     ) -> Mapping[str, Any]:
         """Issue a single Messages API call and return the response envelope."""
@@ -83,8 +84,8 @@ class SandboxAdapter(Protocol):
         self,
         *,
         image: str,
-        env: Optional[Mapping[str, str]] = None,
-        cassette: Optional[Cassette] = None,
+        env: Mapping[str, str] | None = None,
+        cassette: Cassette | None = None,
     ) -> str:
         """Create a sandbox and return its id."""
         ...
@@ -95,7 +96,7 @@ class SandboxAdapter(Protocol):
         *,
         command: str,
         timeout_s: int = 600,
-        cassette: Optional[Cassette] = None,
+        cassette: Cassette | None = None,
     ) -> Mapping[str, Any]:
         """Execute a shell command inside the sandbox and return stdout/stderr/exit."""
         ...
@@ -119,7 +120,7 @@ class OpenRewriteAdapter(Protocol):
         *,
         repo_path: str,
         recipe: str,
-        cassette: Optional[Cassette] = None,
+        cassette: Cassette | None = None,
     ) -> Mapping[str, Any]:
         """Run an OpenRewrite recipe on a checked-out repo path."""
         ...
@@ -133,8 +134,8 @@ class CodeSearchAdapter(Protocol):
         self,
         *,
         query: str,
-        repo: Optional[str] = None,
-        cassette: Optional[Cassette] = None,
+        repo: str | None = None,
+        cassette: Cassette | None = None,
     ) -> Iterable[Mapping[str, Any]]:
         """Run a code search and yield result envelopes."""
         ...
@@ -149,7 +150,7 @@ class GitHubAdapter(Protocol):
         *,
         owner: str,
         repo: str,
-        cassette: Optional[Cassette] = None,
+        cassette: Cassette | None = None,
     ) -> Mapping[str, Any]:
         """Return repository metadata."""
         ...
@@ -160,8 +161,8 @@ class GitHubAdapter(Protocol):
         owner: str,
         repo: str,
         dest: str,
-        ref: Optional[str] = None,
-        cassette: Optional[Cassette] = None,
+        ref: str | None = None,
+        cassette: Cassette | None = None,
     ) -> str:
         """Clone a repo to `dest` and return the checked-out commit SHA."""
         ...
@@ -177,7 +178,7 @@ class DockerAdapter(Protocol):
         context_dir: str,
         dockerfile: str,
         tag: str,
-        cassette: Optional[Cassette] = None,
+        cassette: Cassette | None = None,
     ) -> str:
         """Build an image from a Dockerfile and return the image id."""
         ...
@@ -188,8 +189,8 @@ class DockerAdapter(Protocol):
         image: str,
         command: str,
         timeout_s: int = 600,
-        env: Optional[Mapping[str, str]] = None,
-        cassette: Optional[Cassette] = None,
+        env: Mapping[str, str] | None = None,
+        cassette: Cassette | None = None,
     ) -> Mapping[str, Any]:
         """Run a one-shot container and return stdout/stderr/exit."""
         ...

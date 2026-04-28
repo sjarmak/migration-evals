@@ -197,9 +197,7 @@ def _minimal_smoke_config(
         "stamps": {
             "oracle_spec": str(_REPO_ROOT / "configs" / "oracle_spec.yaml"),
             "recipe_spec": str(recipe_path),
-            "hypotheses": str(
-                _REPO_ROOT / "docs" / "hypotheses_and_thresholds.md"
-            ),
+            "hypotheses": str(_REPO_ROOT / "docs" / "hypotheses_and_thresholds.md"),
         },
     }
     if smoke_policy is not None:
@@ -238,9 +236,7 @@ def test_run_from_config_threads_recipe_template_policy_to_adapter(
         "migration_evals.runner.build_sandbox_adapter",
         fake_build_sandbox_adapter,
     )
-    monkeypatch.setattr(
-        "migration_evals.runner.run_funnel", fake_run_funnel
-    )
+    monkeypatch.setattr("migration_evals.runner.run_funnel", fake_run_funnel)
 
     repo_path = tmp_path / "repo"
     repo_path.mkdir()

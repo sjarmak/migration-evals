@@ -9,8 +9,8 @@ from __future__ import annotations
 
 import shutil
 import subprocess
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable
 
 import pytest
 
@@ -19,9 +19,7 @@ _CHANGESET_EXAMPLES = _REPO_ROOT / "tests" / "fixtures" / "changeset_examples"
 
 
 def _git(cmd: list[str], cwd: Path) -> str:
-    proc = subprocess.run(
-        ["git", *cmd], cwd=cwd, capture_output=True, text=True, check=True
-    )
+    proc = subprocess.run(["git", *cmd], cwd=cwd, capture_output=True, text=True, check=True)
     return proc.stdout.strip()
 
 
@@ -57,9 +55,7 @@ def _make_seed_repo(
 def _make_bare_remote(seed: Path, root: Path) -> str:
     """Create a bare clone of ``seed`` and return a file:// URL."""
     bare = root / "remote.git"
-    subprocess.run(
-        ["git", "clone", "--bare", "-q", str(seed), str(bare)], check=True
-    )
+    subprocess.run(["git", "clone", "--bare", "-q", str(seed), str(bare)], check=True)
     return f"file://{bare}"
 
 
