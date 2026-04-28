@@ -97,31 +97,35 @@ def test_from_dict_accepts_all_safe_caps() -> None:
     assert set(policy.cap_add) == SAFE_CAPS
 
 
-def test_from_dict_rejects_sys_admin() -> None:
+@pytest.mark.parametrize(
+    "bad_cap",
+    [
+        "SYS_ADMIN",
+        "NET_ADMIN",
+        "SYS_PTRACE",
+        # ``ALL`` is the wildcard and must never be re-granted via cap_add.
+        "ALL",
+        # Linux capabilities are conventionally upper-case; lowercase forms
+        # are not a valid Docker --cap-add spelling and must be rejected
+        # rather than silently upper-cased.
+        "sys_admin",
+        # Even a cap whose upper-case form is in the safe set is rejected
+        # if spelled with non-canonical casing — the YAML author should
+        # fix the spelling.
+        "Net_Bind_Service",
+        # An unknown / made-up cap name has no place in the allowlist.
+        "TOTALLY_FAKE_CAP",
+    ],
+)
+def test_from_dict_rejects_cap_add(bad_cap: str) -> None:
+    """Each disallowed cap_add value must raise ValueError, and the
+    error message must call out both the offending value and the
+    ``cap_add`` field so a YAML author can locate the bad entry."""
     with pytest.raises(ValueError) as excinfo:
-        SandboxPolicy.from_dict({"cap_add": ["SYS_ADMIN"]})
+        SandboxPolicy.from_dict({"cap_add": [bad_cap]})
     msg = str(excinfo.value)
-    assert "SYS_ADMIN" in msg
+    assert bad_cap in msg
     assert "cap_add" in msg
-
-
-def test_from_dict_rejects_net_admin() -> None:
-    with pytest.raises(ValueError) as excinfo:
-        SandboxPolicy.from_dict({"cap_add": ["NET_ADMIN"]})
-    assert "NET_ADMIN" in str(excinfo.value)
-
-
-def test_from_dict_rejects_sys_ptrace() -> None:
-    with pytest.raises(ValueError) as excinfo:
-        SandboxPolicy.from_dict({"cap_add": ["SYS_PTRACE"]})
-    assert "SYS_PTRACE" in str(excinfo.value)
-
-
-def test_from_dict_rejects_all_pseudo_cap() -> None:
-    """``ALL`` is the wildcard and must never be re-granted via cap_add."""
-    with pytest.raises(ValueError) as excinfo:
-        SandboxPolicy.from_dict({"cap_add": ["ALL"]})
-    assert "ALL" in str(excinfo.value)
 
 
 def test_from_dict_mixed_caps_lists_only_bad_ones() -> None:
@@ -141,29 +145,6 @@ def test_from_dict_mixed_caps_lists_only_bad_ones() -> None:
     # portion only — the safe cap is allowed to appear in the hint.
     bad_section = msg.split("allowed caps are")[0]
     assert "NET_BIND_SERVICE" not in bad_section
-
-
-def test_from_dict_rejects_lowercase_cap() -> None:
-    """Linux capabilities are conventionally upper-case; lowercase
-    forms are not a valid Docker --cap-add spelling and must be
-    rejected rather than silently lower-cased."""
-    with pytest.raises(ValueError) as excinfo:
-        SandboxPolicy.from_dict({"cap_add": ["sys_admin"]})
-    assert "sys_admin" in str(excinfo.value)
-
-
-def test_from_dict_rejects_mixed_case_safe_cap() -> None:
-    """Even a cap whose upper-case form is in the safe set is rejected
-    if spelled with non-canonical casing — the YAML author should fix
-    the spelling."""
-    with pytest.raises(ValueError) as excinfo:
-        SandboxPolicy.from_dict({"cap_add": ["Net_Bind_Service"]})
-    assert "Net_Bind_Service" in str(excinfo.value)
-
-
-def test_from_dict_rejects_unknown_cap() -> None:
-    with pytest.raises(ValueError):
-        SandboxPolicy.from_dict({"cap_add": ["TOTALLY_FAKE_CAP"]})
 
 
 # ---------------------------------------------------------------------------
@@ -256,21 +237,26 @@ def test_from_dict_lists_all_bad_network_allowlist_entries() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_from_dict_rejects_empty_cap_drop() -> None:
-    """A YAML recipe that strips the drop-ALL baseline must be
-    rejected — otherwise ``cap_add: ["NET_RAW"]`` plus ``cap_drop: []``
-    silently restores Docker's full default-cap set on top of the
-    explicitly opted-in cap."""
+@pytest.mark.parametrize(
+    "cap_drop",
+    [
+        # Empty list strips the drop-ALL baseline entirely — otherwise
+        # ``cap_add: ["NET_RAW"]`` plus ``cap_drop: []`` silently restores
+        # Docker's full default-cap set on top of the explicitly opted-in
+        # cap.
+        [],
+        # A non-empty list missing ``ALL`` is also rejected — the operator
+        # must explicitly preserve the drop-all baseline.
+        ["NET_RAW"],
+    ],
+    ids=["empty", "without-all"],
+)
+def test_from_dict_rejects_cap_drop_missing_all(cap_drop: list[str]) -> None:
+    """``cap_drop`` must always include ``ALL`` on the YAML/dict ingest
+    path so the drop-all baseline is preserved; the error message must
+    name ``ALL`` so the operator knows what to add back."""
     with pytest.raises(ValueError) as excinfo:
-        SandboxPolicy.from_dict({"cap_drop": []})
-    assert "ALL" in str(excinfo.value)
-
-
-def test_from_dict_rejects_cap_drop_without_all() -> None:
-    """``cap_drop: ["NET_RAW"]`` (without ALL) is also rejected — the
-    operator must explicitly preserve the drop-all baseline."""
-    with pytest.raises(ValueError) as excinfo:
-        SandboxPolicy.from_dict({"cap_drop": ["NET_RAW"]})
+        SandboxPolicy.from_dict({"cap_drop": cap_drop})
     assert "ALL" in str(excinfo.value)
 
 
@@ -328,63 +314,6 @@ def test_from_dict_accepts_null_user() -> None:
     assert policy.user is None
 
 
-def test_from_dict_rejects_user_root_string() -> None:
-    with pytest.raises(ValueError) as excinfo:
-        SandboxPolicy.from_dict({"user": "root"})
-    msg = str(excinfo.value)
-    assert "user" in msg
-    assert "root" in msg
-
-
-def test_from_dict_rejects_user_zero() -> None:
-    """``user: "0"`` is the numeric form of root and must be rejected."""
-    with pytest.raises(ValueError) as excinfo:
-        SandboxPolicy.from_dict({"user": "0"})
-    assert "user" in str(excinfo.value)
-
-
-def test_from_dict_rejects_user_zero_zero() -> None:
-    """``0:0`` is root:root in numeric form."""
-    with pytest.raises(ValueError) as excinfo:
-        SandboxPolicy.from_dict({"user": "0:0"})
-    assert "user" in str(excinfo.value)
-
-
-def test_from_dict_rejects_user_zero_uid_nonzero_gid() -> None:
-    """UID 0 is root regardless of GID — reject."""
-    with pytest.raises(ValueError):
-        SandboxPolicy.from_dict({"user": "0:1000"})
-
-
-def test_from_dict_rejects_user_nonzero_uid_zero_gid() -> None:
-    """GID 0 is the root group — even with a non-root UID, group-root
-    membership is enough to read root-owned files. Reject."""
-    with pytest.raises(ValueError):
-        SandboxPolicy.from_dict({"user": "1000:0"})
-
-
-def test_from_dict_rejects_user_uid_only() -> None:
-    """``user: "1000"`` (no GID) makes docker default the GID to the
-    image's default group, which is typically root. Require explicit
-    ``UID:GID`` so the operator commits to a non-root GID."""
-    with pytest.raises(ValueError):
-        SandboxPolicy.from_dict({"user": "1000"})
-
-
-def test_from_dict_rejects_user_non_numeric() -> None:
-    """Non-numeric forms (``"abc:def"``, ``"appuser"``) cannot be
-    statically verified to be non-root and are rejected at ingest."""
-    with pytest.raises(ValueError):
-        SandboxPolicy.from_dict({"user": "abc:def"})
-
-
-def test_from_dict_rejects_user_named_account() -> None:
-    """A named account like ``appuser`` may map to UID 0 inside the
-    container; without a numeric UID:GID we cannot verify non-root."""
-    with pytest.raises(ValueError):
-        SandboxPolicy.from_dict({"user": "appuser"})
-
-
 def test_from_dict_normalizes_empty_string_user_to_none() -> None:
     """An empty string for ``user`` is normalized to ``None`` (means
     "no --user flag") — confirm that path so the empty-string edge
@@ -393,34 +322,68 @@ def test_from_dict_normalizes_empty_string_user_to_none() -> None:
     assert policy.user is None
 
 
-def test_from_dict_rejects_user_with_whitespace() -> None:
-    """Surrounding whitespace would be passed through as-is to docker
-    and is not a valid UID:GID spelling — reject."""
-    with pytest.raises(ValueError):
-        SandboxPolicy.from_dict({"user": " 1000:1000 "})
-
-
-def test_from_dict_rejects_user_negative_uid() -> None:
-    """Negative numbers are syntactically invalid for UID:GID."""
-    with pytest.raises(ValueError):
-        SandboxPolicy.from_dict({"user": "-1:1000"})
-
-
-def test_from_dict_rejects_user_integer_zero() -> None:
-    """``user: 0`` in YAML is parsed as integer 0, which is falsy in
-    Python. The previous ``if value:`` guard silently mapped this to
-    ``user=None``, dropping the rootless default. Validation must
-    treat it as a bad value, not a missing one."""
-    with pytest.raises(ValueError):
-        SandboxPolicy.from_dict({"user": 0})
-
-
-def test_from_dict_rejects_user_with_trailing_newline() -> None:
-    """``re.match`` with ``$`` allows a trailing ``\\n`` — switching to
-    ``re.fullmatch`` closes that hole. A newline-bearing string is not
-    a valid argv element for ``docker --user``."""
-    with pytest.raises(ValueError):
-        SandboxPolicy.from_dict({"user": "1000:1000\n"})
+@pytest.mark.parametrize(
+    "bad_user",
+    [
+        # ``"root"`` is the named form of UID 0.
+        "root",
+        # ``"0"`` is the numeric form of root.
+        "0",
+        # ``"0:0"`` is root:root in numeric form.
+        "0:0",
+        # UID 0 is root regardless of GID.
+        "0:1000",
+        # GID 0 is the root group — even with a non-root UID, group-root
+        # membership is enough to read root-owned files.
+        "1000:0",
+        # ``"1000"`` (no GID) makes docker default the GID to the image's
+        # default group, which is typically root. Require explicit
+        # ``UID:GID`` so the operator commits to a non-root GID.
+        "1000",
+        # Non-numeric forms cannot be statically verified to be non-root.
+        "abc:def",
+        # A named account like ``appuser`` may map to UID 0 inside the
+        # container; without a numeric UID:GID we cannot verify non-root.
+        "appuser",
+        # Surrounding whitespace would be passed through as-is to docker
+        # and is not a valid UID:GID spelling.
+        " 1000:1000 ",
+        # Negative numbers are syntactically invalid for UID:GID.
+        "-1:1000",
+        # ``user: 0`` in YAML is parsed as integer 0, which is falsy in
+        # Python. The previous ``if value:`` guard silently mapped this
+        # to ``user=None``, dropping the rootless default. Validation
+        # must treat it as a bad value, not a missing one.
+        0,
+        # ``re.match`` with ``$`` allows a trailing ``\n`` — switching to
+        # ``re.fullmatch`` closes that hole. A newline-bearing string is
+        # not a valid argv element for ``docker --user``.
+        "1000:1000\n",
+    ],
+    ids=[
+        "root-string",
+        "zero",
+        "zero-zero",
+        "zero-uid-nonzero-gid",
+        "nonzero-uid-zero-gid",
+        "uid-only",
+        "non-numeric",
+        "named-account",
+        "with-whitespace",
+        "negative-uid",
+        "integer-zero",
+        "trailing-newline",
+    ],
+)
+def test_from_dict_rejects_user(bad_user: str | int) -> None:
+    """Each disallowed ``user`` value must raise ValueError on the
+    YAML/dict ingest path, and the error message must name the ``user``
+    field so a YAML author can locate the bad entry. Covers the
+    non-root-UID, non-root-GID, must-be-numeric-UID:GID, and
+    must-be-fullmatch contracts of the ingest validator."""
+    with pytest.raises(ValueError) as excinfo:
+        SandboxPolicy.from_dict({"user": bad_user})
+    assert "user" in str(excinfo.value)
 
 
 def test_constructor_accepts_root_user_directly() -> None:
