@@ -165,6 +165,7 @@ _QUALITY_ORACLE_ORDER: tuple[str, ...] = (
     "idempotency",
     "baseline_comparison",
     "touched_paths",
+    "cve_disappears",
 )
 
 
@@ -190,6 +191,11 @@ def _quality_aggregate(
     - ``baseline_passed_rate``: only for ``baseline_comparison``;
       fraction of trials where ``baseline_passed=True`` (i.e. the
       baseline tool would have produced the same migration).
+    - ``cve_disappears_rate``: only for ``cve_disappears``; fraction of
+      *non-skipped* trials where the named CVE was absent from trivy
+      output (1.0 means every observed trial cleared the CVE; computed
+      over ``n_observed - n_skipped`` so trials that lacked trivy on
+      PATH or hit a parse-failure skip do not dilute the rate).
     """
     rows: list[dict[str, Any]] = []
     for tier in _QUALITY_ORACLE_ORDER:
@@ -200,6 +206,7 @@ def _quality_aggregate(
         over_edits: list[float] = []
         overlaps: list[float] = []
         baseline_passes = 0
+        cve_absent_count = 0
         for row in results:
             verdicts = (row.get("funnel") or {}).get("quality_verdicts") or []
             for verdict in verdicts:
@@ -226,6 +233,9 @@ def _quality_aggregate(
                 if tier == "baseline_comparison":
                     if details.get("baseline_passed") is True:
                         baseline_passes += 1
+                if tier == "cve_disappears":
+                    if details.get("skipped") is not True and details.get("cve_present") is False:
+                        cve_absent_count += 1
                 break
         row_out: dict[str, Any] = {
             "tier_name": tier,
@@ -245,8 +255,21 @@ def _quality_aggregate(
                 round(sum(overlaps) / len(overlaps), 6) if overlaps else None
             )
         if tier == "baseline_comparison":
+            # Denominator is n_observed (includes skipped trials),
+            # deliberately asymmetric with cve_disappears_rate which uses
+            # n_observed - n_skipped. Skipped baseline trials are rare in
+            # practice (only when the recipe lacks a baseline_pattern),
+            # so dividing by n_observed keeps the rate comparable across
+            # corpora. cve_disappears skips are common (any workstation
+            # without trivy on PATH), so subtracting them preserves
+            # interpretability.
             row_out["baseline_passed_rate"] = (
                 round(baseline_passes / n_observed, 6) if n_observed > 0 else None
+            )
+        if tier == "cve_disappears":
+            scanned = n_observed - n_skipped
+            row_out["cve_disappears_rate"] = (
+                round(cve_absent_count / scanned, 6) if scanned > 0 else None
             )
         rows.append(row_out)
     return rows
@@ -639,6 +662,21 @@ def _format_quality_table(rows: Sequence[Mapping[str, Any]]) -> str:
                 lines.append(
                     f"  - baseline_passed rate: {baseline_rate:.4f} "
                     "(1.0 means baseline ≡ agent on every trial)"
+                )
+        if row["tier_name"] == "cve_disappears":
+            cve_rate = row.get("cve_disappears_rate")
+            if cve_rate is not None:
+                # cve_disappears_rate is computed in _quality_aggregate as
+                # cve_absent_count / (n_observed - n_skipped); only the
+                # display "over N non-skipped trial(s)" text re-derives the
+                # denominator for human readability. _quality_aggregate is
+                # the source of truth — if its rate is non-None, scanned
+                # is guaranteed > 0.
+                scanned = row["n_observed"] - row["n_skipped"]
+                lines.append(
+                    f"  - cve_disappears rate: {cve_rate:.4f} "
+                    f"(over {scanned} non-skipped trial(s); 1.0 means the "
+                    "named CVE was absent from every scanned trial)"
                 )
     return "\n".join(lines)
 

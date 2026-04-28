@@ -14,14 +14,22 @@ Covers:
   semantics; the literal `/dev/null` token is dropped from
   ``touched_paths`` but the deletion's source path IS recorded so the
   allowlist can gate deletions as well as edits/creates.
-- run_quality_oracles: runs all four in fixed order.
+- cve_disappears: opt-in scaffolding (skipped without cve_id /
+  scanner_tool / trivy on PATH); informational pass/fail signal in
+  ``details.cve_present`` mirroring baseline_comparison's contract;
+  hardened trivy-invocation surface (parse failures, unsupported
+  schema, non-zero exit, timeout — all skipped, never false-positive).
+- run_quality_oracles: runs all five in fixed order.
 - run_funnel: emits quality_verdicts when adapters supplies a
   quality_spec, leaves the field empty otherwise.
 """
 
 from __future__ import annotations
 
+import json
+import subprocess
 import sys
+from collections.abc import Callable
 from pathlib import Path
 from textwrap import dedent
 
@@ -33,6 +41,7 @@ sys.path.insert(0, str(_REPO_ROOT / "src"))
 from migration_evals.harness.recipe import Recipe  # noqa: E402
 from migration_evals.oracles.quality import (  # noqa: E402
     baseline_comparison,
+    cve_disappears,
     diff_minimality,
     idempotency,
     run_quality_oracles,
@@ -650,11 +659,301 @@ def test_touched_paths_skipped_when_diff_exceeds_size_cap(
 
 
 # ---------------------------------------------------------------------------
+# cve_disappears
+# ---------------------------------------------------------------------------
+
+# Placeholder CVE IDs for tests — chosen to avoid collision with any real
+# advisory. Real CVE IDs in tests/docs are a public-repo hygiene
+# violation per ADR 0001 (eval-as-secret non-goal).
+_FAKE_CVE = "CVE-2099-99999"
+
+
+def _trivy_payload(cve_present: bool, *, schema: int = 2) -> str:
+    vulns = (
+        [
+            {
+                "VulnerabilityID": _FAKE_CVE,
+                "PkgName": "ghpkg",
+            }
+        ]
+        if cve_present
+        else []
+    )
+    return json.dumps(
+        {
+            "SchemaVersion": schema,
+            "Metadata": {"DB": {"UpdatedAt": "2026-04-26T00:00:00Z"}},
+            "Results": [{"Target": "go.mod", "Vulnerabilities": vulns}],
+        }
+    )
+
+
+def _stub_run_trivy(
+    stdout: str,
+    *,
+    returncode: int = 0,
+    stderr: str = "",
+) -> Callable[[Path, str], cve_disappears._TrivyResult]:  # type: ignore[name-defined]
+    """Build a _run_trivy stub with a fixed return value."""
+
+    def _stub(repo_path: Path, cli: str) -> cve_disappears._TrivyResult:  # type: ignore[name-defined]
+        return cve_disappears._TrivyResult(
+            returncode=returncode,
+            stdout=stdout,
+            stderr=stderr,
+        )
+
+    return _stub
+
+
+def _patch_trivy_seam(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    cli: str | None = "/fake/trivy",
+    version: str | None = "0.50.4",
+) -> None:
+    """Stub the trivy resolution + version query in one call.
+
+    Test bodies that go past the trivy-on-PATH gate should call this and
+    then separately monkeypatch ``cve_disappears._run_trivy`` with the
+    scan stub they want.
+    """
+    monkeypatch.setattr(cve_disappears, "_which_trivy", lambda: cli)
+    monkeypatch.setattr(cve_disappears, "_query_trivy_version", lambda _cli: version)
+
+
+def test_cve_disappears_skipped_when_no_cve_id(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    verdict = cve_disappears.run(repo, QualitySpec.empty())
+    assert verdict.passed is True
+    assert verdict.details["skipped"] is True
+    assert "not configured" in verdict.details["reason"]
+
+
+def test_cve_disappears_skipped_when_no_scanner_tool(tmp_path: Path) -> None:
+    """When cve_id is set but cve_scanner_tool is not, the skip reason
+    must point at the missing scanner specifically (not a generic
+    'not configured' message that conflates the two fields)."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    spec = QualitySpec(cve_id=_FAKE_CVE)
+    verdict = cve_disappears.run(repo, spec)
+    assert verdict.details["skipped"] is True
+    assert "cve_scanner_tool" in verdict.details["reason"]
+    # cve_id should be carried through so a debugger can see what was set.
+    assert verdict.details["cve_id"] == _FAKE_CVE
+
+
+def test_cve_disappears_skipped_when_trivy_not_on_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Recipe-author-provided tool: missing trivy degrades gracefully."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    monkeypatch.setattr(cve_disappears, "_which_trivy", lambda: None)
+    spec = QualitySpec(cve_id=_FAKE_CVE, cve_scanner_tool="trivy")
+    verdict = cve_disappears.run(repo, spec)
+    assert verdict.passed is True
+    assert verdict.details["skipped"] is True
+    assert "trivy not on PATH" in verdict.details["reason"]
+
+
+def test_cve_disappears_pass_when_cve_absent(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Trivy ran cleanly and the named CVE is not in its output → cve_present=False."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _patch_trivy_seam(monkeypatch)
+    monkeypatch.setattr(
+        cve_disappears, "_run_trivy", _stub_run_trivy(_trivy_payload(cve_present=False))
+    )
+    spec = QualitySpec(cve_id=_FAKE_CVE, cve_scanner_tool="trivy")
+    verdict = cve_disappears.run(repo, spec)
+    # Verdict is informational — passed=True regardless of whether the
+    # CVE was found. Signal lives in details.cve_present.
+    assert verdict.passed is True
+    assert verdict.details.get("skipped") is not True
+    assert verdict.details["cve_present"] is False
+    assert verdict.details["scanner_tool"] == "trivy"
+    assert verdict.details["scanner_version"] == "0.50.4"
+    assert verdict.details["schema_version"] == 2
+    assert verdict.details["db_updated_at"] == "2026-04-26T00:00:00Z"
+
+
+def test_cve_disappears_fail_when_cve_present(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Named CVE still present in trivy output → details.cve_present=True
+    (verdict stays passed=True per the informational-oracle contract)."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _patch_trivy_seam(monkeypatch)
+    monkeypatch.setattr(
+        cve_disappears, "_run_trivy", _stub_run_trivy(_trivy_payload(cve_present=True))
+    )
+    spec = QualitySpec(cve_id=_FAKE_CVE, cve_scanner_tool="trivy")
+    verdict = cve_disappears.run(repo, spec)
+    assert verdict.passed is True
+    assert verdict.details["cve_present"] is True
+
+
+def test_cve_disappears_skipped_on_unsupported_schema(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A future trivy that bumps SchemaVersion must skip, not silently miss."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _patch_trivy_seam(monkeypatch)
+    monkeypatch.setattr(
+        cve_disappears,
+        "_run_trivy",
+        _stub_run_trivy(_trivy_payload(cve_present=False, schema=99)),
+    )
+    spec = QualitySpec(cve_id=_FAKE_CVE, cve_scanner_tool="trivy")
+    verdict = cve_disappears.run(repo, spec)
+    assert verdict.details["skipped"] is True
+    assert verdict.details["schema_version"] == 99
+    assert "unsupported trivy SchemaVersion" in verdict.details["reason"]
+
+
+def test_cve_disappears_skipped_on_invalid_json(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _patch_trivy_seam(monkeypatch)
+    monkeypatch.setattr(cve_disappears, "_run_trivy", _stub_run_trivy("not-json{"))
+    spec = QualitySpec(cve_id=_FAKE_CVE, cve_scanner_tool="trivy")
+    verdict = cve_disappears.run(repo, spec)
+    assert verdict.details["skipped"] is True
+    assert "not valid JSON" in verdict.details["reason"]
+
+
+def test_cve_disappears_skipped_on_nonzero_exit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """trivy non-zero exit (e.g. DB missing) skips with the exit code recorded."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _patch_trivy_seam(monkeypatch)
+    monkeypatch.setattr(
+        cve_disappears,
+        "_run_trivy",
+        _stub_run_trivy("", returncode=2, stderr="vulnerability DB missing\n"),
+    )
+    spec = QualitySpec(cve_id=_FAKE_CVE, cve_scanner_tool="trivy")
+    verdict = cve_disappears.run(repo, spec)
+    assert verdict.details["skipped"] is True
+    assert "exited 2" in verdict.details["reason"]
+
+
+def test_cve_disappears_skipped_on_timeout(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _patch_trivy_seam(monkeypatch)
+
+    def _raises(_repo: Path, _cli: str) -> cve_disappears._TrivyResult:
+        raise subprocess.TimeoutExpired(cmd="trivy", timeout=15)
+
+    monkeypatch.setattr(cve_disappears, "_run_trivy", _raises)
+    spec = QualitySpec(cve_id=_FAKE_CVE, cve_scanner_tool="trivy")
+    verdict = cve_disappears.run(repo, spec)
+    assert verdict.details["skipped"] is True
+    assert "timed out" in verdict.details["reason"]
+
+
+def test_quality_spec_validates_cve_id_format() -> None:
+    """A typo or lowercase variant must be rejected at construction so it
+    can't silently never match trivy output."""
+    with pytest.raises(ValueError, match="cve_id"):
+        QualitySpec(cve_id="cve-2024-1234")
+
+
+def test_quality_spec_validates_cve_scanner_tool_allowlist() -> None:
+    with pytest.raises(ValueError, match="cve_scanner_tool"):
+        QualitySpec(cve_scanner_tool="snyk")
+
+
+def test_quality_spec_from_dict_threads_cve_fields() -> None:
+    spec = QualitySpec.from_dict({"cve_id": _FAKE_CVE, "cve_scanner_tool": "trivy"})
+    assert spec.cve_id == _FAKE_CVE
+    assert spec.cve_scanner_tool == "trivy"
+
+
+def test_quality_spec_rejects_three_digit_cve_sequence() -> None:
+    """The minimum CVE sequence number is 4 digits per the MITRE format."""
+    with pytest.raises(ValueError, match="cve_id"):
+        QualitySpec(cve_id="CVE-2024-123")
+
+
+def test_quality_spec_rejects_cve_id_with_trailing_newline() -> None:
+    """A YAML scalar with a trailing newline must be rejected at load
+    time. ``re.$`` would have allowed this — ``\\Z`` does not — and a
+    silently-accepted ID with `\\n` would never match a trivy
+    VulnerabilityID, producing a permanent false `cve_present=False`."""
+    with pytest.raises(ValueError, match="cve_id"):
+        QualitySpec(cve_id=f"{_FAKE_CVE}\n")
+
+
+def test_cve_disappears_skipped_when_stdout_exceeds_cap(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A trivy stdout payload that exceeds MAX_TRIVY_STDOUT_BYTES must
+    skip with a clear reason rather than being parsed (host-side OOM
+    guard, mirrors MAX_DIFF_BYTES in touched_paths.py)."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _patch_trivy_seam(monkeypatch)
+    monkeypatch.setattr(cve_disappears, "MAX_TRIVY_STDOUT_BYTES", 16)
+    monkeypatch.setattr(
+        cve_disappears,
+        "_run_trivy",
+        _stub_run_trivy(_trivy_payload(cve_present=False)),
+    )
+    spec = QualitySpec(cve_id=_FAKE_CVE, cve_scanner_tool="trivy")
+    verdict = cve_disappears.run(repo, spec)
+    assert verdict.details["skipped"] is True
+    assert "MAX_TRIVY_STDOUT_BYTES" in verdict.details["reason"]
+
+
+def test_cve_disappears_truncates_long_stderr_in_reason(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Trivy ERROR lines often carry the absolute repo path; the verdict
+    is serialised into result.json (potentially published), so the
+    stderr first line must be capped to MAX_REASON_TEXT_CHARS."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _patch_trivy_seam(monkeypatch)
+    long_path = "/srv/eval-runner/run-2026-04-28T12:00:00Z/" + ("x" * 500) + "/go.sum"
+    monkeypatch.setattr(
+        cve_disappears,
+        "_run_trivy",
+        _stub_run_trivy(
+            "",
+            returncode=2,
+            stderr=f"ERROR: failed to analyze {long_path}\n",
+        ),
+    )
+    spec = QualitySpec(cve_id=_FAKE_CVE, cve_scanner_tool="trivy")
+    verdict = cve_disappears.run(repo, spec)
+    assert verdict.details["skipped"] is True
+    # The reason starts with "trivy exited 2: " (16 chars) plus the
+    # truncated stderr first line, so the embedded stderr fragment must
+    # be <= MAX_REASON_TEXT_CHARS.
+    assert "trivy exited 2:" in verdict.details["reason"]
+    embedded = verdict.details["reason"].split("trivy exited 2: ", 1)[1]
+    assert len(embedded) <= cve_disappears.MAX_REASON_TEXT_CHARS
+
+
+# ---------------------------------------------------------------------------
 # run_quality_oracles + funnel integration
 # ---------------------------------------------------------------------------
 
 
-def test_run_quality_oracles_returns_all_four_in_order(
+def test_run_quality_oracles_returns_all_five_in_order(
     tmp_path: Path,
 ) -> None:
     repo = tmp_path / "repo"
@@ -667,6 +966,7 @@ def test_run_quality_oracles_returns_all_four_in_order(
         "idempotency",
         "baseline_comparison",
         "touched_paths",
+        "cve_disappears",
     ]
 
 
@@ -701,9 +1001,10 @@ def test_run_funnel_attaches_quality_verdicts(tmp_path: Path) -> None:
         "idempotency",
         "baseline_comparison",
         "touched_paths",
+        "cve_disappears",
     ]
     assert "quality_verdicts" in fr.to_dict()
-    assert len(fr.to_dict()["quality_verdicts"]) == 4
+    assert len(fr.to_dict()["quality_verdicts"]) == 5
 
 
 def test_calibration_corpus_exercises_quality_oracles() -> None:
@@ -744,11 +1045,17 @@ def test_calibration_corpus_exercises_quality_oracles() -> None:
                 "idempotency",
                 "baseline_comparison",
                 "touched_paths",
+                "cve_disappears",
             }
             for name, v in verdicts:
+                if name == "cve_disappears":
+                    # cve_disappears stays opt-in; the go_import_rewrite
+                    # spec doesn't configure it, so a skip is expected
+                    # and not counted toward the non-skip floor.
+                    continue
                 if not v.details.get("skipped"):
                     n_seen[name] += 1
-    # Each oracle must have a non-skip observation on at least one fixture.
+    # Each non-cve oracle must have a non-skip observation on at least one fixture.
     assert all(n_seen[name] > 0 for name in n_seen), n_seen
 
 

@@ -25,6 +25,7 @@ from pathlib import Path
 
 from migration_evals.oracles.quality import (
     baseline_comparison,
+    cve_disappears,
     diff_minimality,
     idempotency,
     touched_paths,
@@ -37,6 +38,7 @@ QUALITY_ORACLES = (
     ("idempotency", idempotency.run),
     ("baseline_comparison", baseline_comparison.run),
     ("touched_paths", touched_paths.run),
+    ("cve_disappears", cve_disappears.run),
 )
 
 
@@ -46,10 +48,10 @@ def run_quality_oracles(
     """Run every quality oracle in a fixed order.
 
     The order is ``diff_minimality``, ``idempotency``,
-    ``baseline_comparison``, ``touched_paths``. None of them
-    short-circuit each other - failure in one is informational at the
-    funnel level (the cascade has already produced its verdict by the
-    time these run).
+    ``baseline_comparison``, ``touched_paths``, ``cve_disappears``.
+    None of them short-circuit each other - failure in one is
+    informational at the funnel level (the cascade has already produced
+    its verdict by the time these run).
     """
     repo = Path(repo_path)
     results: list[tuple[str, OracleVerdict]] = []
@@ -62,6 +64,7 @@ def run_quality_oracles(
 __all__ = [
     "QUALITY_ORACLES",
     "baseline_comparison",
+    "cve_disappears",
     "diff_minimality",
     "idempotency",
     "run_quality_oracles",
