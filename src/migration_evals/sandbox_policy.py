@@ -35,11 +35,17 @@ DEFAULT_USER = "1000:1000"
 DEFAULT_SCRATCH = "/scratch"
 # Pinned by digest, not floating tag, so a supply-chain compromise of the
 # upstream tag cannot land new code in the egress sidecar. To refresh the
-# pin, run ``docker manifest inspect --verbose vimagick/tinyproxy:<tag>``
-# (or ``curl https://hub.docker.com/v2/repositories/vimagick/tinyproxy/tags/<tag>``)
-# and copy the manifest digest in the form ``vimagick/tinyproxy@sha256:<hex>``.
+# pin, run ``docker buildx imagetools inspect kalaksi/tinyproxy:<tag>``
+# (or ``curl https://hub.docker.com/v2/repositories/kalaksi/tinyproxy/tags/<tag>``)
+# and copy the multi-arch index digest in the form
+# ``kalaksi/tinyproxy@sha256:<hex>`` so docker resolves the right
+# platform manifest at pull time. See docs/adr/0002-tinyproxy-egress-
+# image-replacement.md for why this image (kalaksi/tinyproxy ships
+# tinyproxy 1.11.2 on Alpine 3.23 with CVE-2023-49606 + CVE-2022-40468
+# patched, build via GitLab CI with SLSA in-toto provenance attached)
+# replaced the previous vimagick/tinyproxy pin.
 DEFAULT_PROXY_IMAGE = (
-    "vimagick/tinyproxy@sha256:72b441b95ee1e641af948f68f09492f9f795ead72b73954414e339168c98ad8c"
+    "kalaksi/tinyproxy@sha256:6eddb7eba70227000b2a8948e84ecbf88db87bc910a54682ebef58cef9eb3887"
 )
 DEFAULT_PROXY_PORT = 8888
 

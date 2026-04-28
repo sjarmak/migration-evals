@@ -1006,11 +1006,15 @@ def test_pull_proxy_config_writes_filter_lines(
 def test_anchored_host_regex_tolerates_port_suffix() -> None:
     """The Allow regex must match BOTH 'host' and 'host:port' forms.
 
-    tinyproxy CONNECT-target filtering varies by version: 1.11.0
-    strips the ':port' suffix before regex match (verified locally
-    against vimagick/tinyproxy:latest), but other builds retain it.
-    The generated regex must be tolerant of both so an allowlisted
-    host is not silently denied on a version skew.
+    tinyproxy CONNECT-target filtering varies by build: 1.11.0
+    (the historical vimagick/tinyproxy image) and 1.11.2 (the
+    current kalaksi/tinyproxy image) both strip the ':port'
+    suffix before matching the Filter regex (a CONNECT to
+    example.com:443 is matched against the bare string
+    "example.com"); other builds documented in the tinyproxy
+    issue tracker retain the suffix. The generated regex must
+    be tolerant of both so an allowlisted host is not silently
+    denied on a version skew.
     """
     pattern = re.compile(DockerSandboxAdapter._anchored_host_regex("example.com"))
     assert pattern.match("example.com"), "must match bare host"
@@ -1081,7 +1085,7 @@ def test_pull_proxy_run_failure_cleans_up_network(
         returncode=125,
         cmd=["docker", "run"],
         output="",
-        stderr="Unable to find image 'vimagick/tinyproxy:latest' locally",
+        stderr="Unable to find image 'kalaksi/tinyproxy@sha256:...' locally",
     )
     recorder = _Recorder(
         [
@@ -1224,7 +1228,7 @@ def _proxy_image_present() -> bool:
     not (_DOCKER_AVAILABLE and _DOCKER_INTEGRATION and _proxy_image_present()),
     reason=(
         "set MIGRATION_EVAL_DOCKER_INTEGRATION=1 with Docker available and "
-        "the proxy image (MIGRATION_EVAL_PROXY_IMAGE or vimagick/tinyproxy:latest) "
+        "the proxy image (MIGRATION_EVAL_PROXY_IMAGE or DEFAULT_PROXY_IMAGE) "
         "present locally"
     ),
 )

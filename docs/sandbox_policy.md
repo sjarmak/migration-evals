@@ -95,8 +95,8 @@ adapters:
     network_allowlist:
       - registry-1.docker.io
       - proxy.golang.org
-    proxy_image: vimagick/tinyproxy:latest   # default; override for air-gapped envs
-    proxy_port: 8888                          # default; override if it clashes
+    proxy_image: kalaksi/tinyproxy@sha256:...   # default; override for air-gapped envs
+    proxy_port: 8888                             # default; override if it clashes
 ```
 
 **Operational notes:**
@@ -104,9 +104,11 @@ adapters:
 - The `proxy_image` must be present locally before a trial starts (no
   on-the-fly pull from inside the egress filter — the proxy itself
   needs egress, and we won't have it until the sidecar is up). Pre-
-  pull on each runner host:
+  pull on each runner host (use the digest baked into
+  `DEFAULT_PROXY_IMAGE` so byte-for-byte parity with the harness is
+  preserved):
   ```bash
-  docker pull vimagick/tinyproxy:latest
+  docker pull "$(python3 -c 'from migration_evals.sandbox_policy import DEFAULT_PROXY_IMAGE; print(DEFAULT_PROXY_IMAGE)')"
   ```
 - Cleanup is best-effort: `destroy_sandbox` removes the workload, then
   the sidecar, then the per-sandbox network (in that order — docker
@@ -115,14 +117,17 @@ adapters:
   does not inspect TLS SNI; SNI spoofing detection is out of scope for
   this layer.
 - **tinyproxy version + CONNECT-port behavior (37t):** the default
-  `vimagick/tinyproxy:latest` pins `tinyproxy 1.11.0`. Verified locally
-  that 1.11.0 strips the `:port` suffix before matching the
-  `Filter` regex (a request `CONNECT example.com:443` is matched
-  against the bare string `example.com`). Because behavior across
-  forks/versions is not guaranteed, the generated allow regex is
-  written as `^<host>(:[0-9]+)?$` — it accepts both forms so an
-  allowlisted host is not silently denied on a version skew. Anchoring
-  + `re.escape` still prevents prefix-match smuggling.
+  `kalaksi/tinyproxy` pin ships `tinyproxy 1.11.2`. Both 1.11.0
+  (the historical vimagick image) and 1.11.2 strip the `:port`
+  suffix before matching the `Filter` regex (so `CONNECT
+  example.com:443` is matched against the bare string
+  `example.com`); other tinyproxy builds documented in the
+  upstream issue tracker retain the suffix. The generated allow
+  regex is written as `^<host>(:[0-9]+)?$` so it accepts both
+  forms and an allowlisted host is not silently denied on a
+  version skew. Anchoring + `re.escape` still prevents prefix-
+  match smuggling. See `docs/adr/0002-tinyproxy-egress-image-
+  replacement.md` for the upstream-image audit and CVE history.
 - The audit `--label migration-eval.network-allowlist=<host>` is still
   emitted on the workload container so existing log analyzers continue
   to see what each trial was permitted to reach.
