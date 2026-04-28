@@ -41,6 +41,7 @@ revert.
 | [`docs/README.md`](docs/README.md) | Per-component design notes (oracle funnel, harness synth, gold-anchor, publication gate, python23 probe). |
 | [`docs/integration_guide.md`](docs/integration_guide.md) | End-to-end walkthrough for plugging your agent pipeline into the funnel — from clone to first stamped report. Start here if you are integrating an external pipeline. |
 | [`docs/usage.md`](docs/usage.md) | CLI quickstart for `run`/`report`/`iterator-report`/`regression`/`harness`/`probe`. |
+| [`docs/agentic_migrations_coverage.md`](docs/agentic_migrations_coverage.md) | One-glance matrix of which migration categories are graded today vs. roadmap (recipe? sandbox image? fixture? gaps). |
 | [`docs/oracle_funnel.md`](docs/oracle_funnel.md) | Funnel design + sandbox/Anthropic backend selection. |
 | [`docs/tier0_skip.md`](docs/tier0_skip.md) | Why tier 0 is skipped today and the three conditions that re-open it. |
 | [`src/migration_evals/`](src/migration_evals/) | Python package - CLI, funnel (Tier 0–4), oracles, gold anchor, iterator-batch report, ledger, contamination split, pre-registration / publication gate, Python 2→3 probe. |
