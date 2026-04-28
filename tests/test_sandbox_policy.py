@@ -23,6 +23,7 @@ sys.path.insert(0, str(_REPO_ROOT / "src"))
 
 from migration_evals.sandbox_policy import (  # noqa: E402
     DEFAULT_PROXY_IMAGE,
+    DEFAULT_PROXY_PORT,
     SAFE_CAPS,
     SandboxPolicy,
 )
@@ -457,3 +458,129 @@ def test_default_proxy_image_digest_has_expected_length() -> None:
     assert len(DEFAULT_PROXY_IMAGE) == len(prefix) + 64
     digest_hex = DEFAULT_PROXY_IMAGE[len(prefix) :]
     assert all(c in "0123456789abcdef" for c in digest_hex)
+
+
+# ---------------------------------------------------------------------------
+# proxy_port type + range validation (security wave-4 z7i)
+# ---------------------------------------------------------------------------
+#
+# Wave-1 review (LOW #1) flagged that ``from_dict`` did not range-check
+# ``proxy_port`` after ``int()`` conversion. Wave-4 review expanded the
+# scope: the dataclass constructor itself was unguarded, so internal
+# direct-construction callers could pass a non-int (e.g. a shell-injection
+# payload string like ``"8888; rm -rf /"``) which then flowed verbatim
+# into ``_wait_for_proxy_ready``'s f-string URL and into
+# ``_render_proxy_config``. The fix is symmetric: range check in
+# ``from_dict`` (matches the existing cap_add / user / network_allowlist
+# ingest validators) AND a self-defending type+range check in
+# ``__post_init__`` so the dataclass cannot hold an invalid port
+# regardless of how it was constructed.
+
+
+# from_dict: range validation after int() coercion ------------------------
+
+
+def test_from_dict_accepts_default_proxy_port() -> None:
+    policy = SandboxPolicy.from_dict({"proxy_port": DEFAULT_PROXY_PORT})
+    assert policy.proxy_port == DEFAULT_PROXY_PORT
+
+
+@pytest.mark.parametrize("port", [1, 1024, 8888, 65535])
+def test_from_dict_accepts_proxy_port_in_range(port: int) -> None:
+    policy = SandboxPolicy.from_dict({"proxy_port": port})
+    assert policy.proxy_port == port
+
+
+@pytest.mark.parametrize("port", [0, -1, 65536, 100000])
+def test_from_dict_rejects_proxy_port_out_of_range(port: int) -> None:
+    with pytest.raises(ValueError) as excinfo:
+        SandboxPolicy.from_dict({"proxy_port": port})
+    msg = str(excinfo.value)
+    assert "proxy_port" in msg
+
+
+def test_from_dict_rejects_proxy_port_non_integer_string() -> None:
+    """A non-numeric string fails ``int()`` conversion before our range
+    check fires; either way the dict-ingest path must reject it."""
+    with pytest.raises(ValueError):
+        SandboxPolicy.from_dict({"proxy_port": "not-a-number"})
+
+
+def test_from_dict_accepts_proxy_port_numeric_string() -> None:
+    """A numeric string is coerced via ``int()`` and then range-checked
+    — the existing dict-ingest contract is to accept stringified ints."""
+    policy = SandboxPolicy.from_dict({"proxy_port": "8888"})
+    assert policy.proxy_port == 8888
+
+
+@pytest.mark.parametrize("bool_value", [True, False])
+def test_from_dict_rejects_proxy_port_bool(bool_value: bool) -> None:
+    """``int(True) == 1`` and ``int(False) == 0`` — without a pre-coercion
+    bool guard, ``proxy_port: true`` in YAML would silently become port 1.
+    Reject the bool type at the ingest boundary."""
+    with pytest.raises(ValueError) as excinfo:
+        SandboxPolicy.from_dict({"proxy_port": bool_value})
+    assert "proxy_port" in str(excinfo.value)
+
+
+def test_from_dict_rejects_proxy_port_float() -> None:
+    """``int(8888.5) == 8888`` silently truncates. Reject the float type
+    at the ingest boundary so a fractional YAML value fails fast."""
+    with pytest.raises(ValueError) as excinfo:
+        SandboxPolicy.from_dict({"proxy_port": 8888.5})
+    assert "proxy_port" in str(excinfo.value)
+
+
+# __post_init__: type + range validation on direct construction -----------
+
+
+def test_constructor_accepts_default_proxy_port() -> None:
+    """Sanity check: the hardened default must still construct."""
+    policy = SandboxPolicy()
+    assert policy.proxy_port == DEFAULT_PROXY_PORT
+
+
+@pytest.mark.parametrize("port", [1, 1024, 8888, 65535])
+def test_constructor_accepts_proxy_port_in_range(port: int) -> None:
+    policy = SandboxPolicy(proxy_port=port)
+    assert policy.proxy_port == port
+
+
+@pytest.mark.parametrize("port", [0, -1, 65536, 100000])
+def test_constructor_rejects_proxy_port_out_of_range(port: int) -> None:
+    """Direct construction is no longer an audited-escape hatch for
+    proxy_port — an out-of-range int flows into ``_wait_for_proxy_ready``
+    and ``_render_proxy_config`` and must be blocked at the dataclass
+    boundary."""
+    with pytest.raises(ValueError) as excinfo:
+        SandboxPolicy(proxy_port=port)
+    assert "proxy_port" in str(excinfo.value)
+
+
+def test_constructor_rejects_proxy_port_string() -> None:
+    """The shell-injection surface motivator: a string proxy_port (e.g.
+    ``"8888; rm -rf /"``) must be rejected before it can flow into the
+    ``_wait_for_proxy_ready`` f-string URL or the ``_render_proxy_config``
+    template. Unlike ``from_dict``, the constructor does no ``int()``
+    coercion, so the type check must live in ``__post_init__``."""
+    with pytest.raises(ValueError) as excinfo:
+        SandboxPolicy(proxy_port="8888")  # type: ignore[arg-type]
+    assert "proxy_port" in str(excinfo.value)
+
+
+def test_constructor_rejects_proxy_port_injection_payload() -> None:
+    """Concrete injection-style string — the exact attack the
+    __post_init__ guard exists to defeat."""
+    with pytest.raises(ValueError) as excinfo:
+        SandboxPolicy(proxy_port="8888; rm -rf /")  # type: ignore[arg-type]
+    assert "proxy_port" in str(excinfo.value)
+
+
+def test_constructor_rejects_proxy_port_bool() -> None:
+    """``bool`` is a subclass of ``int`` in Python (``isinstance(True,
+    int)`` is True), so a bare ``True`` would slip past a naive ``int``
+    check and become port 1. Reject explicitly — a boolean is never a
+    valid port spelling."""
+    with pytest.raises(ValueError) as excinfo:
+        SandboxPolicy(proxy_port=True)  # type: ignore[arg-type]
+    assert "proxy_port" in str(excinfo.value)

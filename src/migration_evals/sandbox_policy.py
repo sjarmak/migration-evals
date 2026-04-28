@@ -137,6 +137,29 @@ def _validate_user(user: str) -> None:
         )
 
 
+def _validate_proxy_port(value: object) -> None:
+    """Reject ``proxy_port`` values that aren't a real TCP port number.
+
+    Applied in both ``__post_init__`` (so the dataclass is self-defending
+    against direct construction with a string payload like
+    ``"8888; rm -rf /"`` that would flow into the proxy-readiness URL
+    f-string and the rendered tinyproxy config) and in ``from_dict``
+    after ``int()`` coercion (so the YAML/dict ingest path reports the
+    range error against the original key, matching the cap_add /
+    network_allowlist / user ingest validators).
+
+    ``bool`` is a subclass of ``int`` in Python, so an unguarded
+    ``isinstance(value, int)`` check would accept ``True`` as port 1.
+    Reject booleans explicitly.
+    """
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ValueError(
+            f"proxy_port must be an int in [1, 65535]; got {type(value).__name__} {value!r}"
+        )
+    if not 1 <= value <= 65535:
+        raise ValueError(f"proxy_port must be in [1, 65535]; got {value}")
+
+
 def _validate_cap_drop(cap_drop: tuple[str, ...]) -> None:
     """Require ``"ALL"`` in any operator-supplied ``cap_drop``.
 
@@ -192,6 +215,7 @@ class SandboxPolicy:
             )
         if self.network == "none" and self.network_allowlist:
             raise ValueError("network_allowlist must be empty when network='none'")
+        _validate_proxy_port(self.proxy_port)
 
     @classmethod
     def hardened_default(cls) -> SandboxPolicy:
@@ -239,7 +263,26 @@ class SandboxPolicy:
         if "proxy_image" in data:
             kwargs["proxy_image"] = str(data["proxy_image"])
         if "proxy_port" in data:
-            kwargs["proxy_port"] = int(data["proxy_port"])
+            raw = data["proxy_port"]
+            # bool is an int subclass (so int(True) == 1 silently) and
+            # float silently truncates (int(8888.5) == 8888). Reject
+            # both *before* int() coercion strips the offending type;
+            # otherwise the _validate_proxy_port guard never sees the
+            # original type.
+            if isinstance(raw, bool):
+                raise ValueError(
+                    f"proxy_port must be an int in [1, 65535]; got bool {raw!r}"
+                )
+            if isinstance(raw, float):
+                raise ValueError(
+                    f"proxy_port must be an int in [1, 65535]; got float {raw!r}"
+                )
+            port = int(raw)
+            # __post_init__ re-runs this check; the explicit call here
+            # anchors the error to the "proxy_port" key on YAML ingest
+            # before construction.
+            _validate_proxy_port(port)
+            kwargs["proxy_port"] = port
         return cls(**kwargs)
 
 

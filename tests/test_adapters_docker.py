@@ -825,13 +825,21 @@ def test_pull_proxy_sidecar_is_hardened(tmp_path: Path, monkeypatch: pytest.Monk
     a tinyproxy memory-safety CVE could pivot from the sidecar (which
     is bridged to the default network for outbound egress) into the
     host. The sidecar runs the proxy on a non-privileged port so
-    dropping root is safe."""
+    dropping root is safe.
+
+    Defense-in-depth (0ez): the sidecar root filesystem is also mounted
+    ``--read-only`` with a tmpfs at ``/tmp`` for tinyproxy's pid/log
+    files, and ``--pids-limit`` caps fork bombs from a compromised
+    sidecar. The rendered tinyproxy.conf must therefore point ``PidFile``
+    and ``LogFile`` at the tmpfs so the proxy can actually start under a
+    read-only rootfs.
+    """
     policy = SandboxPolicy(
         network="pull",
         network_allowlist=("registry-1.docker.io",),
         proxy_image="my-proxy:1.0",
     )
-    _, recorder, _ = _create_with_recorder(tmp_path, monkeypatch, policy=policy)
+    adapter, recorder, _ = _create_with_recorder(tmp_path, monkeypatch, policy=policy)
     runs = _calls_with_subcommand(recorder, "docker", "run")
     proxy_run = next(r for r in runs if "my-proxy:1.0" in r)
     drops = [proxy_run[i + 1] for i, a in enumerate(proxy_run) if a == "--cap-drop"]
@@ -847,7 +855,11 @@ def test_pull_proxy_sidecar_is_hardened(tmp_path: Path, monkeypatch: pytest.Monk
     # permissions, so checking only the UID would let "65534:0" through.
     # We also assert the value matches PROXY_SIDECAR_USER so the test
     # fails loudly if someone changes the constant without updating here.
-    from migration_evals.adapters_docker import PROXY_SIDECAR_USER  # noqa: E402
+    from migration_evals.adapters_docker import (  # noqa: E402
+        PROXY_SIDECAR_PIDS_LIMIT,
+        PROXY_SIDECAR_TMPFS_MOUNT,
+        PROXY_SIDECAR_USER,
+    )
 
     assert user_value == PROXY_SIDECAR_USER, (
         f"proxy sidecar --user must equal PROXY_SIDECAR_USER ({PROXY_SIDECAR_USER!r}); "
@@ -857,6 +869,50 @@ def test_pull_proxy_sidecar_is_hardened(tmp_path: Path, monkeypatch: pytest.Monk
     assert len(parts) == 2 and all(
         p.isdigit() and int(p) != 0 for p in parts
     ), f"proxy sidecar --user must be 'UID:GID' with both non-zero numeric; got {user_value!r}"
+
+    # --read-only is a bare flag (no value). Drops the writable rootfs
+    # so an attacker with arbitrary write inside the sidecar cannot
+    # persist binaries or tamper with /etc.
+    assert (
+        "--read-only" in proxy_run
+    ), "proxy sidecar rootfs must be --read-only so a tinyproxy CVE cannot write outside the tmpfs"
+
+    # --tmpfs /tmp:size=...,mode=1777 is the only writable path. Assert
+    # the mount target and that a size cap is present (so a process
+    # cannot exhaust host memory by filling the tmpfs).
+    tmpfs_mounts = [proxy_run[i + 1] for i, a in enumerate(proxy_run) if a == "--tmpfs"]
+    assert tmpfs_mounts, "proxy sidecar must mount a tmpfs for tinyproxy's pid/log files"
+    assert (
+        PROXY_SIDECAR_TMPFS_MOUNT in tmpfs_mounts
+    ), f"proxy sidecar must mount {PROXY_SIDECAR_TMPFS_MOUNT!r}; got {tmpfs_mounts!r}"
+    tmp_mount = next(m for m in tmpfs_mounts if m.startswith("/tmp"))
+    assert "size=" in tmp_mount, (
+        f"proxy sidecar /tmp tmpfs must set a size cap so a process cannot "
+        f"exhaust host memory; got {tmp_mount!r}"
+    )
+
+    # --pids-limit must be a positive integer. Caps fork bombs from a
+    # compromised sidecar; kernel default is millions of pids.
+    assert "--pids-limit" in proxy_run, "proxy sidecar must set --pids-limit to cap fork bombs"
+    pids_limit_value = proxy_run[proxy_run.index("--pids-limit") + 1]
+    assert pids_limit_value == str(PROXY_SIDECAR_PIDS_LIMIT), (
+        f"proxy sidecar --pids-limit must equal PROXY_SIDECAR_PIDS_LIMIT "
+        f"({PROXY_SIDECAR_PIDS_LIMIT}); got {pids_limit_value!r}"
+    )
+    assert (
+        pids_limit_value.isdigit() and int(pids_limit_value) > 0
+    ), f"proxy sidecar --pids-limit must be a positive int; got {pids_limit_value!r}"
+
+    # Rendered tinyproxy.conf must redirect PidFile and LogFile to the
+    # tmpfs at /tmp; otherwise the sidecar crashes on startup under a
+    # read-only rootfs (default paths land in /var/run or /var/log).
+    rendered_conf = adapter._render_proxy_config(allow_cidr="10.0.0.0/24")
+    assert re.search(
+        r'^PidFile\s+"?/tmp/', rendered_conf, re.MULTILINE
+    ), "tinyproxy.conf must point PidFile at /tmp so it lands in the tmpfs"
+    assert re.search(
+        r'^LogFile\s+"?/tmp/', rendered_conf, re.MULTILINE
+    ), "tinyproxy.conf must point LogFile at /tmp so it lands in the tmpfs"
 
 
 def test_pull_workload_uses_internal_network_only(
