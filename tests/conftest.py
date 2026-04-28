@@ -123,3 +123,15 @@ def seeded_node_lts_upgrade_remote(
         "node_lts_upgrade/node18_to_node20",
         "node-lts-upgrade",
     )
+
+
+@pytest.fixture(scope="session")
+def seeded_go_version_upgrade_remote(
+    tmp_path_factory: pytest.TempPathFactory,
+) -> tuple[str, str]:
+    """File:// URL + SHA for the canonical Go-toolchain-upgrade example."""
+    return _seed_from_example(
+        tmp_path_factory,
+        "go_version_upgrade/bump_1_22_to_1_23",
+        "go-version-upgrade",
+    )
