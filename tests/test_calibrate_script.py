@@ -558,7 +558,7 @@ def test_calibrate_resolve_sandbox_factory_rejects_module_file_outside_repo_root
     with pytest.raises(ValueError) as excinfo:
         calibrate_mod._resolve_sandbox_factory("tests.shadow_pkg_fake:stub_factory")
     msg = str(excinfo.value)
-    assert "outside repo root" in msg or "outside the repo root" in msg
+    assert "outside repo root" in msg
 
 
 def test_calibrate_resolve_sandbox_factory_rejects_module_without_file_attr(
@@ -586,7 +586,10 @@ def test_calibrate_resolve_sandbox_factory_rejects_module_without_file_attr(
     with pytest.raises(ValueError) as excinfo:
         calibrate_mod._resolve_sandbox_factory("tests.no_file_fake:stub_factory")
     msg = str(excinfo.value)
-    assert "__file__" in msg or "outside repo root" in msg or "outside the repo root" in msg
+    # Tight: must hit the no-__file__ branch specifically, not the
+    # is-relative-to fallthrough (which would indicate the wrong code
+    # path fired on a None __file__).
+    assert "has no" in msg and "__file__" in msg
 
 
 # ---------------------------------------------------------------------------

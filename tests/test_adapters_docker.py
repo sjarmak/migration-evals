@@ -1080,9 +1080,7 @@ def test_pull_proxy_run_failure_cleans_up_network(
 ) -> None:
     """If the proxy sidecar fails to start (e.g. image not pulled), the
     half-created per-sandbox network must be torn down so we don't leak
-    docker resources across runs.
-
-    Wave-2 review (code MEDIUM #3): the on-disk ``config_dir`` created by
+    docker resources across runs. The on-disk ``config_dir`` created by
     ``_setup_egress_filter`` must also be cleaned up via
     ``_cleanup_scratch`` so the proxy-failure path does not leak
     ``mig-eval-proxyconf-*`` directories alongside the half-built
@@ -1115,6 +1113,13 @@ def test_pull_proxy_run_failure_cleans_up_network(
         cleanup_calls.append(path)
         original_cleanup(path)
 
+    # The ``staticmethod(...)`` wrapper is load-bearing: production code
+    # registers the callback as ``stack.callback(self._cleanup_scratch, ...)``,
+    # which goes through the descriptor protocol on the class. Patching the
+    # class attribute with a bare function would cause Python to bind ``self``
+    # as the first argument at attribute lookup, producing a TypeError when
+    # the callback fires. Wrapping in ``staticmethod`` matches the original
+    # decorator and bypasses binding so the spy receives only ``config_dir``.
     monkeypatch.setattr(DockerSandboxAdapter, "_cleanup_scratch", staticmethod(_spy_cleanup))
 
     policy = SandboxPolicy(network="pull", network_allowlist=("registry-1.docker.io",))

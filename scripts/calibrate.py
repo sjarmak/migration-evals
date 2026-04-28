@@ -256,15 +256,16 @@ def _resolve_sandbox_factory(
         raise ValueError(
             f"--sandbox-factory {spec!r}: module {module_name!r} has no "
             "__file__ attribute (built-in or namespace package); cannot "
-            "verify it lives inside the repo root. Reject."
+            "verify it lives inside the repo root."
         )
-    repo_root_resolved = _REPO_ROOT.resolve()
+    # _REPO_ROOT is already resolved at module load (see definition above);
+    # only the imported module's path needs canonicalization here.
     module_path_resolved = Path(module_file).resolve()
-    if not module_path_resolved.is_relative_to(repo_root_resolved):
+    if not module_path_resolved.is_relative_to(_REPO_ROOT):
         raise ValueError(
             f"--sandbox-factory {spec!r}: module file path "
             f"{module_path_resolved!s} is outside repo root "
-            f"{repo_root_resolved!s}. The allowlist of module-name "
+            f"{_REPO_ROOT!s}. The allowlist of module-name "
             "prefixes is bypassable via PYTHONPATH; this check is the "
             "authoritative gate."
         )
