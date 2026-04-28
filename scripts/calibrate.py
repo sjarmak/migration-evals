@@ -90,7 +90,7 @@ _SANDBOX_TIERS: frozenset[str] = frozenset({tier1_compile.TIER_NAME, tier2_tests
 # Default container image used for sandbox tiers during calibration.
 # Pinned per migration so calibration runs reproducibly; surfaced as a
 # module-level constant so the default is changed in exactly one place.
-DEFAULT_SANDBOX_IMAGE = "golang:1.22"
+DEFAULT_SANDBOX_IMAGE: str = "golang:1.22"
 
 
 # ---------------------------------------------------------------------------

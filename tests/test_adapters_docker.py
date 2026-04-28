@@ -1043,9 +1043,9 @@ def test_anchored_host_regex_documents_zero_port_gap() -> None:
     behaviour drift.
     """
     pattern = re.compile(DockerSandboxAdapter._anchored_host_regex("example.com"))
-    assert pattern.match("example.com:0"), (
-        "regex still admits :0 (reserved, but OS rejects at socket layer)"
-    )
+    assert pattern.match(
+        "example.com:0"
+    ), "regex still admits :0 (reserved, but OS rejects at socket layer)"
 
 
 def test_anchored_host_regex_documents_high_port_gap() -> None:
@@ -1060,9 +1060,9 @@ def test_anchored_host_regex_documents_high_port_gap() -> None:
     documented gap.
     """
     pattern = re.compile(DockerSandboxAdapter._anchored_host_regex("example.com"))
-    assert pattern.match("example.com:99999"), (
-        "regex still admits :99999 (out of TCP range, but OS rejects)"
-    )
+    assert pattern.match(
+        "example.com:99999"
+    ), "regex still admits :99999 (out of TCP range, but OS rejects)"
 
 
 def test_anchored_host_regex_rejects_more_than_five_port_digits() -> None:
@@ -1077,9 +1077,17 @@ def test_anchored_host_regex_rejects_more_than_five_port_digits() -> None:
     documenting tests above).
     """
     pattern = re.compile(DockerSandboxAdapter._anchored_host_regex("example.com"))
-    assert not pattern.match("example.com:999999"), (
-        "regex must reject 6-digit port (beyond 5-digit TCP cap)"
-    )
+    # Boundary: 5-digit ports must still be accepted. Without this
+    # assertion an accidental over-tightening to ``{1,4}`` would pass
+    # silently — the documenting tests above don't pin the upper
+    # boundary because they happen to use ``:99999`` for a different
+    # purpose (illustrating the out-of-TCP-range gap).
+    assert pattern.match(
+        "example.com:65535"
+    ), "5-digit port within TCP range must remain accepted ({1,5} boundary)"
+    assert not pattern.match(
+        "example.com:999999"
+    ), "regex must reject 6-digit port (beyond 5-digit TCP cap)"
     assert not pattern.match("example.com:1234567"), "regex must reject 7-digit port"
 
 
