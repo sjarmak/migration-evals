@@ -62,6 +62,32 @@ PROXY_DNS_ALIAS = "proxy"
 # workload-recipe-configurable; routing it through policy would let a
 # recipe accidentally weaken the sidecar's isolation.
 PROXY_SIDECAR_USER = "65534:65534"
+# Defense-in-depth (0ez): the sidecar root filesystem is mounted
+# ``--read-only`` and the only writable path is a tmpfs at /tmp where
+# tinyproxy's pid file and log file land (see ``_render_proxy_config``,
+# which sets ``PidFile`` / ``LogFile`` explicitly to /tmp paths).
+# ``size=16m`` caps memory consumption so a runaway tinyproxy or an
+# attacker with arbitrary write cannot exhaust host RAM by filling the
+# tmpfs; 16 MiB is ample for a pid file (a handful of bytes) plus a log
+# file that rotates on container exit. ``mode=1777`` matches a normal
+# /tmp (sticky, world-writable) so the non-root sidecar user
+# (``PROXY_SIDECAR_USER``) can write into it.
+PROXY_SIDECAR_TMPFS_MOUNT = "/tmp:size=16m,mode=1777"
+# Caps fork bombs from a compromised sidecar. The kernel default is
+# ~4M pids; tinyproxy preforks ``StartServers`` (default 10) child
+# processes and can grow up to ``MaxClients`` (default 100) under load.
+# 128 leaves comfortable headroom above MaxClients so legitimate traffic
+# is never throttled while still being three orders of magnitude below
+# the kernel default — small enough to stop a fork-bomb pivot before it
+# threatens the host.
+PROXY_SIDECAR_PIDS_LIMIT: int = 128
+# Tinyproxy writes a pid file and log file at runtime. We pin both to
+# /tmp so they land in ``PROXY_SIDECAR_TMPFS_MOUNT`` (the only writable
+# path under ``--read-only``); without these explicit directives
+# tinyproxy falls back to compiled-in defaults (typically /var/run and
+# /var/log) which would EROFS-fail on startup.
+PROXY_SIDECAR_PID_PATH = "/tmp/tinyproxy.pid"
+PROXY_SIDECAR_LOG_PATH = "/tmp/tinyproxy.log"
 # Proxy readiness loop: 50 iterations × 0.1s = 5s cap. Wave-1 review
 # (security MEDIUM #3): tinyproxy starts in <1s on a healthy host, so
 # 5s is a generous-but-bounded ceiling that closes the race where a
@@ -502,6 +528,15 @@ class DockerSandboxAdapter:
         so the sidecar is not coupled to a specific proxy image's
         ``/etc/passwd``. The default proxy port (8888) is non-
         privileged, so dropping root is safe.
+
+        Defense-in-depth (0ez): adds ``--read-only`` (rootfs is
+        immutable so an attacker with arbitrary write inside the
+        sidecar cannot persist binaries or tamper with /etc),
+        ``--tmpfs`` at /tmp (the only writable path; sized so it
+        cannot exhaust host RAM), and ``--pids-limit`` (caps fork
+        bombs). The rendered tinyproxy.conf points ``PidFile`` and
+        ``LogFile`` at the tmpfs so the proxy can start under a
+        read-only rootfs.
         """
         proxy_run = [
             self._docker_bin,
@@ -518,6 +553,11 @@ class DockerSandboxAdapter:
             "no-new-privileges:true",
             "--user",
             PROXY_SIDECAR_USER,
+            "--read-only",
+            "--tmpfs",
+            PROXY_SIDECAR_TMPFS_MOUNT,
+            "--pids-limit",
+            str(PROXY_SIDECAR_PIDS_LIMIT),
             "-v",
             f"{config_dir}:/etc/tinyproxy:ro",
             self._policy.proxy_image,
@@ -644,6 +684,12 @@ class DockerSandboxAdapter:
         the per-sandbox internal subnet means only this sandbox's
         workload can connect.
 
+        ``PidFile`` and ``LogFile`` are explicitly pinned to /tmp so
+        they land in the sidecar's tmpfs (see
+        ``PROXY_SIDECAR_TMPFS_MOUNT``); the sidecar runs with
+        ``--read-only`` so tinyproxy's compiled-in defaults
+        (typically /var/run, /var/log) would EROFS-fail on startup.
+
         Also embed the allowlist as comment lines so tests (and
         operators reading the conf for audit) can see the active
         allowlist in one place; tinyproxy ignores lines starting with
@@ -660,6 +706,10 @@ class DockerSandboxAdapter:
             f"Port {port}",
             "Listen 0.0.0.0",
             "Timeout 600",
+            # Pin pid/log to the sidecar's tmpfs (0ez); the rootfs is
+            # mounted read-only so tinyproxy's defaults would EROFS-fail.
+            f'PidFile "{PROXY_SIDECAR_PID_PATH}"',
+            f'LogFile "{PROXY_SIDECAR_LOG_PATH}"',
             # Accept CONNECT for HTTPS and HTTP. Filter does the actual
             # allow/deny based on hostname.
             "ConnectPort 443",
