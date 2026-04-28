@@ -629,6 +629,42 @@ def test_pull_starts_proxy_sidecar_on_two_networks(
     assert "-d" in proxy_run
 
 
+def test_pull_proxy_sidecar_is_hardened(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The proxy sidecar must apply the same baseline hardening as the
+    workload (91m): ``--cap-drop=ALL``, ``--security-opt
+    no-new-privileges:true``, and a non-root ``--user``. Without these
+    a tinyproxy memory-safety CVE could pivot from the sidecar (which
+    is bridged to the default network for outbound egress) into the
+    host. The sidecar runs the proxy on a non-privileged port so
+    dropping root is safe."""
+    policy = SandboxPolicy(
+        network="pull",
+        network_allowlist=("registry-1.docker.io",),
+        proxy_image="my-proxy:1.0",
+    )
+    _, recorder, _ = _create_with_recorder(tmp_path, monkeypatch, policy=policy)
+    runs = _calls_with_subcommand(recorder, "docker", "run")
+    proxy_run = next(r for r in runs if "my-proxy:1.0" in r)
+    drops = [proxy_run[i + 1] for i, a in enumerate(proxy_run) if a == "--cap-drop"]
+    sec_opts = [proxy_run[i + 1] for i, a in enumerate(proxy_run) if a == "--security-opt"]
+    assert "ALL" in drops, "proxy sidecar must drop all capabilities"
+    assert (
+        "no-new-privileges:true" in sec_opts
+    ), "proxy sidecar must set no-new-privileges so setuid bits cannot escalate"
+    assert "--user" in proxy_run, "proxy sidecar must run as a non-root user"
+    user_value = proxy_run[proxy_run.index("--user") + 1]
+    # Reject the empty string and uid 0 (root). 65534 is the conventional
+    # 'nobody' uid/gid; pinning a numeric value avoids depending on the
+    # proxy image having a 'nobody' entry in /etc/passwd.
+    assert user_value, "proxy sidecar --user must not be empty"
+    uid_str = user_value.split(":", 1)[0]
+    assert uid_str.isdigit() and int(uid_str) != 0, (
+        f"proxy sidecar --user must be a non-zero numeric uid; got {user_value!r}"
+    )
+
+
 def test_pull_workload_uses_internal_network_only(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

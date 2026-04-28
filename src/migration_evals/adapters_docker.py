@@ -382,6 +382,17 @@ class DockerSandboxAdapter:
         The sidecar advertises the ``proxy`` DNS alias the workload
         uses, and mounts the per-sandbox config dir (tinyproxy.conf +
         filter) into ``/etc/tinyproxy``. Returns the container id.
+
+        Hardening (91m): the sidecar mirrors the workload's baseline
+        isolation flags — ``--cap-drop=ALL``,
+        ``--security-opt=no-new-privileges:true``, and a non-root
+        ``--user`` — so a tinyproxy memory-safety CVE cannot pivot
+        from the sidecar (which is bridged to the default network for
+        outbound egress) into the host. ``65534:65534`` is the
+        conventional ``nobody:nogroup`` uid/gid; we pin it numerically
+        so the sidecar is not coupled to a specific proxy image's
+        ``/etc/passwd``. The default proxy port (8888) is non-
+        privileged, so dropping root is safe.
         """
         proxy_run = [
             self._docker_bin,
@@ -392,6 +403,12 @@ class DockerSandboxAdapter:
             network_name,
             "--network-alias",
             PROXY_DNS_ALIAS,
+            "--cap-drop",
+            "ALL",
+            "--security-opt",
+            "no-new-privileges:true",
+            "--user",
+            "65534:65534",
             "-v",
             f"{config_dir}:/etc/tinyproxy:ro",
             self._policy.proxy_image,
