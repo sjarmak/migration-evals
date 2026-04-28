@@ -472,9 +472,27 @@ def test_calibrate_help_text_warns_about_sandbox_factory_security(
 
 
 def _import_calibrate_module():
-    """Load ``scripts/calibrate.py`` as an importable module without
-    permanently mutating ``sys.path`` (the calibrate file lives outside
-    the ``src/`` package layout)."""
+    """Load ``scripts/calibrate.py`` as an importable module.
+
+    ``scripts/calibrate.py`` lives outside the ``src/`` package layout, so
+    ``importlib.import_module`` cannot reach it without permanently
+    extending ``sys.path`` (and registering a top-level ``calibrate``
+    entry in ``sys.modules`` that would shadow other imports). Using
+    ``spec_from_file_location`` + ``exec_module`` keeps the load
+    file-scoped: each call builds a fresh ``ModuleType`` from the file
+    on disk and executes its top-level code into that new module — no
+    process-wide ``sys.path`` mutation done by this helper, and no
+    ``sys.modules`` registration leaking across tests.
+
+    Side-effect note: the *target file's* own module-level code still
+    runs on every call. In particular, the guarded ``sys.path.insert``
+    block at the top of ``scripts/calibrate.py`` (which prepends the
+    repo's ``src/`` directory so ``migration_evals.*`` resolves when the
+    script is executed standalone) re-fires here too. The guard is
+    idempotent (``if str(_SRC) not in sys.path``), so repeated calls do
+    not stack duplicate entries, but callers who need pristine
+    ``sys.path`` should snapshot/restore it themselves.
+    """
     import importlib.util
 
     spec = importlib.util.spec_from_file_location("calibrate_module_under_test", CALIBRATE_SCRIPT)
