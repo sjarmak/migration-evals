@@ -70,6 +70,13 @@ SAFE_CAPS = frozenset(
 # (RFC 952/1123 + the underscore commonly seen in registry hosts).
 _HOSTNAME_CHARSET_RE = re.compile(r"^[A-Za-z0-9._\-]+$")
 
+# Strict ``UID:GID`` form with both components a non-zero positive integer.
+# Both parts must be present (UID-only would let docker default the GID to
+# the image's default group — typically root) and both must be non-zero
+# (UID 0 is root; GID 0 is the root group, which still grants read access
+# to root-owned files via group permissions).
+_NONROOT_USER_RE = re.compile(r"^[1-9]\d*:[1-9]\d*$")
+
 
 def _validate_cap_add_allowlist(caps: tuple[str, ...]) -> None:
     """Reject any cap_add entry that isn't in :data:`SAFE_CAPS`.
@@ -102,6 +109,24 @@ def _validate_network_allowlist(hosts: tuple[str, ...]) -> None:
         raise ValueError(
             "network_allowlist entries contain disallowed characters "
             f"(only [A-Za-z0-9._-] permitted): {bad}"
+        )
+
+
+def _validate_user(user: str) -> None:
+    """Reject any ``user`` value that isn't a strict non-root ``UID:GID``.
+
+    Wave-1 review surfaced that ``from_dict`` accepted any string and
+    forwarded it verbatim to ``docker --user``; ``user: "0"``, ``"root"``,
+    or ``"1000"`` (UID-only — GID defaults to the image's primary group,
+    typically root) silently dropped the rootless-inside-container
+    hardening. As with the cap_add/cap_drop validators, the check is at
+    the YAML/dict ingest path only — the dataclass constructor itself is
+    unguarded so internal callers retain full flexibility.
+    """
+    if not _NONROOT_USER_RE.match(user):
+        raise ValueError(
+            "user must be a non-root 'UID:GID' (both numeric and non-zero); "
+            f"got {user!r}"
         )
 
 
@@ -189,7 +214,12 @@ class SandboxPolicy:
             kwargs["no_new_privileges"] = bool(data["no_new_privileges"])
         if "user" in data:
             value = data["user"]
-            kwargs["user"] = str(value) if value else None
+            if value:
+                user = str(value)
+                _validate_user(user)
+                kwargs["user"] = user
+            else:
+                kwargs["user"] = None
         if "repo_mount_readonly" in data:
             kwargs["repo_mount_readonly"] = bool(data["repo_mount_readonly"])
         if "scratch_dir" in data:

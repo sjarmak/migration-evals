@@ -285,3 +285,131 @@ def test_constructor_accepts_cap_drop_without_all() -> None:
     caller and may legitimately customize the drop set."""
     policy = SandboxPolicy(cap_drop=())
     assert policy.cap_drop == ()
+
+
+# ---------------------------------------------------------------------------
+# user non-root requirement (security wave-2 znh)
+# ---------------------------------------------------------------------------
+#
+# Wave-1 review surfaced that ``SandboxPolicy.from_dict`` accepted any
+# string in the ``user`` field and forwarded it verbatim to ``docker
+# --user``. A YAML recipe of ``user: "0"`` or ``user: "root"`` therefore
+# silently reverted the rootless-inside-container hardening default
+# (``DEFAULT_USER = "1000:1000"``). The fix is a strict ``UID:GID``
+# regex with both components non-zero, applied at YAML/dict ingest only
+# — the dataclass constructor itself is unguarded so internal callers
+# with full audit context retain the existing flexibility (matches the
+# ``cap_add`` / ``cap_drop`` asymmetry above).
+
+
+def test_from_dict_accepts_default_user() -> None:
+    policy = SandboxPolicy.from_dict({"user": "1000:1000"})
+    assert policy.user == "1000:1000"
+
+
+def test_from_dict_accepts_alternate_nonroot_uid_gid() -> None:
+    policy = SandboxPolicy.from_dict({"user": "2000:3000"})
+    assert policy.user == "2000:3000"
+
+
+def test_from_dict_accepts_missing_user() -> None:
+    """Missing ``user`` key falls through to ``DEFAULT_USER``."""
+    policy = SandboxPolicy.from_dict({})
+    assert policy.user == "1000:1000"
+
+
+def test_from_dict_accepts_null_user() -> None:
+    """An explicit ``user: null`` (or empty string) is normalized to
+    ``None`` and means "let the caller / docker pick" — the hardening
+    default is applied at a higher layer in that case."""
+    policy = SandboxPolicy.from_dict({"user": None})
+    assert policy.user is None
+
+
+def test_from_dict_rejects_user_root_string() -> None:
+    with pytest.raises(ValueError) as excinfo:
+        SandboxPolicy.from_dict({"user": "root"})
+    msg = str(excinfo.value)
+    assert "user" in msg
+    assert "root" in msg
+
+
+def test_from_dict_rejects_user_zero() -> None:
+    """``user: "0"`` is the numeric form of root and must be rejected."""
+    with pytest.raises(ValueError) as excinfo:
+        SandboxPolicy.from_dict({"user": "0"})
+    assert "user" in str(excinfo.value)
+
+
+def test_from_dict_rejects_user_zero_zero() -> None:
+    """``0:0`` is root:root in numeric form."""
+    with pytest.raises(ValueError) as excinfo:
+        SandboxPolicy.from_dict({"user": "0:0"})
+    assert "user" in str(excinfo.value)
+
+
+def test_from_dict_rejects_user_zero_uid_nonzero_gid() -> None:
+    """UID 0 is root regardless of GID — reject."""
+    with pytest.raises(ValueError):
+        SandboxPolicy.from_dict({"user": "0:1000"})
+
+
+def test_from_dict_rejects_user_nonzero_uid_zero_gid() -> None:
+    """GID 0 is the root group — even with a non-root UID, group-root
+    membership is enough to read root-owned files. Reject."""
+    with pytest.raises(ValueError):
+        SandboxPolicy.from_dict({"user": "1000:0"})
+
+
+def test_from_dict_rejects_user_uid_only() -> None:
+    """``user: "1000"`` (no GID) makes docker default the GID to the
+    image's default group, which is typically root. Require explicit
+    ``UID:GID`` so the operator commits to a non-root GID."""
+    with pytest.raises(ValueError):
+        SandboxPolicy.from_dict({"user": "1000"})
+
+
+def test_from_dict_rejects_user_non_numeric() -> None:
+    """Non-numeric forms (``"abc:def"``, ``"appuser"``) cannot be
+    statically verified to be non-root and are rejected at ingest."""
+    with pytest.raises(ValueError):
+        SandboxPolicy.from_dict({"user": "abc:def"})
+
+
+def test_from_dict_rejects_user_named_account() -> None:
+    """A named account like ``appuser`` may map to UID 0 inside the
+    container; without a numeric UID:GID we cannot verify non-root."""
+    with pytest.raises(ValueError):
+        SandboxPolicy.from_dict({"user": "appuser"})
+
+
+def test_from_dict_rejects_user_empty_string() -> None:
+    """An empty string for ``user`` is normalized to ``None`` (means
+    "no --user flag") — confirm that path so the empty-string edge
+    case can never sneak through as a literal docker arg."""
+    policy = SandboxPolicy.from_dict({"user": ""})
+    assert policy.user is None
+
+
+def test_from_dict_rejects_user_with_whitespace() -> None:
+    """Surrounding whitespace would be passed through as-is to docker
+    and is not a valid UID:GID spelling — reject."""
+    with pytest.raises(ValueError):
+        SandboxPolicy.from_dict({"user": " 1000:1000 "})
+
+
+def test_from_dict_rejects_user_negative_uid() -> None:
+    """Negative numbers are syntactically invalid for UID:GID."""
+    with pytest.raises(ValueError):
+        SandboxPolicy.from_dict({"user": "-1:1000"})
+
+
+def test_constructor_accepts_root_user_directly() -> None:
+    """Same asymmetry as ``cap_add`` / ``cap_drop``: the validation
+    applies to the YAML/dict ingest path only. Direct construction is
+    the audited internal-caller path; if a unit test or internal helper
+    legitimately needs to assert that the adapter forwards ``--user 0``
+    it must remain possible to construct that policy in Python.
+    """
+    policy = SandboxPolicy(user="0")
+    assert policy.user == "0"
