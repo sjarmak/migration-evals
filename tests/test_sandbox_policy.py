@@ -513,6 +513,24 @@ def test_from_dict_accepts_proxy_port_numeric_string() -> None:
     assert policy.proxy_port == 8888
 
 
+@pytest.mark.parametrize("bool_value", [True, False])
+def test_from_dict_rejects_proxy_port_bool(bool_value: bool) -> None:
+    """``int(True) == 1`` and ``int(False) == 0`` — without a pre-coercion
+    bool guard, ``proxy_port: true`` in YAML would silently become port 1.
+    Reject the bool type at the ingest boundary."""
+    with pytest.raises(ValueError) as excinfo:
+        SandboxPolicy.from_dict({"proxy_port": bool_value})
+    assert "proxy_port" in str(excinfo.value)
+
+
+def test_from_dict_rejects_proxy_port_float() -> None:
+    """``int(8888.5) == 8888`` silently truncates. Reject the float type
+    at the ingest boundary so a fractional YAML value fails fast."""
+    with pytest.raises(ValueError) as excinfo:
+        SandboxPolicy.from_dict({"proxy_port": 8888.5})
+    assert "proxy_port" in str(excinfo.value)
+
+
 # __post_init__: type + range validation on direct construction -----------
 
 
@@ -545,7 +563,7 @@ def test_constructor_rejects_proxy_port_string() -> None:
     ``_wait_for_proxy_ready`` f-string URL or the ``_render_proxy_config``
     template. Unlike ``from_dict``, the constructor does no ``int()``
     coercion, so the type check must live in ``__post_init__``."""
-    with pytest.raises((TypeError, ValueError)) as excinfo:
+    with pytest.raises(ValueError) as excinfo:
         SandboxPolicy(proxy_port="8888")  # type: ignore[arg-type]
     assert "proxy_port" in str(excinfo.value)
 
@@ -553,7 +571,7 @@ def test_constructor_rejects_proxy_port_string() -> None:
 def test_constructor_rejects_proxy_port_injection_payload() -> None:
     """Concrete injection-style string — the exact attack the
     __post_init__ guard exists to defeat."""
-    with pytest.raises((TypeError, ValueError)) as excinfo:
+    with pytest.raises(ValueError) as excinfo:
         SandboxPolicy(proxy_port="8888; rm -rf /")  # type: ignore[arg-type]
     assert "proxy_port" in str(excinfo.value)
 
@@ -563,6 +581,6 @@ def test_constructor_rejects_proxy_port_bool() -> None:
     int)`` is True), so a bare ``True`` would slip past a naive ``int``
     check and become port 1. Reject explicitly — a boolean is never a
     valid port spelling."""
-    with pytest.raises((TypeError, ValueError)) as excinfo:
+    with pytest.raises(ValueError) as excinfo:
         SandboxPolicy(proxy_port=True)  # type: ignore[arg-type]
     assert "proxy_port" in str(excinfo.value)

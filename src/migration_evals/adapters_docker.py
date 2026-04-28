@@ -72,7 +72,14 @@ PROXY_SIDECAR_USER = "65534:65534"
 # file that rotates on container exit. ``mode=1777`` matches a normal
 # /tmp (sticky, world-writable) so the non-root sidecar user
 # (``PROXY_SIDECAR_USER``) can write into it.
-PROXY_SIDECAR_TMPFS_MOUNT = "/tmp:size=16m,mode=1777"
+PROXY_SIDECAR_TMPFS_MOUNT: str = "/tmp:size=16m,mode=1777"
+# Tinyproxy writes a pid file and log file at runtime. We pin both to
+# /tmp so they land in ``PROXY_SIDECAR_TMPFS_MOUNT`` (the only writable
+# path under ``--read-only``); without these explicit directives
+# tinyproxy falls back to compiled-in defaults (typically /var/run and
+# /var/log) which would EROFS-fail on startup.
+PROXY_SIDECAR_PID_PATH: str = "/tmp/tinyproxy.pid"
+PROXY_SIDECAR_LOG_PATH: str = "/tmp/tinyproxy.log"
 # Caps fork bombs from a compromised sidecar. The kernel default is
 # ~4M pids; tinyproxy preforks ``StartServers`` (default 10) child
 # processes and can grow up to ``MaxClients`` (default 100) under load.
@@ -81,13 +88,6 @@ PROXY_SIDECAR_TMPFS_MOUNT = "/tmp:size=16m,mode=1777"
 # the kernel default — small enough to stop a fork-bomb pivot before it
 # threatens the host.
 PROXY_SIDECAR_PIDS_LIMIT: int = 128
-# Tinyproxy writes a pid file and log file at runtime. We pin both to
-# /tmp so they land in ``PROXY_SIDECAR_TMPFS_MOUNT`` (the only writable
-# path under ``--read-only``); without these explicit directives
-# tinyproxy falls back to compiled-in defaults (typically /var/run and
-# /var/log) which would EROFS-fail on startup.
-PROXY_SIDECAR_PID_PATH = "/tmp/tinyproxy.pid"
-PROXY_SIDECAR_LOG_PATH = "/tmp/tinyproxy.log"
 # Proxy readiness loop: 50 iterations × 0.1s = 5s cap. Wave-1 review
 # (security MEDIUM #3): tinyproxy starts in <1s on a healthy host, so
 # 5s is a generous-but-bounded ceiling that closes the race where a

@@ -263,7 +263,24 @@ class SandboxPolicy:
         if "proxy_image" in data:
             kwargs["proxy_image"] = str(data["proxy_image"])
         if "proxy_port" in data:
-            port = int(data["proxy_port"])
+            raw = data["proxy_port"]
+            # bool is an int subclass (so int(True) == 1 silently) and
+            # float silently truncates (int(8888.5) == 8888). Reject
+            # both *before* int() coercion strips the offending type;
+            # otherwise the _validate_proxy_port guard never sees the
+            # original type.
+            if isinstance(raw, bool):
+                raise ValueError(
+                    f"proxy_port must be an int in [1, 65535]; got bool {raw!r}"
+                )
+            if isinstance(raw, float):
+                raise ValueError(
+                    f"proxy_port must be an int in [1, 65535]; got float {raw!r}"
+                )
+            port = int(raw)
+            # __post_init__ re-runs this check; the explicit call here
+            # anchors the error to the "proxy_port" key on YAML ingest
+            # before construction.
             _validate_proxy_port(port)
             kwargs["proxy_port"] = port
         return cls(**kwargs)
