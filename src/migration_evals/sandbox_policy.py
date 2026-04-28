@@ -32,7 +32,15 @@ from typing import Any, Mapping
 ALLOWED_NETWORK_MODES = ("none", "pull")
 DEFAULT_USER = "1000:1000"
 DEFAULT_SCRATCH = "/scratch"
-DEFAULT_PROXY_IMAGE = "vimagick/tinyproxy:latest"
+# Pinned by digest, not floating tag, so a supply-chain compromise of the
+# upstream tag cannot land new code in the egress sidecar. To refresh the
+# pin, run ``docker manifest inspect --verbose vimagick/tinyproxy:<tag>``
+# (or ``curl https://hub.docker.com/v2/repositories/vimagick/tinyproxy/tags/<tag>``)
+# and copy the manifest digest in the form ``vimagick/tinyproxy@sha256:<hex>``.
+DEFAULT_PROXY_IMAGE = (
+    "vimagick/tinyproxy@sha256:"
+    "72b441b95ee1e641af948f68f09492f9f795ead72b73954414e339168c98ad8c"
+)
 DEFAULT_PROXY_PORT = 8888
 
 # Docker's documented default-capability set — these are what the docker
