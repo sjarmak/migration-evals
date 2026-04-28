@@ -383,7 +383,7 @@ def test_from_dict_rejects_user_named_account() -> None:
         SandboxPolicy.from_dict({"user": "appuser"})
 
 
-def test_from_dict_rejects_user_empty_string() -> None:
+def test_from_dict_normalizes_empty_string_user_to_none() -> None:
     """An empty string for ``user`` is normalized to ``None`` (means
     "no --user flag") — confirm that path so the empty-string edge
     case can never sneak through as a literal docker arg."""
@@ -402,6 +402,23 @@ def test_from_dict_rejects_user_negative_uid() -> None:
     """Negative numbers are syntactically invalid for UID:GID."""
     with pytest.raises(ValueError):
         SandboxPolicy.from_dict({"user": "-1:1000"})
+
+
+def test_from_dict_rejects_user_integer_zero() -> None:
+    """``user: 0`` in YAML is parsed as integer 0, which is falsy in
+    Python. The previous ``if value:`` guard silently mapped this to
+    ``user=None``, dropping the rootless default. Validation must
+    treat it as a bad value, not a missing one."""
+    with pytest.raises(ValueError):
+        SandboxPolicy.from_dict({"user": 0})
+
+
+def test_from_dict_rejects_user_with_trailing_newline() -> None:
+    """``re.match`` with ``$`` allows a trailing ``\\n`` — switching to
+    ``re.fullmatch`` closes that hole. A newline-bearing string is not
+    a valid argv element for ``docker --user``."""
+    with pytest.raises(ValueError):
+        SandboxPolicy.from_dict({"user": "1000:1000\n"})
 
 
 def test_constructor_accepts_root_user_directly() -> None:

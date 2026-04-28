@@ -9,6 +9,7 @@ otherwise.
 
 from __future__ import annotations
 
+import atexit
 import os
 import re
 import shutil
@@ -308,9 +309,9 @@ def test_context_manager_no_op_when_no_sandboxes(
 def test_context_manager_is_idempotent(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """A second teardown — whether triggered by a nested with, an atexit
     hook firing after the with, or an explicit __exit__ call — must not
-    re-invoke `docker rm` for sandboxes already destroyed. The flag
-    that guards this is the same one atexit relies on, so testing it
-    here proves both safety nets compose."""
+    re-invoke `docker rm` for sandboxes already destroyed. Idempotency
+    is structural: ``destroy_sandbox`` pops each entry from the tracking
+    dicts, so a second pass iterates an empty snapshot."""
     recorder = _Recorder(
         [
             _StubProc(stdout="c1\n"),  # create
@@ -321,8 +322,8 @@ def test_context_manager_is_idempotent(tmp_path: Path, monkeypatch: pytest.Monke
     adapter = DockerSandboxAdapter(tmp_path)
     with adapter:
         adapter.create_sandbox(image="img")
-    # Calling __exit__ again must be a no-op even though tracking dicts
-    # are empty — the flag short-circuits the iteration entirely.
+    # Second __exit__ must be a no-op: the tracking dict is now empty,
+    # so the iteration finds nothing to destroy.
     adapter.__exit__(None, None, None)
     rm_calls = [c["args"] for c in recorder.calls if c["args"][:3] == ["docker", "rm", "-f"]]
     assert len(rm_calls) == 1
@@ -332,8 +333,6 @@ def test_atexit_handler_registered(tmp_path: Path, monkeypatch: pytest.MonkeyPat
     """The adapter must register an atexit handler so a crash path
     (KeyboardInterrupt outside a `with`, SIGTERM, etc.) still tears down
     tracked sandboxes. Verified by spying on `atexit.register`."""
-    import atexit
-
     registered: list[Any] = []
     monkeypatch.setattr(atexit, "register", lambda fn, *a, **kw: registered.append(fn) or fn)
     DockerSandboxAdapter(tmp_path)
@@ -346,8 +345,6 @@ def test_atexit_handler_tears_down_tracked_sandboxes(
     """Invoking the registered atexit handler directly must clean up the
     sandboxes that are still tracked — same teardown path as `__exit__`,
     just driven by the atexit hook instead of the `with` block."""
-    import atexit
-
     registered: list[Any] = []
     monkeypatch.setattr(atexit, "register", lambda fn, *a, **kw: registered.append(fn) or fn)
     recorder = _Recorder(
@@ -373,8 +370,6 @@ def test_atexit_handler_is_idempotent_after_explicit_destroy(
     interpreter shuts down, the atexit handler must not double-remove.
     Otherwise we'd see spurious `no such container` log noise on every
     process exit."""
-    import atexit
-
     registered: list[Any] = []
     monkeypatch.setattr(atexit, "register", lambda fn, *a, **kw: registered.append(fn) or fn)
     recorder = _Recorder(
@@ -398,8 +393,6 @@ def test_atexit_handler_swallows_errors(tmp_path: Path, monkeypatch: pytest.Monk
     may already be killing -9, etc. The atexit handler must NEVER raise
     — propagating an exception out of an atexit callback yields ugly
     tracebacks that mask the real cause of the crash."""
-    import atexit
-
     registered: list[Any] = []
     monkeypatch.setattr(atexit, "register", lambda fn, *a, **kw: registered.append(fn) or fn)
 
@@ -824,9 +817,7 @@ def test_pull_starts_proxy_sidecar_on_two_networks(
     assert "-d" in proxy_run
 
 
-def test_pull_proxy_sidecar_is_hardened(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_pull_proxy_sidecar_is_hardened(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """The proxy sidecar must apply the same baseline hardening as the
     workload (91m): ``--cap-drop=ALL``, ``--security-opt
     no-new-privileges:true``, and a non-root ``--user``. Without these
@@ -850,14 +841,21 @@ def test_pull_proxy_sidecar_is_hardened(
     ), "proxy sidecar must set no-new-privileges so setuid bits cannot escalate"
     assert "--user" in proxy_run, "proxy sidecar must run as a non-root user"
     user_value = proxy_run[proxy_run.index("--user") + 1]
-    # Reject the empty string and uid 0 (root). 65534 is the conventional
-    # 'nobody' uid/gid; pinning a numeric value avoids depending on the
-    # proxy image having a 'nobody' entry in /etc/passwd.
-    assert user_value, "proxy sidecar --user must not be empty"
-    uid_str = user_value.split(":", 1)[0]
-    assert uid_str.isdigit() and int(uid_str) != 0, (
-        f"proxy sidecar --user must be a non-zero numeric uid; got {user_value!r}"
+    # Both UID and GID must be present and non-zero. GID 0 is the root
+    # group, which still grants read access to root-owned files via group
+    # permissions, so checking only the UID would let "65534:0" through.
+    # We also assert the value matches PROXY_SIDECAR_USER so the test
+    # fails loudly if someone changes the constant without updating here.
+    from migration_evals.adapters_docker import PROXY_SIDECAR_USER  # noqa: E402
+
+    assert user_value == PROXY_SIDECAR_USER, (
+        f"proxy sidecar --user must equal PROXY_SIDECAR_USER ({PROXY_SIDECAR_USER!r}); "
+        f"got {user_value!r}"
     )
+    parts = user_value.split(":", 1)
+    assert len(parts) == 2 and all(
+        p.isdigit() and int(p) != 0 for p in parts
+    ), f"proxy sidecar --user must be 'UID:GID' with both non-zero numeric; got {user_value!r}"
 
 
 def test_pull_workload_uses_internal_network_only(

@@ -34,12 +34,13 @@ import json
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
 from types import TracebackType
-from typing import Any, Mapping, Optional, Type
+from typing import Any, Mapping, Optional
 
 from migration_evals.sandbox_policy import SandboxPolicy
 
@@ -53,6 +54,13 @@ DEFAULT_WORKDIR = "/work"
 # aliases to their IP on user-defined networks, so this name resolves
 # inside the workload without us touching /etc/hosts.
 PROXY_DNS_ALIAS = "proxy"
+# Numeric ``nobody:nogroup`` (POSIX-standard nobody UID/GID). Used as the
+# proxy sidecar's ``--user`` to drop container-root without coupling to
+# any specific image's ``/etc/passwd``. Hardcoded — not derived from
+# ``policy.user`` — because the sidecar is adapter infrastructure, not
+# workload-recipe-configurable; routing it through policy would let a
+# recipe accidentally weaken the sidecar's isolation.
+PROXY_SIDECAR_USER = "65534:65534"
 
 
 @dataclass(frozen=True)
@@ -127,14 +135,14 @@ class DockerSandboxAdapter:
     # Crash-safe teardown (context manager + atexit)
     # ------------------------------------------------------------------
 
-    def __enter__(self) -> "DockerSandboxAdapter":
+    def __enter__(self) -> DockerSandboxAdapter:
         return self
 
     def __exit__(
         self,
-        exc_type: Optional[Type[BaseException]],
-        exc: Optional[BaseException],
-        tb: Optional[TracebackType],
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: TracebackType | None,
     ) -> None:
         # Never suppress — return None so any in-flight exception
         # propagates after cleanup.
@@ -148,9 +156,15 @@ class DockerSandboxAdapter:
         snapshot and is a no-op. This means ``__exit__`` followed by
         atexit (or two ``__exit__`` calls) issue exactly one teardown
         per sandbox.
+
+        After teardown, the per-instance atexit callback is unregistered
+        so the adapter can be garbage-collected and per-loop callers
+        (``runner.py`` builds a new adapter per repo) don't accumulate
+        phantom callbacks pinning every previous instance until exit.
         """
         for sandbox_id in list(self._containers.keys()):
             self.destroy_sandbox(sandbox_id)
+        atexit.unregister(self._atexit_teardown)
 
     def _atexit_teardown(self) -> None:
         """Atexit-safe variant of :meth:`_teardown_all` that never raises.
@@ -158,11 +172,17 @@ class DockerSandboxAdapter:
         Interpreter shutdown is the wrong time to discover the docker
         daemon has gone away; let the OS reap whatever is left rather
         than spew tracebacks on top of whatever already killed us.
+        Errors are logged to stderr (best-effort) so a teardown bug is
+        still visible in CI logs without bringing down the interpreter.
         """
         try:
             self._teardown_all()
-        except BaseException:  # noqa: BLE001 — atexit must not raise
-            pass
+        except BaseException as exc:  # noqa: BLE001 — atexit must not raise
+            with contextlib.suppress(Exception):
+                print(
+                    f"DockerSandboxAdapter: atexit teardown failed: {exc!r}",
+                    file=sys.stderr,
+                )
 
     # ------------------------------------------------------------------
     # SandboxAdapter Protocol
@@ -355,7 +375,13 @@ class DockerSandboxAdapter:
         # Per-sandbox config dir lives next to the scratch dir so the
         # generated tinyproxy.conf is cleaned up when the scratch dir is.
         config_dir = scratch_host.parent / f"mig-eval-proxyconf-{suffix}"
+        # Pin permissions explicitly. The sidecar runs as PROXY_SIDECAR_USER
+        # (a non-root UID different from the host invoker), so the dir and
+        # config files must be world-readable. mkdir's mode is masked by the
+        # process umask, so a hardened umask (0o077) without an explicit
+        # chmod would silently produce a 0o700 dir the sidecar cannot enter.
         config_dir.mkdir(parents=True, exist_ok=True)
+        config_dir.chmod(0o755)
 
         with contextlib.ExitStack() as stack:
             # config_dir is bind-mounted into the proxy sidecar; register its
@@ -419,11 +445,18 @@ class DockerSandboxAdapter:
         path on a healthy daemon always pins the subnet.
         """
         internal_subnet = self._inspect_network_subnet(network_name)
-        (config_dir / "tinyproxy.conf").write_text(
+        conf_path = config_dir / "tinyproxy.conf"
+        filter_path = config_dir / "filter"
+        conf_path.write_text(
             self._render_proxy_config(allow_cidr=internal_subnet),
             encoding="utf-8",
         )
-        (config_dir / "filter").write_text(self._render_proxy_filter(), encoding="utf-8")
+        filter_path.write_text(self._render_proxy_filter(), encoding="utf-8")
+        # Same rationale as config_dir.chmod above: sidecar runs as a
+        # different (non-root) user so files must be world-readable
+        # regardless of host umask.
+        conf_path.chmod(0o644)
+        filter_path.chmod(0o644)
 
     def _start_proxy_sidecar(self, network_name: str, config_dir: Path) -> str:
         """Start the proxy sidecar on the internal network.
@@ -457,7 +490,7 @@ class DockerSandboxAdapter:
             "--security-opt",
             "no-new-privileges:true",
             "--user",
-            "65534:65534",
+            PROXY_SIDECAR_USER,
             "-v",
             f"{config_dir}:/etc/tinyproxy:ro",
             self._policy.proxy_image,

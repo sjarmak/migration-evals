@@ -123,10 +123,9 @@ def _validate_user(user: str) -> None:
     the YAML/dict ingest path only — the dataclass constructor itself is
     unguarded so internal callers retain full flexibility.
     """
-    if not _NONROOT_USER_RE.match(user):
+    if not _NONROOT_USER_RE.fullmatch(user):
         raise ValueError(
-            "user must be a non-root 'UID:GID' (both numeric and non-zero); "
-            f"got {user!r}"
+            f"user must be a non-root 'UID:GID' (both numeric and non-zero); got {user!r}"
         )
 
 
@@ -214,12 +213,17 @@ class SandboxPolicy:
             kwargs["no_new_privileges"] = bool(data["no_new_privileges"])
         if "user" in data:
             value = data["user"]
-            if value:
+            # Treat only None and empty-string as "caller didn't specify"; any
+            # other falsy value (integer 0, False, empty list/dict) must flow
+            # through validation. Otherwise YAML's bare `user: 0` is parsed as
+            # the integer 0, which is falsy in Python and would silently
+            # bypass _validate_user, dropping the rootless default.
+            if value is None or (isinstance(value, str) and not value):
+                kwargs["user"] = None
+            else:
                 user = str(value)
                 _validate_user(user)
                 kwargs["user"] = user
-            else:
-                kwargs["user"] = None
         if "repo_mount_readonly" in data:
             kwargs["repo_mount_readonly"] = bool(data["repo_mount_readonly"])
         if "scratch_dir" in data:
