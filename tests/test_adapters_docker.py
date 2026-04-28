@@ -1080,7 +1080,14 @@ def test_pull_proxy_run_failure_cleans_up_network(
 ) -> None:
     """If the proxy sidecar fails to start (e.g. image not pulled), the
     half-created per-sandbox network must be torn down so we don't leak
-    docker resources across runs."""
+    docker resources across runs.
+
+    Wave-2 review (code MEDIUM #3): the on-disk ``config_dir`` created by
+    ``_setup_egress_filter`` must also be cleaned up via
+    ``_cleanup_scratch`` so the proxy-failure path does not leak
+    ``mig-eval-proxyconf-*`` directories alongside the half-built
+    sandbox.
+    """
     err = subprocess.CalledProcessError(
         returncode=125,
         cmd=["docker", "run"],
@@ -1096,6 +1103,20 @@ def test_pull_proxy_run_failure_cleans_up_network(
         ]
     )
     monkeypatch.setattr(subprocess, "run", recorder)
+
+    # Spy on _cleanup_scratch (a @staticmethod) so we can assert that the
+    # ExitStack-registered cleanup actually fires for the egress
+    # config_dir on the proxy-failure path. We delegate to the real
+    # implementation so the on-disk teardown still happens.
+    cleanup_calls: list[Path] = []
+    original_cleanup = DockerSandboxAdapter._cleanup_scratch
+
+    def _spy_cleanup(path: Path) -> None:
+        cleanup_calls.append(path)
+        original_cleanup(path)
+
+    monkeypatch.setattr(DockerSandboxAdapter, "_cleanup_scratch", staticmethod(_spy_cleanup))
+
     policy = SandboxPolicy(network="pull", network_allowlist=("registry-1.docker.io",))
     adapter = DockerSandboxAdapter(tmp_path, policy=policy)
     with pytest.raises(RuntimeError):
@@ -1103,6 +1124,20 @@ def test_pull_proxy_run_failure_cleans_up_network(
     # Last call must be the network teardown.
     netrms = _calls_with_subcommand(recorder, "docker", "network", "rm")
     assert netrms, "must clean up the per-sandbox network when proxy run fails"
+
+    # The egress config_dir (mig-eval-proxyconf-<suffix>) is created on
+    # disk by _setup_egress_filter and registered for cleanup via
+    # ExitStack. On the proxy-run failure path the stack must unwind it,
+    # not just the docker network.
+    proxyconf_cleanups = [p for p in cleanup_calls if p.name.startswith("mig-eval-proxyconf-")]
+    assert proxyconf_cleanups, (
+        "must call _cleanup_scratch on the egress config_dir when proxy "
+        f"run fails; saw cleanup calls: {cleanup_calls!r}"
+    )
+    # And the directory must actually be gone from disk afterwards
+    # (i.e. the spy did not just record the call; the real cleanup ran).
+    for config_dir in proxyconf_cleanups:
+        assert not config_dir.exists(), f"egress config_dir was not removed from disk: {config_dir}"
 
 
 def test_pull_setup_egress_filter_waits_for_proxy_ready(
