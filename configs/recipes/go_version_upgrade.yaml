@@ -1,0 +1,48 @@
+# Recipe template for the go_version_upgrade migration.
+#
+# Covers Go toolchain *major* version upgrades — e.g. bumping a module
+# from `go 1.22` to `go 1.23` in go.mod plus any source-level changes
+# the new toolchain requires (newly-stabilized stdlib APIs, new vet
+# warnings promoted to errors, language-version-gated syntax). This is
+# distinct from `go_import_rewrite`: that recipe covers import-path
+# surgery against a fixed toolchain; this recipe holds imports stable
+# and moves the toolchain underneath them. Tier signal is high because
+# toolchain bumps frequently surface latent stdlib drift, generics edge
+# cases, and module-graph incompatibilities that compile cleanly on the
+# old version and break on the new one.
+#
+# scripts/run_eval.py reads this template and synthesizes a per-instance
+# <repo>/meta.json from the union of these recipe fields and the
+# changeset-provider provenance (repo_url, commit_sha, workflow_id,
+# agent_runner, agent_model). The funnel's runner then loads that
+# meta.json and constructs a Recipe(dockerfile, build_cmd, test_cmd)
+# for the trial.
+#
+# `target_go_version` is the source of truth for which toolchain this
+# recipe builds against. The `recipe.dockerfile` FROM line below is
+# pinned to the same version by hand. When bumping the target (e.g. to
+# evaluate a 1.23 -> 1.24 upgrade corpus), update BOTH the
+# `target_go_version` field and the `FROM golang:<version>` line so
+# they stay in sync. We deliberately avoid introducing a templating
+# layer here (YAGNI) — a single integer in a recipe is not worth a
+# rendering pipeline.
+
+migration_id: go_version_upgrade
+model_cutoff_date: "2025-01-01"
+
+# Toolchain the sandbox builds against. Must match the FROM line in
+# recipe.dockerfile below.
+target_go_version: "1.23"
+
+recipe:
+  dockerfile: |
+    FROM golang:1.23
+    WORKDIR /work
+    COPY . .
+  build_cmd: "go build ./..."
+  test_cmd: "go test ./..."
+
+stamps:
+  oracle_spec: configs/oracle_spec.yaml
+  recipe_spec: configs/recipes/go_version_upgrade.yaml
+  hypotheses: docs/hypotheses_and_thresholds.md

@@ -111,3 +111,15 @@ def seeded_dockerfile_bump_remote(
         "dockerfile_base_image_bump/alpine_to_debian",
         "dockerfile-bump",
     )
+
+
+@pytest.fixture(scope="session")
+def seeded_go_version_upgrade_remote(
+    tmp_path_factory: pytest.TempPathFactory,
+) -> tuple[str, str]:
+    """File:// URL + SHA for the canonical Go-toolchain-upgrade example."""
+    return _seed_from_example(
+        tmp_path_factory,
+        "go_version_upgrade/bump_1_22_to_1_23",
+        "go-version-upgrade",
+    )
