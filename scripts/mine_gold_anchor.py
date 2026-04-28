@@ -82,6 +82,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re as _re
 import shutil
 import subprocess
 import sys
@@ -346,8 +347,6 @@ def load_recipe(args: argparse.Namespace) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 # Changeset-source helpers (--source changesets)
 # ---------------------------------------------------------------------------
-
-import re as _re
 
 _PR_URL_RE = _re.compile(
     r"^https?://github\.com/(?P<owner>[^/]+)/(?P<repo>[^/]+)/pull/(?P<number>\d+)/?$"
@@ -632,7 +631,7 @@ def main(argv: list[str] | None = None) -> int:
 def _main_oss(args: argparse.Namespace) -> int:
     recipe = load_recipe(args)
     if args.dry_run:
-        print(f"source: oss")
+        print("source: oss")
         print(f"migration_id: {recipe['migration_id']}")
         print(f"target_count: {args.target_count}")
         print(f"out: {args.out}")
@@ -659,7 +658,7 @@ def _main_changesets(args: argparse.Namespace) -> int:
         return 1
     urls = load_changeset_urls(changeset_path)
     if args.dry_run:
-        print(f"source: changesets")
+        print("source: changesets")
         print(f"changesets: {changeset_path} ({len(urls)} urls)")
         print(f"target_count: {args.target_count}")
         print(f"min_days_survived: {args.min_days_survived}")
