@@ -1072,7 +1072,8 @@ def test_pull_setup_egress_filter_waits_for_proxy_ready(
     assert probe[3:5] == ["sh", "-c"], f"readiness probe must run via `sh -c`: {probe!r}"
     script = probe[5]
     # `nc -z 127.0.0.1 <port>` is the actual TCP probe. Bounded retry
-    # loop (no `while true`): caps total wait at PROXY_READINESS_TIMEOUT_S.
+    # loop (no `while true`): caps total wait at
+    # PROXY_READINESS_ITERATIONS × PROXY_READINESS_SLEEP_S.
     assert (
         "nc -z 127.0.0.1 8888" in script
     ), f"readiness probe must use `nc -z 127.0.0.1 <port>`: {script!r}"
@@ -1127,7 +1128,7 @@ def test_pull_setup_egress_filter_raises_on_proxy_unready(
     monkeypatch.setattr(subprocess, "run", recorder)
     policy = SandboxPolicy(network="pull", network_allowlist=("registry-1.docker.io",))
     adapter = DockerSandboxAdapter(tmp_path, policy=policy)
-    with pytest.raises(RuntimeError, match="proxy"):
+    with pytest.raises(RuntimeError, match=r"proxy-cid did not become ready on port 8888"):
         adapter.create_sandbox(image="build-sandbox:latest")
     # Both proxy container removal and network removal must appear -
     # ExitStack unwinds in reverse-registration order.
@@ -1149,9 +1150,7 @@ def test_pull_setup_egress_filter_raises_on_proxy_unready(
 # don't go pulling tinyproxy on every CI box.
 
 
-_PROXY_IMAGE_FOR_INTEGRATION = os.environ.get(
-    "MIGRATION_EVAL_PROXY_IMAGE", "vimagick/tinyproxy:latest"
-)
+_PROXY_IMAGE_FOR_INTEGRATION = os.environ.get("MIGRATION_EVAL_PROXY_IMAGE", DEFAULT_PROXY_IMAGE)
 
 
 def _proxy_image_present() -> bool:

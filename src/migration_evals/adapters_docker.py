@@ -67,8 +67,16 @@ PROXY_SIDECAR_USER = "65534:65534"
 # fast workload (go build, pip install) hits connection-refused before
 # the sidecar has bound its listen socket. Increase only if a slower
 # proxy image lands; never make this unbounded.
-PROXY_READINESS_ITERATIONS = 50
-PROXY_READINESS_SLEEP_S = "0.1"
+PROXY_READINESS_ITERATIONS: int = 50
+# str (not float) because it's interpolated verbatim into a sh -c script,
+# never multiplied or compared as a number.
+PROXY_READINESS_SLEEP_S: str = "0.1"
+# Python-side timeout on subprocess.run(..., timeout=) for the readiness
+# probe. The shell loop above is internally bounded at ITERATIONS × SLEEP_S
+# (= 5s), but docker exec dispatch itself can stall before the script even
+# starts (daemon queue, namespace setup). Add a generous Python-side cap so
+# a wedged daemon can't block create_sandbox indefinitely. Belt and braces.
+PROXY_READINESS_SUBPROCESS_TIMEOUT_S: float = 30.0
 
 
 @dataclass(frozen=True)
@@ -570,7 +578,7 @@ class DockerSandboxAdapter:
             f"i=0; while [ $i -lt {PROXY_READINESS_ITERATIONS} ]; do "
             f"nc -z 127.0.0.1 {port} && exit 0; "
             f"i=$((i+1)); sleep {PROXY_READINESS_SLEEP_S}; "
-            f"done; exit 1"
+            "done; exit 1"
         )
         probe_args = [
             self._docker_bin,
@@ -581,7 +589,19 @@ class DockerSandboxAdapter:
             script,
         ]
         try:
-            subprocess.run(probe_args, check=True, capture_output=True, text=True)
+            subprocess.run(
+                probe_args,
+                check=True,
+                capture_output=True,
+                text=True,
+                timeout=PROXY_READINESS_SUBPROCESS_TIMEOUT_S,
+            )
+        except subprocess.TimeoutExpired as exc:
+            raise RuntimeError(
+                f"proxy sidecar {proxy_container} readiness probe timed out "
+                f"after {PROXY_READINESS_SUBPROCESS_TIMEOUT_S}s (docker daemon "
+                f"may be stalled)"
+            ) from exc
         except subprocess.CalledProcessError as exc:
             raise RuntimeError(
                 f"proxy sidecar {proxy_container} did not become ready on port "
