@@ -1,0 +1,7 @@
+{
+  "repo_url": "https://example.com/example/svc-node",
+  "commit_sha": "0000000000000000000000000000000000000000",
+  "workflow_id": "wf-canonical-node-lts-upgrade",
+  "agent_runner": "claude_code",
+  "agent_model": "claude-sonnet-4-6"
+}

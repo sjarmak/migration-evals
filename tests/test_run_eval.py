@@ -39,6 +39,7 @@ RECIPE_CASES = [
     ("java8_17", "mvn", "FROM maven"),
     ("go_import_rewrite", "go build", "FROM golang"),
     ("dockerfile_base_image_bump", "docker build", "FROM docker"),
+    ("node_lts_upgrade", "npm ci", "FROM node"),
 ]
 
 
@@ -366,8 +367,14 @@ def _stage_canonical(
             "canonical-dockerfile-1",
             "seeded_dockerfile_bump_remote",
         ),
+        (
+            "node_lts_upgrade",
+            "node_lts_upgrade/node18_to_node20",
+            "canonical-node-1",
+            "seeded_node_lts_upgrade_remote",
+        ),
     ],
-    ids=["go_import_rewrite", "dockerfile_base_image_bump"],
+    ids=["go_import_rewrite", "dockerfile_base_image_bump", "node_lts_upgrade"],
 )
 def test_canonical_example_passes_tier0(
     re_mod,

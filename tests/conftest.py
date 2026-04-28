@@ -111,3 +111,15 @@ def seeded_dockerfile_bump_remote(
         "dockerfile_base_image_bump/alpine_to_debian",
         "dockerfile-bump",
     )
+
+
+@pytest.fixture(scope="session")
+def seeded_node_lts_upgrade_remote(
+    tmp_path_factory: pytest.TempPathFactory,
+) -> tuple[str, str]:
+    """File:// URL + SHA for the canonical Node-LTS-upgrade example."""
+    return _seed_from_example(
+        tmp_path_factory,
+        "node_lts_upgrade/node18_to_node20",
+        "node-lts-upgrade",
+    )
