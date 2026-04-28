@@ -25,12 +25,22 @@
 # meta.json and constructs a Recipe(dockerfile, build_cmd, test_cmd)
 # for the trial.
 #
-# Update the dockerfile / build_cmd / test_cmd here when the migration's
-# canonical build harness changes. `node:20` is the current LTS at the
-# time of authoring; bump the FROM tag when targeting 22.
+# `target_node_version` is the source of truth for which Node LTS this
+# recipe builds against. The `recipe.dockerfile` FROM line below is
+# pinned to the same major by hand; when bumping the target (e.g. to
+# evaluate a 20 -> 22 upgrade corpus), update BOTH the
+# `target_node_version` field and the `FROM node:<major>` line so they
+# stay in sync. We deliberately avoid introducing a templating layer
+# here (YAGNI) — a single integer in a recipe is not worth a rendering
+# pipeline. Mirrors the `target_go_version` convention in
+# `go_version_upgrade.yaml`.
 
 migration_id: node_lts_upgrade
 model_cutoff_date: "2025-01-01"
+
+# Node LTS the sandbox builds against. Must match the FROM line in
+# recipe.dockerfile below.
+target_node_version: "20"
 
 recipe:
   dockerfile: |

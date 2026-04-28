@@ -1,6 +1,7 @@
 # Go toolchain upgrade — `1.22` → `1.23`
 
-Canonical example of a Go toolchain *major* version upgrade, the
+Canonical example of a Go toolchain version upgrade (Go's `1.x`
+releases are minor releases of Go 1, not major releases) — the
 textbook shape for an agent-driven `go.mod`-version bump batch change.
 The agent rewrites the `go` directive in `go.mod` and updates source
 to take advantage of an API that was stabilized in the new toolchain.
@@ -12,7 +13,7 @@ and moves the toolchain underneath them.
 
 | File | Purpose |
 | --- | --- |
-| `repo_state/` | Pre-patch project state. A two-file Go module declaring `go 1.22`, importing `slices`, and calling `slices.Sort`. |
+| `repo_state/` | Pre-patch project state. A two-file Go module declaring `go 1.22`, importing `slices`, and calling `slices.Sort`. The optional `toolchain go1.22.x` directive (introduced in Go 1.21 and present in some real repos) is deliberately omitted to keep `go.mod` minimal; agents applied to a real repo carrying that directive will produce a slightly larger diff than `patch.diff`. |
 | `patch.diff` | Unified diff produced by the agent. Bumps `go.mod` to `go 1.23` and adds a call to `slices.Repeat` (stabilized in Go 1.23). |
 | `meta.json` | `ChangesetProvider` metadata. The committed `commit_sha` is a placeholder; tests build a seeded git remote from `repo_state/` and substitute the real SHA at runtime. |
 

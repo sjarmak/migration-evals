@@ -1,15 +1,18 @@
 # Recipe template for the go_version_upgrade migration.
 #
-# Covers Go toolchain *major* version upgrades — e.g. bumping a module
-# from `go 1.22` to `go 1.23` in go.mod plus any source-level changes
-# the new toolchain requires (newly-stabilized stdlib APIs, new vet
-# warnings promoted to errors, language-version-gated syntax). This is
-# distinct from `go_import_rewrite`: that recipe covers import-path
-# surgery against a fixed toolchain; this recipe holds imports stable
-# and moves the toolchain underneath them. Tier signal is high because
-# toolchain bumps frequently surface latent stdlib drift, generics edge
-# cases, and module-graph incompatibilities that compile cleanly on the
-# old version and break on the new one.
+# Covers Go toolchain version upgrades — e.g. bumping a module from
+# `go 1.22` to `go 1.23` in go.mod plus any source-level changes the
+# new toolchain requires (newly-stabilized stdlib APIs, new vet
+# warnings promoted to errors, language-version-gated syntax). Go's
+# `1.x` releases are minor releases of Go 1, not major releases; the
+# recipe is named `go_version_upgrade` rather than `go_minor_upgrade`
+# to leave room for any future Go 2 toolchain bump without renaming.
+# This is distinct from `go_import_rewrite`: that recipe covers
+# import-path surgery against a fixed toolchain; this recipe holds
+# imports stable and moves the toolchain underneath them. Tier signal
+# is high because toolchain bumps frequently surface latent stdlib
+# drift, generics edge cases, and module-graph incompatibilities that
+# compile cleanly on the old version and break on the new one.
 #
 # scripts/run_eval.py reads this template and synthesizes a per-instance
 # <repo>/meta.json from the union of these recipe fields and the

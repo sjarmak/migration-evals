@@ -30,7 +30,7 @@ def _populate_default(seed: Path) -> None:
 def _make_seed_repo(
     root: Path,
     *,
-    populate: Callable[[Path], None] = _populate_default,
+    populate: Callable[[Path], object] = _populate_default,
     label: str = "init",
 ) -> tuple[Path, str]:
     """Init a one-commit git repo at ``root/seed`` and return (path, sha).

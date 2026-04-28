@@ -18,12 +18,20 @@ of a Node-LTS-bump touching both project metadata and source.
 | Tier | Verdict on this example | Failure mode this tier exists to catch |
 | --- | --- | --- |
 | 0 — `diff_valid` | **passes** | Malformed unified diff; line offsets that no longer match `repo_state/`. |
-| 1 — `compile_only` (`npm ci`) | **passes** if Node 20+ is on PATH | Lockfile drift; `engines` enforcement under `--engine-strict`; native-addon ABI mismatches with the new Node ABI; packages dropped from the new Node's bundled deps. |
-| 2 — `tests` (`npm test`) | **passes** if Node 20+ is on PATH | Runtime breakage from APIs the new LTS removed or changed semantics on (`url.parse`, `Buffer()` constructor, removed `crypto` algorithms, fetch/streams shifts, timer-promise behaviour). |
+| 1 — `compile_only` (`npm ci`) | **not exercisable from this fixture** | Lockfile drift; `engines` enforcement under `--engine-strict`; native-addon ABI mismatches with the new Node ABI; packages dropped from the new Node's bundled deps. |
+| 2 — `tests` (`npm test`) | **not exercisable from this fixture** | Runtime breakage from APIs the new LTS removed or changed semantics on (`url.parse`, `Buffer()` constructor, removed `crypto` algorithms, fetch/streams shifts, timer-promise behaviour). |
 
-The shipped tests only exercise tier 0 (no Node toolchain assumed in
-CI). A workstation with Node 20+ installed can run the higher tiers via
-`scripts/run_eval.py --stages diff,compile,tests`.
+**T1/T2 caveat.** The recipe's `build_cmd` is `npm ci`, which requires
+a `package-lock.json` (or `npm-shrinkwrap.json`) and exits non-zero
+when neither is present — regardless of whether Node is installed.
+This canonical fixture deliberately omits a lockfile to keep
+`repo_state/` minimal, so T1 and T2 cannot be exercised directly
+against it. Real corpus repos targeted by this recipe will carry a
+lockfile and `--stages diff,compile,tests` will run end-to-end against
+them on a workstation with Node 20+ installed; the failure modes
+listed above are what each tier exists to catch in those runs.
+
+The shipped tests only exercise tier 0.
 
 ## Reusing this example
 
