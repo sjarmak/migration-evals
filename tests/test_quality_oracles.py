@@ -32,6 +32,7 @@ import sys
 from collections.abc import Callable
 from pathlib import Path
 from textwrap import dedent
+from typing import Any
 
 import pytest
 
@@ -276,16 +277,50 @@ def test_baseline_skipped_when_no_tool(tmp_path: Path) -> None:
     assert verdict.details["skipped"] is True
 
 
-def test_baseline_skipped_when_unsupported_tool(tmp_path: Path) -> None:
-    """``comby`` and ``gopls`` are accepted by QualitySpec but skipped here."""
+def test_baseline_skipped_when_comby_binary_missing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """comby is dispatched but skipped when the binary is not on PATH."""
     repo = tmp_path / "repo"
     repo.mkdir()
     _write(repo, "patch.diff", _agent_diff_one_file())
-    spec = QualitySpec(baseline_tool="comby")
+    spec = QualitySpec(
+        baseline_tool="comby",
+        baseline_pattern=BaselinePattern(
+            match=r"github\.com/foo/oldpkg",
+            replace="github.com/foo/newpkg",
+            files="*.go",
+        ),
+    )
+    monkeypatch.setattr(baseline_comparison, "_which_comby", lambda: None)
     verdict = baseline_comparison.run(repo, spec)
     assert verdict.passed is True
     assert verdict.details["skipped"] is True
     assert "comby" in verdict.details["reason"]
+    assert verdict.details["baseline_tool"] == "comby"
+
+
+def test_baseline_skipped_when_gopls_binary_missing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """gopls is dispatched but skipped when the binary is not on PATH."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _write(repo, "patch.diff", _agent_diff_one_file())
+    spec = QualitySpec(
+        baseline_tool="gopls",
+        baseline_pattern=BaselinePattern(
+            match="OldName",
+            replace="NewName",
+            files="*.go",
+        ),
+    )
+    monkeypatch.setattr(baseline_comparison, "_which_gopls", lambda: None)
+    verdict = baseline_comparison.run(repo, spec)
+    assert verdict.passed is True
+    assert verdict.details["skipped"] is True
+    assert "gopls" in verdict.details["reason"]
+    assert verdict.details["baseline_tool"] == "gopls"
 
 
 def test_baseline_sed_agrees_with_agent(tmp_path: Path) -> None:
@@ -346,6 +381,194 @@ def test_baseline_sed_disagrees_when_pattern_still_matches(
     assert verdict.passed is True  # informational tier
     assert verdict.details["baseline_passed"] is False
     assert verdict.details["agent_lift"] == 1.0
+
+
+def test_baseline_comby_agrees_with_agent(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """comby returning the post-state unchanged → baseline agrees with agent."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    post_state = 'package main\nimport "github.com/foo/newpkg"\n'
+    _write(repo, "main.go", post_state)
+    _write(repo, "patch.diff", _agent_diff_one_file())
+    spec = QualitySpec(
+        baseline_tool="comby",
+        baseline_pattern=BaselinePattern(
+            match="github.com/foo/oldpkg",
+            replace="github.com/foo/newpkg",
+            files="*.go",
+        ),
+    )
+    monkeypatch.setattr(baseline_comparison, "_which_comby", lambda: "/usr/bin/comby")
+
+    captured: dict[str, Any] = {"input": None}
+
+    def fake_run_comby(input_text: str, _pattern: BaselinePattern, _cli: str):
+        # Tempdir isolation invariant: the implementation MUST pipe the
+        # post-state through stdin rather than mutating the on-disk file.
+        captured["input"] = input_text
+        return subprocess.CompletedProcess(args=[], returncode=0, stdout=input_text, stderr="")
+
+    monkeypatch.setattr(baseline_comparison, "_run_comby", fake_run_comby)
+
+    verdict = baseline_comparison.run(repo, spec)
+    assert verdict.passed is True
+    assert verdict.details["baseline_passed"] is True
+    assert verdict.details["agent_lift"] == 0.0
+    assert verdict.details["baseline_tool"] == "comby"
+    # FS-isolation invariant: the on-disk post-state is byte-for-byte
+    # the same after the comby invocation.
+    assert (repo / "main.go").read_text() == post_state
+    # And the post-state was the input handed to comby (not the pre-state
+    # reconstructed from the diff or some other mutated copy).
+    assert captured["input"] == post_state
+
+
+def test_baseline_comby_skipped_on_nonzero_exit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A non-zero comby exit emits a skipped verdict, not a false-positive."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _write(repo, "main.go", 'package main\nimport "github.com/foo/newpkg"\n')
+    _write(repo, "patch.diff", _agent_diff_one_file())
+    spec = QualitySpec(
+        baseline_tool="comby",
+        baseline_pattern=BaselinePattern(
+            match="bad_template[",
+            replace="x",
+            files="*.go",
+        ),
+    )
+    monkeypatch.setattr(baseline_comparison, "_which_comby", lambda: "/usr/bin/comby")
+
+    def fake_run_comby(_input: str, _pattern: BaselinePattern, _cli: str):
+        return subprocess.CompletedProcess(
+            args=[], returncode=2, stdout="", stderr="comby: parse error in match template"
+        )
+
+    monkeypatch.setattr(baseline_comparison, "_run_comby", fake_run_comby)
+    verdict = baseline_comparison.run(repo, spec)
+    assert verdict.passed is True
+    assert verdict.details["skipped"] is True
+    assert verdict.details["baseline_tool"] == "comby"
+    assert "exited 2" in verdict.details["reason"]
+
+
+def test_baseline_gopls_skipped_without_go_mod(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """gopls rename requires a Go module — without go.mod, skip."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _write(repo, "main.go", "package main\n\nfunc OldName() {}\n")
+    _write(repo, "patch.diff", _agent_diff_one_file())
+    spec = QualitySpec(
+        baseline_tool="gopls",
+        baseline_pattern=BaselinePattern(
+            match="OldName",
+            replace="NewName",
+            files="*.go",
+        ),
+    )
+    monkeypatch.setattr(baseline_comparison, "_which_gopls", lambda: "/usr/bin/gopls")
+    verdict = baseline_comparison.run(repo, spec)
+    assert verdict.passed is True
+    assert verdict.details["skipped"] is True
+    assert "go.mod" in verdict.details["reason"]
+
+
+def test_baseline_gopls_agrees_with_agent_when_post_state_already_renamed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """gopls baseline runs in a tempdir; the original post-state MUST NOT
+    be modified by the rename, even if gopls is invoked.
+    """
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    post_state = "package main\n\nfunc NewName() {}\n"
+    _write(repo, "main.go", post_state)
+    _write(repo, "go.mod", "module example.com/m\n\ngo 1.22\n")
+    _write(repo, "patch.diff", _agent_diff_one_file())
+    spec = QualitySpec(
+        baseline_tool="gopls",
+        baseline_pattern=BaselinePattern(
+            match="OldName",  # absent from post_state → no rename to perform
+            replace="NewName",
+            files="*.go",
+        ),
+    )
+    monkeypatch.setattr(baseline_comparison, "_which_gopls", lambda: "/usr/bin/gopls")
+
+    invocations: list[Path] = []
+
+    def fake_run_gopls(workdir: Path, _file_rel, _offset, _new, _cli):
+        invocations.append(workdir)
+        return subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(baseline_comparison, "_run_gopls_rename", fake_run_gopls)
+
+    verdict = baseline_comparison.run(repo, spec)
+    assert verdict.passed is True
+    assert verdict.details["baseline_tool"] == "gopls"
+    # OldName is absent from the post-state → no gopls invocation needed.
+    # The implementation should record the unchanged post-state and
+    # report agent/baseline agreement (zero substitutions).
+    assert invocations == []
+    assert verdict.details["baseline_passed"] is True
+    # FS-isolation invariant: original repo files unchanged.
+    assert (repo / "main.go").read_text() == post_state
+
+
+def test_baseline_gopls_invokes_rename_in_tempdir(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """When the match identifier IS present in the post-state, gopls is
+    invoked against a tempdir copy — never the original repo path.
+    """
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    # Post-state still references the OLD name → baseline rename will
+    # run and produce a different tempdir output, signaling the agent
+    # didn't fully complete the migration.
+    post_state = "package main\n\nfunc OldName() {}\n"
+    _write(repo, "main.go", post_state)
+    _write(repo, "go.mod", "module example.com/m\n\ngo 1.22\n")
+    _write(repo, "patch.diff", _agent_diff_one_file())
+    spec = QualitySpec(
+        baseline_tool="gopls",
+        baseline_pattern=BaselinePattern(
+            match="OldName",
+            replace="NewName",
+            files="*.go",
+        ),
+    )
+    monkeypatch.setattr(baseline_comparison, "_which_gopls", lambda: "/usr/bin/gopls")
+
+    invocations: list[Path] = []
+
+    def fake_run_gopls(workdir: Path, file_rel: str, _offset, new_name: str, _cli):
+        invocations.append(workdir)
+        # Simulate gopls rename by writing the renamed file in the tempdir.
+        target = workdir / file_rel
+        target.write_text(target.read_text().replace("OldName", new_name))
+        return subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(baseline_comparison, "_run_gopls_rename", fake_run_gopls)
+
+    verdict = baseline_comparison.run(repo, spec)
+    assert verdict.passed is True
+    assert verdict.details["baseline_tool"] == "gopls"
+    assert verdict.details["agent_lift"] == 1.0
+    assert verdict.details["baseline_passed"] is False
+    assert len(invocations) == 1
+    # Architect C1 invariant: gopls was invoked against a tempdir, not
+    # the original repo_path. The tempdir must not be the repo and must
+    # not be a subdirectory of it.
+    workdir = invocations[0].resolve()
+    assert workdir != repo.resolve()
+    assert repo.resolve() not in workdir.parents
+    # Original post-state is byte-for-byte unchanged.
+    assert (repo / "main.go").read_text() == post_state
 
 
 # ---------------------------------------------------------------------------
