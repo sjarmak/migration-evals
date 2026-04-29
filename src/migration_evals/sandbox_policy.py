@@ -276,13 +276,9 @@ class SandboxPolicy:
             # otherwise the _validate_proxy_port guard never sees the
             # original type.
             if isinstance(raw, bool):
-                raise ValueError(
-                    f"proxy_port must be an int in [1, 65535]; got bool {raw!r}"
-                )
+                raise ValueError(f"proxy_port must be an int in [1, 65535]; got bool {raw!r}")
             if isinstance(raw, float):
-                raise ValueError(
-                    f"proxy_port must be an int in [1, 65535]; got float {raw!r}"
-                )
+                raise ValueError(f"proxy_port must be an int in [1, 65535]; got float {raw!r}")
             port = int(raw)
             # __post_init__ re-runs this check; the explicit call here
             # anchors the error to the "proxy_port" key on YAML ingest
