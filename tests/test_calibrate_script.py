@@ -63,14 +63,16 @@ def test_calibrate_emits_clean_tier_zero_calibration(tmp_path: Path) -> None:
     assert out.is_file()
     report = CalibrationReport.from_path(out)
     assert report.migration_id == "go_import_rewrite"
-    # 10 tier-0 known-good + 2 tier-1/tier-2 known-good. The latter
-    # declare applicable_tiers=["compile_only", "tests"] so they do not
-    # contribute to the tier-0 corpus.
-    assert report.n_known_good == 12
-    # 10 tier-0 known-bad + 2 compile_only + 2 tests known-bad fixtures.
-    # The compile_only/tests fixtures also declare applicable_tiers
-    # excluding diff_valid, so they do not run through tier-0.
-    assert report.n_known_bad == 14
+    # 10 tier-0 known-good fixtures. The 2 tier-1/tier-2 known-good
+    # fixtures declare applicable_tiers=["compile_only", "tests"]; with
+    # --stages diff their intersection with the requested stages is
+    # empty, so the driver skips them (4qa) and they do not appear in
+    # the report at all.
+    assert report.n_known_good == 10
+    # 10 tier-0 known-bad fixtures. The 4 compile/test known-bad
+    # fixtures are also skipped under --stages diff for the same
+    # empty-intersection reason.
+    assert report.n_known_bad == 10
     diff = report.tier("diff_valid")
     # Corpus is hand-vetted for tier-0; FPR must be zero (no clean diff
     # is wrongly rejected). FNR is computed only against known-bad
@@ -590,6 +592,91 @@ def test_calibrate_resolve_sandbox_factory_rejects_module_without_file_attr(
     # is-relative-to fallthrough (which would indicate the wrong code
     # path fired on a None __file__).
     assert "has no" in msg and "__file__" in msg
+
+
+# ---------------------------------------------------------------------------
+# scripts/calibrate.py — _resolve_stages / _effective_stages unit tests
+# (Wave-1 review follow-ups: 4qa, 8n1)
+# ---------------------------------------------------------------------------
+
+
+def test_calibrate_resolve_stages_warns_when_all_mixed_with_specific_tokens(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """8n1: ``--stages all,diff`` is silently the same as ``--stages all``,
+    but the operator may have intended just ``diff``. ``_resolve_stages``
+    must emit a stderr warning so the run is not silently widened to
+    sandbox tiers in a context the operator believed was diff-only."""
+    calibrate_mod = _import_calibrate_module()
+    result = calibrate_mod._resolve_stages("all,diff")
+    # Behaviour preserved: 'all' subsumes the others, full tier set returned.
+    assert result is not None and "diff_valid" in result and "compile_only" in result
+    captured = capsys.readouterr()
+    assert "all" in captured.err and "diff" in captured.err
+
+
+def test_calibrate_resolve_stages_no_warning_when_all_alone(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """``--stages all`` alone is unambiguous and must not warn."""
+    calibrate_mod = _import_calibrate_module()
+    calibrate_mod._resolve_stages("all")
+    captured = capsys.readouterr()
+    assert captured.err == ""
+
+
+def test_calibrate_resolve_stages_no_warning_when_all_absent(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """``--stages diff,compile`` (no 'all') must not warn."""
+    calibrate_mod = _import_calibrate_module()
+    calibrate_mod._resolve_stages("diff,compile")
+    captured = capsys.readouterr()
+    assert captured.err == ""
+
+
+def test_calibrate_effective_stages_empty_intersection_signals_skip() -> None:
+    """4qa: ``_effective_stages`` returns ``()`` when the fixture's
+    ``applicable_tiers`` and the requested ``stages`` have no overlap.
+    The caller (``_run_one``) treats this sentinel as a skip rather than
+    forwarding ``stages=()`` to the funnel (which is undefined)."""
+    calibrate_mod = _import_calibrate_module()
+    label = calibrate_mod.FixtureLabel(
+        fixture_id="dummy",
+        expected_outcome="pass_all",
+        applicable_tiers=("diff_valid",),
+    )
+    effective = calibrate_mod._effective_stages(label, ("compile_only", "tests"))
+    assert effective == ()
+
+
+def test_calibrate_run_one_returns_none_for_empty_intersection(tmp_path: Path) -> None:
+    """4qa: when the requested stages do not intersect the fixture's
+    ``applicable_tiers``, ``_run_one`` returns ``None`` instead of
+    invoking the funnel with ``stages=()``. This keeps the fixture out
+    of the calibration aggregation entirely."""
+    calibrate_mod = _import_calibrate_module()
+    fixture_dir = tmp_path / "fx"
+    (fixture_dir / "repo").mkdir(parents=True)
+    label = calibrate_mod.FixtureLabel(
+        fixture_id="empty_overlap",
+        expected_outcome="pass_all",
+        applicable_tiers=("diff_valid",),
+    )
+    sentinel_recipe = object()  # Must never be touched: empty intersection short-circuits.
+
+    def _exploding_factory(*args: object, **kwargs: object) -> object:
+        raise AssertionError("sandbox factory must not be called for skipped fixtures")
+
+    result = calibrate_mod._run_one(
+        fixture_dir,
+        label,
+        stages=("compile_only",),
+        recipe=sentinel_recipe,  # type: ignore[arg-type]
+        sandbox_factory=_exploding_factory,
+        sandbox_image="dummy:latest",
+    )
+    assert result is None
 
 
 # ---------------------------------------------------------------------------

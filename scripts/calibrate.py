@@ -286,10 +286,16 @@ def _resolve_stages(raw: str | None) -> tuple[str, ...] | None:
     ``None`` keeps the funnel default (run every enabled tier). The CLI
     accepts the same stage aliases as ``scripts/run_eval.py`` (``diff``,
     ``compile``, ``tests``, ``judge``, ``daikon``, ``all``).
+
+    Mixing ``all`` with specific tier tokens is accepted (the result is
+    still the full tier set), but the operator may have intended just
+    the specific tokens — emit a stderr warning so the run is not
+    silently widened to sandbox tiers in a context the operator
+    believed was diff-only.
     """
     if not raw:
         return None
-    requested: list[str] = []
+    tokens: list[str] = []
     for token in raw.split(","):
         token = token.strip()
         if not token:
@@ -298,6 +304,17 @@ def _resolve_stages(raw: str | None) -> tuple[str, ...] | None:
             raise ValueError(
                 f"unknown --stages token {token!r}; " f"valid values: {sorted(STAGE_ALIASES)}"
             )
+        tokens.append(token)
+    if "all" in tokens and len(tokens) > 1:
+        others = [t for t in tokens if t != "all"]
+        print(
+            f"calibrate: --stages mixes 'all' with {others!r}; "
+            f"'all' subsumes the others — running the full tier set. "
+            f"Drop 'all' if you intended only {others!r}.",
+            file=sys.stderr,
+        )
+    requested: list[str] = []
+    for token in tokens:
         requested.extend(STAGE_ALIASES[token])
     return tuple(dict.fromkeys(requested))
 
@@ -347,6 +364,11 @@ def _effective_stages(
     a ``stages`` argument as an inclusion list, so a fixture that only
     applies to ``diff_valid`` will produce a single-tier verdict even
     when the run is configured for ``diff,compile,tests``.
+
+    An empty tuple (``()``) is returned when the requested stages and
+    the fixture's ``applicable_tiers`` have no overlap. ``run_funnel``
+    treats ``stages=()`` as undefined, so callers must handle this
+    sentinel by skipping the fixture (see ``_run_one``).
     """
     if label.applicable_tiers is None:
         return stages
@@ -364,12 +386,22 @@ def _run_one(
     recipe: Recipe,
     sandbox_factory: Callable[..., Any] | None,
     sandbox_image: str,
-) -> FixtureObservation:
-    """Run the funnel for one fixture and return its observation."""
+) -> FixtureObservation | None:
+    """Run the funnel for one fixture and return its observation.
+
+    Returns ``None`` when the fixture's ``applicable_tiers`` have no
+    overlap with the requested ``stages``: ``run_funnel(stages=())`` is
+    undefined, and forwarding the empty intersection would either
+    silently produce an empty observation or fail at the funnel layer.
+    The caller filters ``None`` out so the fixture contributes neither
+    a passed nor a failed verdict.
+    """
     repo = fixture_dir / "repo"
     if not repo.is_dir():
         raise FileNotFoundError(f"calibration fixture {fixture_dir} has no repo/ subdir")
     effective = _effective_stages(label, stages)
+    if effective == ():
+        return None
     adapters: dict[str, Any] = {}
     if _stages_need_sandbox(effective) and sandbox_factory is not None:
         adapters["sandbox"] = sandbox_factory(repo, image=sandbox_image)
@@ -420,17 +452,18 @@ def calibrate(
     observations: list[FixtureObservation] = []
     fixture_count = 0
     for fixture_dir, label in _iter_fixtures(fixtures_root):
-        observations.append(
-            _run_one(
-                fixture_dir,
-                label,
-                stages=stages,
-                recipe=recipe,
-                sandbox_factory=sandbox_factory,
-                sandbox_image=sandbox_image,
-            )
+        observation = _run_one(
+            fixture_dir,
+            label,
+            stages=stages,
+            recipe=recipe,
+            sandbox_factory=sandbox_factory,
+            sandbox_image=sandbox_image,
         )
         fixture_count += 1
+        if observation is None:
+            continue
+        observations.append(observation)
     if fixture_count == 0:
         raise FileNotFoundError(f"no calibration fixtures found under {fixtures_root}")
     return compute_calibration(
