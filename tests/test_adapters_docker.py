@@ -1108,8 +1108,7 @@ def test_render_proxy_config_validates_allow_cidr_against_injection() -> None:
     # an attacker-controlled ``Listen 0.0.0.0:9999``-style line.
     rendered = DockerSandboxAdapter._safe_cidr("10.0.0.0/24\nListen 0.0.0.0:9999")
     assert rendered == "0.0.0.0/0", (
-        f"newline-bearing CIDR must be rejected and fall back to 0.0.0.0/0; "
-        f"got {rendered!r}"
+        f"newline-bearing CIDR must be rejected and fall back to 0.0.0.0/0; " f"got {rendered!r}"
     )
 
     # Other non-CIDR garbage that should also fall back rather than be
@@ -1141,9 +1140,7 @@ def test_render_proxy_config_blocks_newline_injection_at_render_site(
     fails this test even if ``_safe_cidr`` is still correct in isolation.
     """
     adapter = DockerSandboxAdapter(tmp_path)
-    conf = adapter._render_proxy_config(
-        allow_cidr="10.0.0.0/24\nListen 0.0.0.0:9999"
-    )
+    conf = adapter._render_proxy_config(allow_cidr="10.0.0.0/24\nListen 0.0.0.0:9999")
     # The conf must contain exactly one ``Allow`` directive.
     allow_lines = [line for line in conf.splitlines() if line.startswith("Allow ")]
     assert allow_lines == ["Allow 0.0.0.0/0"], (
@@ -1153,8 +1150,7 @@ def test_render_proxy_config_blocks_newline_injection_at_render_site(
     # And no rogue ``Listen`` directive smuggled in via the second line.
     listen_lines = [line for line in conf.splitlines() if line.startswith("Listen ")]
     assert listen_lines == ["Listen 0.0.0.0"], (
-        f"only the legitimate ``Listen 0.0.0.0`` should appear; "
-        f"got {listen_lines!r}"
+        f"only the legitimate ``Listen 0.0.0.0`` should appear; " f"got {listen_lines!r}"
     )
 
 
