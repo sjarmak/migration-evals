@@ -1,0 +1,25 @@
+{
+  "_doc": "Sample 20-trial overlap slice for cross-family judge calibration. Replace with real human-labelled data; this fixture exists so the calibration script has a smoke target. Per-trial fields: trial_id, human (gold-standard label), anthropic (Tier 3 Claude judge verdict), other (Tier 3 non-Claude judge verdict). All booleans encode PASS=true / FAIL=false.",
+  "trials": [
+    {"trial_id": "t01", "human": true,  "anthropic": true,  "other": true},
+    {"trial_id": "t02", "human": true,  "anthropic": true,  "other": true},
+    {"trial_id": "t03", "human": true,  "anthropic": true,  "other": true},
+    {"trial_id": "t04", "human": true,  "anthropic": true,  "other": true},
+    {"trial_id": "t05", "human": true,  "anthropic": true,  "other": false},
+    {"trial_id": "t06", "human": true,  "anthropic": true,  "other": true},
+    {"trial_id": "t07", "human": true,  "anthropic": true,  "other": true},
+    {"trial_id": "t08", "human": true,  "anthropic": false, "other": true},
+    {"trial_id": "t09", "human": true,  "anthropic": true,  "other": true},
+    {"trial_id": "t10", "human": true,  "anthropic": true,  "other": true},
+    {"trial_id": "t11", "human": false, "anthropic": false, "other": false},
+    {"trial_id": "t12", "human": false, "anthropic": false, "other": false},
+    {"trial_id": "t13", "human": false, "anthropic": false, "other": false},
+    {"trial_id": "t14", "human": false, "anthropic": false, "other": true},
+    {"trial_id": "t15", "human": false, "anthropic": true,  "other": false},
+    {"trial_id": "t16", "human": false, "anthropic": false, "other": false},
+    {"trial_id": "t17", "human": false, "anthropic": false, "other": false},
+    {"trial_id": "t18", "human": false, "anthropic": false, "other": false},
+    {"trial_id": "t19", "human": false, "anthropic": false, "other": false},
+    {"trial_id": "t20", "human": false, "anthropic": false, "other": false}
+  ]
+}

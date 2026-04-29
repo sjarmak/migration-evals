@@ -1,0 +1,61 @@
+# java8_17 smoke config with dual-family Tier-3 judge enabled.
+#
+# Identical in shape to configs/java8_17_smoke.yaml except the judge
+# tier runs both an Anthropic-family judge and an OpenAI-family judge
+# on every trial. The trial PASSes only when both agree (stricter than
+# either alone). Disagreement is flagged in
+# funnel.per_tier_verdict[].details.verdicts_disagreed for downstream
+# kappa calibration via scripts/judge_calibrate.py.
+#
+# Smoke variant uses the cassette providers for both judges so the
+# committed run reproduces deterministically. To run with live calls,
+# swap the providers:
+#
+#   anthropic_provider: claude_code   # (or sdk)
+#   openai_provider: sdk              # requires OPENAI_API_KEY
+#
+# Run:
+#
+#   python -m migration_evals.cli run --config configs/java8_17_dual_family.yaml
+
+migration_id: java8_17
+agent_model: claude-sonnet-4-6
+variant: smoke_dual_family
+output_root: /tmp/runs/smoke_dual_family
+model_cutoff_date: "2025-01-01"
+
+stages:
+  - compile
+  - tests
+  - judge
+
+repos:
+  - path: tests/fixtures/funnel_repos/repo01
+    seed: 1
+  - path: tests/fixtures/funnel_repos/repo02
+    seed: 2
+  - path: tests/fixtures/funnel_repos/repo03
+    seed: 3
+
+adapters:
+  # Sandbox + judge cassettes for offline reproducibility.
+  sandbox_cassette_dir: tests/fixtures/funnel_repos
+  anthropic_cassette_dir: tests/fixtures/judge_cassettes
+  openai_cassette_dir: tests/fixtures/judge_cassettes_openai
+
+  anthropic_provider: cassette
+  openai_provider: cassette
+
+  # Dual-family judge: both judges score every trial; PASS requires
+  # both to agree. The other_model is used by the OpenAI side; the
+  # caller (tier3_judge) passes its own Claude model name to the
+  # Anthropic side.
+  judge:
+    dual_family: true
+    other_provider: openai
+    other_model: gpt-4o-mini
+
+stamps:
+  oracle_spec: configs/oracle_spec.yaml
+  recipe_spec: configs/recipes/java8_17.yaml
+  hypotheses: docs/hypotheses_and_thresholds.md

@@ -1,0 +1,6 @@
+{
+  "id": "chatcmpl-repo02",
+  "model": "gpt-4o-mini",
+  "content": [{"type": "text", "text": "PASS openai judge approves repo02."}],
+  "_judge_family": "openai"
+}

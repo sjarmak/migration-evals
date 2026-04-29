@@ -9,7 +9,7 @@ from __future__ import annotations
 import sys
 from collections.abc import Iterable, Mapping
 from pathlib import Path
-from typing import Any
+from typing import Any  # noqa: F401  (used by the dual-family helper below)
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_REPO_ROOT))
@@ -195,6 +195,84 @@ def test_tier3_judge_empty_envelope_is_fail() -> None:
     cassette = FakeAnthropicCassette({"content": []})
     verdict = tier3_judge.run(FIXTURE_REPOS / "repo01", recipe, cassette)
     assert verdict.passed is False
+
+
+# -- Tier 3 dual-family judge ------------------------------------------------
+
+
+def _dual_envelope(
+    anthropic_text: str,
+    other_text: str,
+    *,
+    other_model: str = "gpt-4o-mini",
+) -> dict[str, Any]:
+    """Compose the envelope shape DualFamilyJudgeAdapter emits."""
+    return {
+        "content": [{"type": "text", "text": anthropic_text}],
+        "_dual_family": {
+            "anthropic_envelope": {"content": [{"type": "text", "text": anthropic_text}]},
+            "other_envelope": {"content": [{"type": "text", "text": other_text}]},
+            "other_model": other_model,
+        },
+    }
+
+
+def test_tier3_judge_dual_family_pass_when_both_agree() -> None:
+    """Both judges PASS → trial PASSes, no disagreement flag."""
+    recipe = _make_recipe()
+    cassette = FakeAnthropicCassette(_dual_envelope("PASS anthropic", "PASS openai"))
+    verdict = tier3_judge.run(FIXTURE_REPOS / "repo01", recipe, cassette)
+    assert verdict.passed is True
+    assert verdict.details["dual_family"] is True
+    assert verdict.details["verdict_anthropic"] is True
+    assert verdict.details["verdict_other"] is True
+    assert verdict.details["verdicts_disagreed"] is False
+    assert verdict.details["other_model"] == "gpt-4o-mini"
+
+
+def test_tier3_judge_dual_family_fail_when_judges_disagree_pass_fail() -> None:
+    """Anthropic PASS + Other FAIL → trial FAILs (stricter than either alone)
+    and disagreement is flagged for calibration mining."""
+    recipe = _make_recipe()
+    cassette = FakeAnthropicCassette(_dual_envelope("PASS anthropic", "FAIL openai dissents"))
+    verdict = tier3_judge.run(FIXTURE_REPOS / "repo01", recipe, cassette)
+    assert verdict.passed is False, "AND-aggregation: a single FAIL fails the trial"
+    assert verdict.details["verdict_anthropic"] is True
+    assert verdict.details["verdict_other"] is False
+    assert verdict.details["verdicts_disagreed"] is True
+
+
+def test_tier3_judge_dual_family_fail_when_judges_disagree_fail_pass() -> None:
+    recipe = _make_recipe()
+    cassette = FakeAnthropicCassette(_dual_envelope("FAIL anthropic dissents", "PASS openai"))
+    verdict = tier3_judge.run(FIXTURE_REPOS / "repo01", recipe, cassette)
+    assert verdict.passed is False
+    assert verdict.details["verdict_anthropic"] is False
+    assert verdict.details["verdict_other"] is True
+    assert verdict.details["verdicts_disagreed"] is True
+
+
+def test_tier3_judge_dual_family_fail_when_both_fail() -> None:
+    """Both FAIL → trial FAILs, no disagreement (they agree, just on FAIL)."""
+    recipe = _make_recipe()
+    cassette = FakeAnthropicCassette(_dual_envelope("FAIL anthropic", "FAIL openai"))
+    verdict = tier3_judge.run(FIXTURE_REPOS / "repo01", recipe, cassette)
+    assert verdict.passed is False
+    assert verdict.details["verdicts_disagreed"] is False
+
+
+def test_tier3_judge_dual_family_preserves_per_judge_text() -> None:
+    """Calibration mining needs the raw text per side, not just the bool."""
+    recipe = _make_recipe()
+    cassette = FakeAnthropicCassette(
+        _dual_envelope(
+            "PASS anthropic - dockerfile is fine",
+            "FAIL openai - the test command is wrong",
+        )
+    )
+    verdict = tier3_judge.run(FIXTURE_REPOS / "repo01", recipe, cassette)
+    assert "dockerfile is fine" in verdict.details["judge_text_anthropic"]
+    assert "test command is wrong" in verdict.details["judge_text_other"]
 
 
 # -- Tier 4 -------------------------------------------------------------------

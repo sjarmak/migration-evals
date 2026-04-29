@@ -32,8 +32,8 @@ from typing import Any
 
 import yaml
 
-from migration_evals.adapters_anthropic import build_anthropic_adapter
 from migration_evals.adapters_docker import build_sandbox_adapter
+from migration_evals.adapters_judge import build_judge_adapter
 from migration_evals.cli import (
     _build_recipe_from_meta,
     _load_repo_meta,
@@ -247,6 +247,7 @@ def run_from_config(config_path: Path) -> int:
     adapters_cfg = raw_cfg.get("adapters") or {}
     sandbox_cassette_dir = _as_path(adapters_cfg.get("sandbox_cassette_dir"))
     anthropic_cassette_dir = _as_path(adapters_cfg.get("anthropic_cassette_dir"))
+    openai_cassette_dir = _as_path(adapters_cfg.get("openai_cassette_dir"))
     quality_cfg = raw_cfg.get("quality") or {}
     quality_spec = QualitySpec.from_dict(quality_cfg)
 
@@ -289,10 +290,11 @@ def run_from_config(config_path: Path) -> int:
                 adapters_cfg=adapters_cfg,
                 cassette_dir=sandbox_cassette_dir,
             ),
-            "anthropic": build_anthropic_adapter(
+            "anthropic": build_judge_adapter(
                 repo_path=repo_entry.path,
                 adapters_cfg=adapters_cfg,
-                cassette_dir=anthropic_cassette_dir,
+                anthropic_cassette_dir=anthropic_cassette_dir,
+                openai_cassette_dir=openai_cassette_dir,
             ),
             "enable_daikon": False,
             "quality_spec": quality_spec,

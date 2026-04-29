@@ -269,6 +269,89 @@ accumulated on `adapter.total_cost_usd`. Pre-call worst-case
 raises `BudgetExceededError` before any spend occurs. Implementation:
 `src/migration_evals/adapters_anthropic.py`.
 
+## Dual-family Tier-3 judge (cross-family bias mitigation)
+
+When the diff under review was produced by a Claude-family agent, a
+single Claude judge has same-family bias built in: judge and agent
+share training data, prompting conventions, and failure modes, so the
+judge is more likely to rubber-stamp whatever its sibling produced.
+Dual-family mode runs the judge tier *twice* per trial — once with a
+Claude-family judge, once with a non-Claude (OpenAI) judge — and
+requires pairwise agreement before passing. Runs in this mode are
+strictly safer than single-family because either judge alone can
+flunk the trial; the cost is ~2× tier-3 spend and a higher false-fail
+rate from genuine inter-judge disagreement.
+
+Enable via `adapters.judge.dual_family`:
+
+```yaml
+adapters:
+  anthropic_provider: claude_code   # or sdk / cassette
+  openai_provider: sdk              # or cassette
+  openai_cassette_dir: tests/fixtures/judge_cassettes_openai
+
+  judge:
+    dual_family: true
+    other_provider: openai          # only 'openai' is wired today
+    other_model: gpt-4o-mini        # required; Claude model names are
+                                    # not portable across families
+```
+
+OpenAI provider config (`adapters.openai_provider`):
+
+| Provider | Use when |
+| --- | --- |
+| `cassette` (default) | Offline replay with envelopes at `<openai_cassette_dir>/<repo>.json`. |
+| `sdk` | Live calls against `openai`'s Chat Completions API. Reads `$OPENAI_API_KEY` if `openai_api_key` is not set. Optional keys: `openai_per_call_budget_usd`, `openai_cost_rates_usd_per_mtok`. |
+
+Per-trial dual-judge details surface in
+`funnel.per_tier_verdict[].details` for the `judge` tier:
+
+| Field | Meaning |
+| --- | --- |
+| `dual_family` | `true` when this verdict came from the dual-family path. |
+| `verdict_anthropic` | Claude-family judge PASS/FAIL (boolean). |
+| `verdict_other` | Non-Claude judge PASS/FAIL (boolean). |
+| `verdicts_disagreed` | `true` iff the two judges disagreed (one PASS + one FAIL). |
+| `other_model` | The model name used on the non-Claude side (e.g. `gpt-4o-mini`). |
+| `judge_text_anthropic` / `judge_text_other` | The raw judge text from each side, for downstream kappa mining. |
+
+The trial-level `passed` is `verdict_anthropic AND verdict_other` —
+strictly stricter than either alone. Smoke-config example with both
+sides on cassettes: `configs/java8_17_dual_family.yaml`.
+
+## Pairwise judge calibration (Cohen's kappa)
+
+A hand-labelled overlap slice of ~20 trials with human verdicts lets
+us measure inter-rater reliability between {anthropic, other_family,
+human}. `scripts/judge_calibrate.py` computes pairwise Cohen's kappa
+on a JSON labels file:
+
+```
+[
+  {"trial_id": "...", "human": true, "anthropic": true, "other": false},
+  ...
+]
+```
+
+Run:
+
+```
+python scripts/judge_calibrate.py \
+    --labels tests/fixtures/judge_calibration/sample_labels.json \
+    --output runs/judge_calibration.json
+```
+
+Output is a JSON summary with one entry per pair: `kappa` and an
+`unreliable` boolean flagging any pair below the **0.6 floor** (the
+conventional "substantial agreement" cutoff from Landis & Koch 1977).
+A kappa below 0.6 means the pair disagrees more than chance-corrected
+agreement allows; investigate before publishing dual-judge results.
+
+`kappa = NaN` (encoded as `null` in JSON) indicates a constant rater
+on the slice — kappa is mathematically undefined. Such pairs are
+flagged unreliable so they cannot pass the floor by accident.
+
 ## Changeset providers (pulling agent diffs into the funnel)
 
 The funnel evaluates *agent-produced diffs*. Pulling those out of

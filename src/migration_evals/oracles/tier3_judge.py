@@ -107,7 +107,16 @@ def run(
     cassette: Any | None = None,
     cost_usd: float = DEFAULT_COST_USD,
 ) -> OracleVerdict:
-    """Call the judge and return a judge-tier verdict."""
+    """Call the judge and return a judge-tier verdict.
+
+    When the adapter is a
+    :class:`~migration_evals.adapters_judge.DualFamilyJudgeAdapter`, the
+    returned envelope carries a ``_dual_family`` block with both
+    sides' raw envelopes. The verdict surfaces per-judge PASS/FAIL plus
+    a disagreement flag, and the trial passes only when both judges
+    agree on PASS — bias mitigation contract from bead
+    migration_evals-cns.
+    """
     repo_path = Path(repo_path)
     system_blocks = _build_system_blocks()
     user_msg = _compose_user_message(repo_path, harness_recipe)
@@ -120,15 +129,34 @@ def run(
         cassette=cassette,
     )
     raw_text = _extract_text(envelope)
-    passed = bool(_PASS_RE.match(raw_text))
 
-    details = {
+    details: dict[str, Any] = {
         "model": model,
         "judge_text": raw_text,
         "rubric_sha_prefix": JUDGE_RUBRIC[:32],
         "cache_control_sent": True,
         "repo_path": str(repo_path),
     }
+
+    dual = envelope.get("_dual_family") if isinstance(envelope, Mapping) else None
+    if isinstance(dual, Mapping):
+        anthropic_text = _extract_text(dual.get("anthropic_envelope") or {})
+        other_text = _extract_text(dual.get("other_envelope") or {})
+        verdict_anthropic = bool(_PASS_RE.match(anthropic_text))
+        verdict_other = bool(_PASS_RE.match(other_text))
+        verdicts_disagreed = verdict_anthropic != verdict_other
+        # Stricter than either alone: PASS iff both agree on PASS.
+        passed = verdict_anthropic and verdict_other
+        details["dual_family"] = True
+        details["other_model"] = dual.get("other_model")
+        details["verdict_anthropic"] = verdict_anthropic
+        details["verdict_other"] = verdict_other
+        details["verdicts_disagreed"] = verdicts_disagreed
+        details["judge_text_anthropic"] = anthropic_text
+        details["judge_text_other"] = other_text
+    else:
+        passed = bool(_PASS_RE.match(raw_text))
+
     # Preserve the structured envelope in details for auditability.
     details["raw_envelope"] = json.loads(json.dumps(envelope, default=str))
     return OracleVerdict(tier=TIER_NAME, passed=passed, cost_usd=cost_usd, details=details)
