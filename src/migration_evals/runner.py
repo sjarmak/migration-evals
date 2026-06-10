@@ -42,6 +42,7 @@ from migration_evals.failure_class import classify as classify_failure
 from migration_evals.funnel import run_funnel
 from migration_evals.pre_reg import stamp_result
 from migration_evals.quality_spec import QualitySpec
+from migration_evals.result_payload import funnel_core_fields, trial_score
 from migration_evals.types import FailureClass
 
 LOG = logging.getLogger(__name__)
@@ -112,8 +113,8 @@ def _build_payload(
     model_cutoff_date: date | None,
 ) -> dict[str, Any]:
     """Compose the base result payload (pre-stamp)."""
-    success = bool(funnel_result.final_verdict.passed)
-    score = 1.0 if success else 0.0
+    core = funnel_core_fields(funnel_result)
+    score = trial_score(funnel_result)
     repo_created_at = repo_meta.get("repo_created_at")
     pre_score: float | None = None
     post_score: float | None = None
@@ -146,16 +147,13 @@ def _build_payload(
         "repo_created_at": repo_created_at,
         "started_at": started_at,
         "finished_at": finished_at,
-        "success": success,
-        "failure_class": funnel_result.failure_class,
-        "oracle_tier": funnel_result.final_verdict.tier,
+        **core,
         "score_pre_cutoff": pre_score if pre_score is not None else 0.0,
         "score_post_cutoff": post_score if post_score is not None else 0.0,
         # Spec-SHA placeholders; stamp_result() overwrites them.
         "oracle_spec_sha": "",
         "recipe_spec_sha": "",
         "pre_reg_sha": "",
-        "funnel": funnel_result.to_dict(),
     }
     return payload
 

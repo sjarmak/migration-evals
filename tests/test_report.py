@@ -166,7 +166,9 @@ def test_build_report_data_skips_gold_when_absent(tmp_path: Path) -> None:
     data = build_report_data(output_root)
     assert data["gold_anchor"] is None
     assert data["n_trials"] == 3
-    assert len(data["funnel"]) == 5
+    from migration_evals.types import TIER_ORDER
+
+    assert len(data["funnel"]) == len(TIER_ORDER)
 
 
 def test_build_report_data_respects_cutoff_override(tmp_path: Path) -> None:
@@ -532,3 +534,32 @@ def test_cli_regression_on_smoke_ledger(tmp_path: Path) -> None:
     assert proc.returncode == 0, proc.stderr
     body = report_path.read_text()
     assert "Regression Report" in body
+
+
+# ---------------------------------------------------------------------------
+# Canonical tier order (bead migration_evals-afi)
+# ---------------------------------------------------------------------------
+
+
+def test_funnel_counts_include_diff_valid_tier() -> None:
+    """Tier-0 results must appear in the report funnel table - the local
+    tier-order copy that omitted diff_valid silently dropped them."""
+    trials = [
+        _trial(success=False, tiers=[("diff_valid", False)]),
+        _trial(success=True, tiers=[("diff_valid", True), ("compile_only", True)]),
+    ]
+    rows = _funnel_counts(trials)
+    by_tier = {r["tier_name"]: r for r in rows}
+    assert "diff_valid" in by_tier
+    assert by_tier["diff_valid"]["n_entered"] == 2
+    assert by_tier["diff_valid"]["n_passed"] == 1
+
+
+def test_report_tier_order_matches_canonical_constant() -> None:
+    from migration_evals.funnel import STAGE_ALIASES
+    from migration_evals.types import TIER_ORDER, OracleTier
+
+    assert STAGE_ALIASES["all"] == TIER_ORDER
+    assert TIER_ORDER == tuple(t.value for t in OracleTier)
+    rows = _funnel_counts([])
+    assert tuple(r["tier_name"] for r in rows) == TIER_ORDER

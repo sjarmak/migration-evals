@@ -31,26 +31,21 @@ from migration_evals.oracles import (
 )
 from migration_evals.oracles.verdict import FunnelResult, OracleVerdict
 from migration_evals.synthetic import ast_oracle
-from migration_evals.types import FailureClass
+from migration_evals.types import TIER_ORDER, FailureClass
 
 AST_TIER_NAME = "ast_conformance"
 AST_DEFAULT_COST_USD = 0.0
 
 # Stage alias table - maps CLI --stage values to the set of tiers to run.
+# "all" is the canonical TIER_ORDER from types.py so the funnel, the
+# report tables, and new tiers stay in sync from one declaration.
 STAGE_ALIASES: dict[str, tuple[str, ...]] = {
     "diff": (tier0_diff.TIER_NAME,),
     "compile": (tier1_compile.TIER_NAME,),
     "tests": (tier2_tests.TIER_NAME,),
     "judge": (tier3_judge.TIER_NAME,),
     "daikon": (tier4_daikon.TIER_NAME,),
-    "all": (
-        tier0_diff.TIER_NAME,
-        tier1_compile.TIER_NAME,
-        tier2_tests.TIER_NAME,
-        AST_TIER_NAME,
-        tier3_judge.TIER_NAME,
-        tier4_daikon.TIER_NAME,
-    ),
+    "all": TIER_ORDER,
 }
 
 
@@ -220,9 +215,11 @@ def _run_quality_oracles_safe(
 
     A trial without ``adapters['quality_spec']`` skips the quality phase
     entirely (empty tuple, backward-compatible). Quality oracles are
-    informational - we deliberately swallow any unexpected exception from
-    them rather than letting a bug in a quality oracle break a trial that
-    the cascade already produced a verdict for.
+    informational - an unexpected exception from them must not break a
+    trial that the cascade already produced a verdict for, but it is a
+    bug, not a skip: the verdict carries ``errored=True`` plus the
+    exception type/message so it stays distinguishable from the
+    intentional ``skipped=True`` verdicts the oracles themselves emit.
     """
     quality_spec = adapters.get("quality_spec")
     if quality_spec is None:
@@ -234,14 +231,18 @@ def _run_quality_oracles_safe(
 
     try:
         return run_quality_oracles(repo_path, quality_spec)
-    except Exception as exc:  # pragma: no cover - defensive
-        skip = OracleVerdict(
+    except Exception as exc:
+        errored = OracleVerdict(
             tier="quality_phase",
             passed=True,
             cost_usd=0.0,
-            details={"skipped": True, "reason": f"quality_phase_error: {exc}"},
+            details={
+                "errored": True,
+                "error_type": type(exc).__name__,
+                "error": str(exc),
+            },
         )
-        return (("quality_phase", skip),)
+        return (("quality_phase", errored),)
 
 
 __all__ = [

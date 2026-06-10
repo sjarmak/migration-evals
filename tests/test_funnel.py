@@ -264,3 +264,57 @@ def test_cli_run_stage_compile_emits_10_valid_results(tmp_path: Path) -> None:
         assert payload["oracle_tier"] == "compile_only"
         assert payload["success"] is True
         assert payload["failure_class"] is None
+
+
+# -- quality phase error isolation (bead migration_evals-442) -----------------
+
+
+def test_quality_phase_exception_is_errored_not_skipped(monkeypatch) -> None:
+    """A bug in a quality oracle must surface as errored=True with the
+    exception preserved - never masquerade as an intentional skip."""
+    from migration_evals.oracles import quality as quality_mod
+    from migration_evals.quality_spec import QualitySpec
+
+    def _boom(repo_path, quality_spec):
+        raise RuntimeError("quality oracle bug")
+
+    monkeypatch.setattr(quality_mod, "run_quality_oracles", _boom)
+
+    recipe = _make_recipe()
+    adapters = {
+        "sandbox": StubSandbox(),
+        "anthropic": StubAnthropic("PASS"),
+        "quality_spec": QualitySpec(),
+    }
+    result = run_funnel(FIXTURE_REPOS / "repo01", recipe, adapters)
+    assert result.final_verdict.passed is True  # cascade verdict unaffected
+    quality = dict(result.quality_verdicts)
+    verdict = quality["quality_phase"]
+    assert verdict.details["errored"] is True
+    assert verdict.details["error_type"] == "RuntimeError"
+    assert "quality oracle bug" in verdict.details["error"]
+    assert "skipped" not in verdict.details
+
+
+def test_judge_error_short_circuit_classified_as_harness_error() -> None:
+    """A dual-judge adapter error (judge_error verdict) is a harness fault."""
+
+    class _ErroringDualJudge(StubAnthropic):
+        def messages_create(self, **kwargs):
+            self.call_count += 1
+            return {
+                "content": [],
+                "_dual_family": {
+                    "other_model": "gpt-4o-mini",
+                    "anthropic_envelope": {"content": [{"type": "text", "text": "PASS"}]},
+                    "other_error": "TimeoutError: judge unreachable",
+                },
+            }
+
+    recipe = _make_recipe()
+    adapters = {"sandbox": StubSandbox(), "anthropic": _ErroringDualJudge()}
+    result = run_funnel(FIXTURE_REPOS / "repo01", recipe, adapters)
+    assert result.final_verdict.tier == "judge"
+    assert result.final_verdict.passed is False
+    assert result.final_verdict.details["judge_error"] is True
+    assert result.failure_class == "harness_error"

@@ -42,4 +42,10 @@ class OracleTier(str, Enum):
     DAIKON = "daikon"
 
 
-__all__ = ["FailureClass", "OracleTier"]
+# Canonical funnel ordering, derived from the enum declaration order.
+# The funnel's "all" stage alias and the report's per-tier table both
+# consume this constant - adding a tier to the enum propagates everywhere.
+TIER_ORDER: tuple[str, ...] = tuple(tier.value for tier in OracleTier)
+
+
+__all__ = ["FailureClass", "OracleTier", "TIER_ORDER"]

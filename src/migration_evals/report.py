@@ -34,14 +34,11 @@ from migration_evals.stats import (
     wilson_interval,
 )
 
-# All five tiers in fixed order so the report always has the same shape.
-_TIER_ORDER: tuple[str, ...] = (
-    "compile_only",
-    "tests",
-    "ast_conformance",
-    "judge",
-    "daikon",
-)
+# All tiers in canonical order so the report always has the same shape.
+# Previously a local copy that had drifted (it omitted diff_valid, so
+# Tier-0 failures never appeared in any report row); now sourced from the
+# single declaration in types.py.
+from migration_evals.types import TIER_ORDER as _TIER_ORDER
 
 _DEFAULT_CUTOFF = date(2025, 1, 1)
 

@@ -403,15 +403,14 @@ def _result_payload(
     stage: str,
 ) -> dict[str, Any]:
     """Compose the result.json payload for a single repo."""
-    success = bool(funnel_result.final_verdict.passed)
-    score = 1.0 if success else 0.0
+    from migration_evals.result_payload import funnel_core_fields, trial_score
+
+    score = trial_score(funnel_result)
     return {
         "task_id": str(meta.get("task_id") or repo_dir.name),
         "agent_model": str(meta.get("agent_model") or "claude-sonnet-4-6"),
         "migration_id": str(meta.get("migration_id") or "java8_17"),
-        "success": success,
-        "failure_class": funnel_result.failure_class,
-        "oracle_tier": funnel_result.final_verdict.tier,
+        **funnel_core_fields(funnel_result),
         "oracle_spec_sha": str(meta.get("oracle_spec_sha") or DEFAULT_ORACLE_SPEC_SHA),
         "recipe_spec_sha": str(meta.get("recipe_spec_sha") or DEFAULT_RECIPE_SPEC_SHA),
         "pre_reg_sha": str(meta.get("pre_reg_sha") or DEFAULT_PRE_REG_SHA),
@@ -419,7 +418,6 @@ def _result_payload(
         "score_post_cutoff": score,
         "repo_created_at": meta.get("repo_created_at"),
         "stage_filter": stage,
-        "funnel": funnel_result.to_dict(),
     }
 
 
