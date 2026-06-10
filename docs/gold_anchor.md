@@ -30,6 +30,16 @@ observed via merge-survival, not a fresh per-trial human review. The
 correlation analysis treats `accept` / `reject` as binary outcomes
 regardless of how the label was sourced.
 
+Each freshly-harvested entry also carries `label_category`
+(`merged_survived` / `closed_unmerged` / `merged_reverted`) so the two
+very different reject signals - a maintainer actively closing a PR vs a
+merge being undone after the fact - stay distinguishable for label-noise
+audits even though the correlation collapses them. Revert detection is
+SHA-anchored: a commit counts as a revert only when its message carries
+the canonical `This reverts commit <sha>` trailer for the merge commit,
+or a revert keyword co-occurring with the merge commit's short SHA. A
+bare SHA mention (changelog, cherry-pick note) does not count.
+
 The gold-anchor refresh is a scheduled CI job, not a planning meeting.
 
 ## Scope: 50 repos

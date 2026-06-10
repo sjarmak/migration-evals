@@ -240,6 +240,35 @@ def _hydrate_pr(repo: str, number: int) -> dict[str, Any]:
     return json.loads(out) if out.strip() else {}
 
 
+_REVERTS_COMMIT_RE = _re.compile(r"this reverts commit\s+([0-9a-f]{7,40})")
+
+
+def _message_reverts_sha(
+    message: str,
+    short_sha: str,
+    needles: Iterable[str],
+) -> bool:
+    """Decide whether one commit message reverts the given merge commit.
+
+    Two accepted shapes, both anchored on the SHA so a changelog or
+    cherry-pick note that merely *mentions* the commit does not count:
+
+    * the canonical ``git revert`` trailer ``This reverts commit <sha>``
+      whose SHA prefix-matches the merge commit, or
+    * a revert keyword ("revert", "rollback", ...) co-occurring with the
+      merge commit's short SHA (hand-written reverts).
+    """
+    if not short_sha:
+        return False
+    message = message.lower()
+    for match in _REVERTS_COMMIT_RE.finditer(message):
+        if match.group(1).startswith(short_sha):
+            return True
+    if short_sha in message and any(needle in message for needle in needles):
+        return True
+    return False
+
+
 def _find_revert_after(
     repo: str,
     merge_commit_sha: str,
@@ -263,14 +292,10 @@ def _find_revert_after(
     except json.JSONDecodeError:
         return False
     needles = [k.lower() for k in revert_keywords]
-    short_sha = merge_commit_sha[:7] if merge_commit_sha else ""
+    short_sha = merge_commit_sha[:7].lower() if merge_commit_sha else ""
     for commit in commits:
-        message = (commit.get("commit", {}).get("message") or "").lower()
-        if not message:
-            continue
-        if short_sha and short_sha in message:
-            return True
-        if any(needle in message for needle in needles) and short_sha and short_sha in message:
+        message = commit.get("commit", {}).get("message") or ""
+        if message and _message_reverts_sha(message, short_sha, needles):
             return True
     return False
 
@@ -286,15 +311,25 @@ def classify(
     min_days_survived: int,
     revert_keywords: Iterable[str],
     now: datetime,
-) -> tuple[str, str] | None:
-    """Return (verdict, evidence_note) for a PR, or None if undecidable.
+) -> tuple[str, str, str] | None:
+    """Return (verdict, label_category, evidence_note), or None if undecidable.
 
-    'accept' = merged AND >= min_days_survived old AND no revert observed
-    'reject' = closed-unmerged OR merged-then-reverted
-    None     = merged-but-too-recent (not yet eligible)
+    The binary verdict drives correlation; the category preserves the
+    provenance the binary collapses (a maintainer actively closing a PR
+    and a merge quietly surviving are very different signals):
+
+    'accept' / 'merged_survived'  = merged AND >= min_days_survived old
+                                    AND no revert observed
+    'reject' / 'closed_unmerged'  = closed without merging
+    'reject' / 'merged_reverted'  = merged, then reverted
+    None                          = merged-but-too-recent (not yet eligible)
     """
     if pr.state == "closed" and not pr.merged:
-        return ("reject", f"closed unmerged @ {pr.closed_at} | source={pr.url}")
+        return (
+            "reject",
+            "closed_unmerged",
+            f"closed unmerged @ {pr.closed_at} | source={pr.url}",
+        )
     if not pr.merged or not pr.merge_commit_sha or not pr.closed_at:
         return None
     try:
@@ -313,10 +348,12 @@ def classify(
     if reverted:
         return (
             "reject",
+            "merged_reverted",
             f"merged @ {pr.closed_at} then reverted within {days_since}d | source={pr.url}",
         )
     return (
         "accept",
+        "merged_survived",
         f"merged @ {pr.closed_at} survived {days_since}d without revert | source={pr.url}",
     )
 
@@ -453,12 +490,13 @@ def harvest_from_changesets(
         if verdict is None:
             stats["skipped_too_recent"] += 1
             continue
-        label, note = verdict
+        label, category, note = verdict
         entries.append(
             {
                 "repo_url": f"https://github.com/{repo_full}",
                 "commit_sha": merge_commit or "",
                 "human_verdict": label,
+                "label_category": category,
                 "reviewer_notes": note,
                 "labeled_at": now.isoformat(),
             }
@@ -528,11 +566,12 @@ def harvest(
             if verdict is None:
                 stats["skipped_too_recent"] += 1
                 continue
-            label, note = verdict
+            label, category, note = verdict
             entry = {
                 "repo_url": f"https://github.com/{pr.repo_full_name}",
                 "commit_sha": pr.merge_commit_sha or "",
                 "human_verdict": label,
+                "label_category": category,
                 "reviewer_notes": note,
                 "labeled_at": now.isoformat(),
             }

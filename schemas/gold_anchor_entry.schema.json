@@ -25,6 +25,11 @@
       "enum": ["accept", "reject"],
       "description": "Implicit maintainer verdict from merge-survival: 'accept' = PR merged and survived >=30 days without revert; 'reject' = closed-unmerged or merged-then-reverted. Field name retained for schema backward compatibility."
     },
+    "label_category": {
+      "type": "string",
+      "enum": ["merged_survived", "closed_unmerged", "merged_reverted"],
+      "description": "Provenance the binary verdict collapses: a maintainer actively closing a PR (closed_unmerged) and a merge being undone (merged_reverted) are different reject signals; merged_survived is the only accept path. Optional for entries harvested before this field existed."
+    },
     "reviewer_notes": {
       "type": "string",
       "description": "Provenance string - typically the source PR URL and the survival-check method that produced the verdict."

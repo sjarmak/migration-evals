@@ -36,6 +36,7 @@ from typing import Any
 ACCEPT = "accept"
 REJECT = "reject"
 VALID_VERDICTS = frozenset({ACCEPT, REJECT})
+VALID_LABEL_CATEGORIES = frozenset({"merged_survived", "closed_unmerged", "merged_reverted"})
 
 # Eval-broken thresholds. Documented in docs/gold_anchor.md.
 POINT_THRESHOLD = 0.7
@@ -55,6 +56,10 @@ class GoldEntry:
         reviewer_notes: Provenance string - typically the source PR URL
             and the survival check that produced the verdict.
         labeled_at: ISO-8601 timestamp when the label was harvested.
+        label_category: Optional finer provenance for the binary verdict
+            (``merged_survived`` / ``closed_unmerged`` /
+            ``merged_reverted``). ``None`` for entries harvested before
+            the field existed.
     """
 
     repo_url: str
@@ -62,12 +67,19 @@ class GoldEntry:
     human_verdict: str
     reviewer_notes: str
     labeled_at: str
+    label_category: str | None = None
 
     def __post_init__(self) -> None:
         if self.human_verdict not in VALID_VERDICTS:
             raise ValueError(
                 f"GoldEntry.human_verdict must be one of {sorted(VALID_VERDICTS)}; "
                 f"got {self.human_verdict!r}"
+            )
+        if self.label_category is not None and self.label_category not in VALID_LABEL_CATEGORIES:
+            raise ValueError(
+                f"GoldEntry.label_category must be one of "
+                f"{sorted(VALID_LABEL_CATEGORIES)} or None; "
+                f"got {self.label_category!r}"
             )
 
 
@@ -114,12 +126,14 @@ def load_gold_set(path: Path) -> list[GoldEntry]:
                 f"gold set entry #{idx} at {path} must be an object; " f"got {type(raw).__name__}"
             )
         try:
+            raw_category = raw.get("label_category")
             entry = GoldEntry(
                 repo_url=str(raw["repo_url"]),
                 commit_sha=str(raw["commit_sha"]),
                 human_verdict=str(raw["human_verdict"]),
                 reviewer_notes=str(raw.get("reviewer_notes", "")),
                 labeled_at=str(raw["labeled_at"]),
+                label_category=str(raw_category) if raw_category is not None else None,
             )
         except KeyError as exc:
             raise ValueError(
@@ -283,6 +297,7 @@ __all__ = [
     "REJECT",
     "POINT_THRESHOLD",
     "CI_LOW_THRESHOLD",
+    "VALID_LABEL_CATEGORIES",
     "GoldEntry",
     "CorrelationReport",
     "load_gold_set",

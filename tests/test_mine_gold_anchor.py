@@ -58,8 +58,9 @@ def test_classify_returns_accept_for_old_merged_pr(mga, now, monkeypatch):
     )
     verdict = mga.classify(pr, min_days_survived=30, revert_keywords=["revert"], now=now)
     assert verdict is not None
-    label, note = verdict
+    label, category, note = verdict
     assert label == "accept"
+    assert category == "merged_survived"
     assert "60d without revert" in note
     assert "https://github.com/org/repo/pull/1" in note
 
@@ -77,7 +78,8 @@ def test_classify_returns_reject_for_closed_unmerged(mga, now):
     verdict = mga.classify(pr, min_days_survived=30, revert_keywords=["revert"], now=now)
     assert verdict is not None
     assert verdict[0] == "reject"
-    assert "closed unmerged" in verdict[1]
+    assert verdict[1] == "closed_unmerged"
+    assert "closed unmerged" in verdict[2]
 
 
 def test_classify_returns_none_for_recent_merge(mga, now):
@@ -108,7 +110,8 @@ def test_classify_returns_reject_when_revert_observed(mga, now, monkeypatch):
     verdict = mga.classify(pr, min_days_survived=30, revert_keywords=["revert"], now=now)
     assert verdict is not None
     assert verdict[0] == "reject"
-    assert "reverted" in verdict[1]
+    assert verdict[1] == "merged_reverted"
+    assert "reverted" in verdict[2]
 
 
 # -- recipe loading ---------------------------------------------------------
@@ -162,6 +165,7 @@ def test_write_output_produces_schema_valid_json(mga, tmp_path, now):
             "repo_url": "https://github.com/org/repo",
             "commit_sha": "abc1234567890",
             "human_verdict": "accept",
+            "label_category": "merged_survived",
             "reviewer_notes": "merged @ 2026-01-01 survived 90d | source=https://github.com/org/repo/pull/1",
             "labeled_at": now.isoformat(),
         },
@@ -365,3 +369,99 @@ def test_harvest_from_changesets_stops_at_target_count(mga, monkeypatch, now):
         now=now,
     )
     assert len(entries) == 5
+
+
+# -- revert detection (bead migration_evals-11h) ------------------------------
+
+
+def test_canonical_git_revert_trailer_matches(mga):
+    msg = 'Revert "Upgrade to Java 17"\n\nThis reverts commit cafe1234deadbeef0123456789abcdef01234567.'
+    assert mga._message_reverts_sha(msg, "cafe123", ["revert"]) is True
+
+
+def test_bare_sha_mention_is_not_a_revert(mga):
+    """A changelog or cherry-pick note mentioning the SHA must not count."""
+    msg = "Update CHANGELOG: include cafe1234 in the 2.0 release notes"
+    assert mga._message_reverts_sha(msg, "cafe123", ["revert"]) is False
+
+
+def test_keyword_plus_sha_matches_handwritten_revert(mga):
+    msg = "Rollback of cafe1234: broke the nightly build"
+    assert mga._message_reverts_sha(msg, "cafe123", ["revert", "rollback"]) is True
+
+
+def test_keyword_without_sha_is_not_a_revert(mga):
+    msg = "Revert unrelated change in the docs pipeline"
+    assert mga._message_reverts_sha(msg, "cafe123", ["revert"]) is False
+
+
+def test_canonical_trailer_for_different_commit_does_not_match(mga):
+    msg = "This reverts commit 0123456789abcdef0123456789abcdef01234567."
+    assert mga._message_reverts_sha(msg, "cafe123", ["revert"]) is False
+
+
+def test_empty_sha_never_matches(mga):
+    assert mga._message_reverts_sha("this reverts commit cafe1234", "", ["revert"]) is False
+
+
+# -- label_category provenance (bead migration_evals-11h) ----------------------
+
+
+def test_gold_entry_accepts_optional_label_category():
+    import sys as _sys
+    from pathlib import Path as _Path
+
+    _sys.path.insert(0, str(_Path(__file__).resolve().parent.parent / "src"))
+    from migration_evals.gold_anchor import GoldEntry
+
+    entry = GoldEntry(
+        repo_url="https://github.com/org/repo",
+        commit_sha="abc",
+        human_verdict="reject",
+        reviewer_notes="n",
+        labeled_at="2026-06-09T00:00:00+00:00",
+        label_category="merged_reverted",
+    )
+    assert entry.label_category == "merged_reverted"
+
+
+def test_gold_entry_rejects_unknown_label_category():
+    from migration_evals.gold_anchor import GoldEntry
+
+    with pytest.raises(ValueError, match="label_category"):
+        GoldEntry(
+            repo_url="u",
+            commit_sha="s",
+            human_verdict="accept",
+            reviewer_notes="n",
+            labeled_at="t",
+            label_category="vibes",
+        )
+
+
+def test_load_gold_set_round_trips_label_category(tmp_path):
+    from migration_evals.gold_anchor import load_gold_set
+
+    payload = [
+        {
+            "repo_url": "https://github.com/org/repo",
+            "commit_sha": "abc",
+            "human_verdict": "accept",
+            "label_category": "merged_survived",
+            "reviewer_notes": "n",
+            "labeled_at": "2026-06-09T00:00:00+00:00",
+        },
+        {
+            # Pre-label_category entry: still loads, category is None.
+            "repo_url": "https://github.com/org/repo2",
+            "commit_sha": "def",
+            "human_verdict": "reject",
+            "reviewer_notes": "n",
+            "labeled_at": "2026-06-09T00:00:00+00:00",
+        },
+    ]
+    path = tmp_path / "gold.json"
+    path.write_text(json.dumps(payload))
+    entries = load_gold_set(path)
+    assert entries[0].label_category == "merged_survived"
+    assert entries[1].label_category is None
