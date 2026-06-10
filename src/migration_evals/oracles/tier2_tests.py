@@ -29,23 +29,17 @@ def run(
     *,
     image: str = DEFAULT_IMAGE,
     timeout_s: int = DEFAULT_TIMEOUT_S,
-    cassette: Any | None = None,
     cost_usd: float = DEFAULT_COST_USD,
     env: Mapping[str, str] | None = None,
 ) -> OracleVerdict:
     """Run the recipe's test command and return a tests verdict."""
     repo_path = Path(repo_path)
-    sandbox_id = sandbox_adapter.create_sandbox(
-        image=image,
-        env=env,
-        cassette=cassette,
-    )
+    sandbox_id = sandbox_adapter.create_sandbox(image=image, env=env)
     try:
         envelope = sandbox_adapter.exec(
             sandbox_id,
             command=harness_recipe.test_cmd,
             timeout_s=timeout_s,
-            cassette=cassette,
         )
     finally:
         try:

@@ -218,7 +218,6 @@ class AnthropicSDKAdapter:
         messages: Iterable[Mapping[str, Any]],
         system: Any | None = None,
         max_tokens: int = 1024,
-        cassette: Any | None = None,  # ignored; Protocol artefact
         **kwargs: Any,
     ) -> Mapping[str, Any]:
         materialised_messages = list(messages)
@@ -245,7 +244,7 @@ class AnthropicSDKAdapter:
             "messages": materialised_messages,
             "system": system,
             "max_tokens": max_tokens,
-            **{k: v for k, v in kwargs.items() if k != "cassette"},
+            **kwargs,
         }
 
         client = (
@@ -263,10 +262,7 @@ class AnthropicSDKAdapter:
         }
         if system is not None:
             sdk_kwargs["system"] = system
-        for key, value in kwargs.items():
-            if key == "cassette":
-                continue
-            sdk_kwargs[key] = value
+        sdk_kwargs.update(kwargs)
 
         response = client.messages.create(**sdk_kwargs)
         envelope = response.model_dump() if hasattr(response, "model_dump") else dict(response)
@@ -309,9 +305,9 @@ def build_anthropic_adapter(
     provider = (adapters_cfg.get("anthropic_provider") or "cassette").lower()
 
     if provider == "cassette":
-        from migration_evals.cli import _CassetteAnthropicAdapter
+        from migration_evals.adapters_cassette import CassetteAnthropicAdapter
 
-        return _CassetteAnthropicAdapter(Path(repo_path).name, cassette_dir)
+        return CassetteAnthropicAdapter(Path(repo_path).name, cassette_dir)
 
     if provider == "claude_code":
         from migration_evals.adapters_claude_code import (

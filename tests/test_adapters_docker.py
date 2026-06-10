@@ -423,10 +423,10 @@ def test_atexit_handler_swallows_errors(tmp_path: Path, monkeypatch: pytest.Monk
 
 
 def test_build_sandbox_adapter_defaults_to_cassette(tmp_path: Path) -> None:
-    from migration_evals.cli import _CassetteSandboxAdapter
+    from migration_evals.adapters_cassette import CassetteSandboxAdapter
 
     adapter = build_sandbox_adapter(repo_path=tmp_path, adapters_cfg={}, cassette_dir=None)
-    assert isinstance(adapter, _CassetteSandboxAdapter)
+    assert isinstance(adapter, CassetteSandboxAdapter)
 
 
 def test_build_sandbox_adapter_selects_docker(tmp_path: Path) -> None:

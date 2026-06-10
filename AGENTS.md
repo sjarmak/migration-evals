@@ -1,84 +1,53 @@
-# Agent Instructions
+# migration-evals — agent notes
 
-This project uses **bd** (beads) for issue tracking. Run `bd prime` for full workflow context.
+Post-hoc grading framework for agent-produced **batch-change diffs** (one mechanical
+rule applied across many repos). Per-changeset trials cascade through cheap→expensive
+oracles (diff validity → compile → tests → AST conformance → LLM judge → invariants)
+and emit one stamped `result.json` per trial; aggregation produces a per-tier funnel,
+a contamination split (repos before/after model cutoff), and correlation against
+merged-PR survival. The input is always `(repo, base_commit, patch.diff)` — see README
+for the full design. This file captures only what the code/README does not say.
 
-## Quick Reference
+Issue tracker: bd (beads). Run `bd prime` for workflow; use `bd` for all task tracking
+(not TodoWrite / markdown TODOs) and `bd remember` for persistent knowledge (not MEMORY.md).
 
-```bash
-bd ready              # Find available work
-bd show <id>          # View issue details
-bd update <id> --claim  # Claim work atomically
-bd close <id>         # Complete work
-bd dolt push          # Push beads data to remote
-```
+## Don't
 
-## Non-Interactive Shell Commands
+- Don't add issue-understanding, retrieval, planning, or task-to-patch scoring. Those
+  are SWE-bench's domain; this framework grades a diff the agent _already produced_.
+  Mixing them in breaks the stated non-goal and the `(repo, base_commit, patch.diff)`
+  contract every oracle assumes.
+- Don't make the smoke path require API keys, Docker, or a live agent platform. The
+  fresh-clone smoke (`configs/java8_17_smoke.yaml`) replays from cassettes on purpose;
+  adding a network/key dependency there silently breaks offline CI for every contributor.
+- Don't hand-edit `data/gold_anchor.json`. It is harvested by `scripts/mine_gold_anchor.py`
+  from merged+survived OSS PRs; manual entries poison the real-world correlation anchor.
+- Don't drop or reorder the result stamps (`oracle_spec_sha`, `recipe_spec_sha`,
+  `pre_reg_sha`). The publication gate and contamination split depend on them; unstamped
+  results can't be reproduced or pre-registered.
+- Don't re-enable Tier 0 casually — see `docs/tier0_skip.md` for the three conditions
+  that must hold before it re-opens.
 
-**ALWAYS use non-interactive flags** with file operations to avoid hanging on confirmation prompts.
+## Do
 
-Shell commands like `cp`, `mv`, and `rm` may be aliased to include `-i` (interactive) mode on some systems, causing the agent to hang indefinitely waiting for y/n input.
+- Run the suite offline before any change: `pip install -e '.[dev]'` then `pytest -q`
+  (all tiers replay from cassettes; no keys needed).
+- Smoke end-to-end: `python -m migration_evals.cli run --config configs/java8_17_smoke.yaml`,
+  then `python -m migration_evals.cli report --run <run-dir> --out /tmp/report.md`.
+- CLI subcommands: `run`, `report`, `iterator-report`, `regression`, `harness`, `probe`.
+- Lint/format/type before commit: `ruff check src tests`, `black src tests`, `mypy src`
+  (line-length 100, target py310 — set in `pyproject.toml`).
+- When adding a migration shape, ship the full quartet: recipe config, sandbox image
+  note, a committed fixture under `tests/fixtures/changeset_examples/`, and a test that
+  drives it through `tests/test_run_eval.py`.
 
-**Use these forms instead:**
-```bash
-# Force overwrite without prompting
-cp -f source dest           # NOT: cp source dest
-mv -f source dest           # NOT: mv source dest
-rm -f file                  # NOT: rm file
+## Layout
 
-# For recursive operations
-rm -rf directory            # NOT: rm -r directory
-cp -rf source dest          # NOT: cp -r source dest
-```
-
-**Other commands that may prompt:**
-- `scp` - use `-o BatchMode=yes` for non-interactive
-- `ssh` - use `-o BatchMode=yes` to fail instead of prompting
-- `apt-get` - use `-y` flag
-- `brew` - use `HOMEBREW_NO_AUTO_UPDATE=1` env var
-
-<!-- BEGIN BEADS INTEGRATION v:1 profile:minimal hash:ca08a54f -->
-## Beads Issue Tracker
-
-This project uses **bd (beads)** for issue tracking. Run `bd prime` to see full workflow context and commands.
-
-### Quick Reference
-
-```bash
-bd ready              # Find available work
-bd show <id>          # View issue details
-bd update <id> --claim  # Claim work
-bd close <id>         # Complete work
-```
-
-### Rules
-
-- Use `bd` for ALL task tracking — do NOT use TodoWrite, TaskCreate, or markdown TODO lists
-- Run `bd prime` for detailed command reference and session close protocol
-- Use `bd remember` for persistent knowledge — do NOT use MEMORY.md files
-
-## Session Completion
-
-**When ending a work session**, you MUST complete ALL steps below. Work is NOT complete until `git push` succeeds.
-
-**MANDATORY WORKFLOW:**
-
-1. **File issues for remaining work** - Create issues for anything that needs follow-up
-2. **Run quality gates** (if code changed) - Tests, linters, builds
-3. **Update issue status** - Close finished work, update in-progress items
-4. **PUSH TO REMOTE** - This is MANDATORY:
-   ```bash
-   git pull --rebase
-   bd dolt push
-   git push
-   git status  # MUST show "up to date with origin"
-   ```
-5. **Clean up** - Clear stashes, prune remote branches
-6. **Verify** - All changes committed AND pushed
-7. **Hand off** - Provide context for next session
-
-**CRITICAL RULES:**
-- Work is NOT complete until `git push` succeeds
-- NEVER stop before pushing - that leaves work stranded locally
-- NEVER say "ready to push when you are" - YOU must push
-- If push fails, resolve and retry until it succeeds
-<!-- END BEADS INTEGRATION -->
+- `src/migration_evals/` — package: `cli.py`, `funnel.py`, `runner.py`, `report.py`,
+  oracles, `gold_anchor.py`, `contamination.py`, `publication_gate.py`, `pre_reg.py`,
+  adapters (`adapters_docker.py`, `adapters_anthropic.py`, `adapters_claude_code.py`,
+  `adapters_openai.py`, `adapters_judge.py`), `python23_probe.py`.
+- `schemas/` — JSON Schemas for `result.json` and gold-anchor entries.
+- `configs/` — smoke + per-migration recipes. `docs/` — PRD, premortem (R1–R15),
+  integration guide, oracle-funnel and tier0-skip design notes.
+- `tests/`, `tests/fixtures/changeset_examples/`, `examples/runs/` — suite + worked fixtures.

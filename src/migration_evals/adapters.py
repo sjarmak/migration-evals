@@ -3,18 +3,19 @@
 This module **declares** the minimum interface each external dependency must
 satisfy to participate in the migration eval framework. The Protocols here
 are interface-only: concrete implementations live in downstream work units
-(e.g. a real `AnthropicClientAdapter` wrapping the `anthropic` SDK, a fake
-cassette-backed adapter for deterministic replay in CI).
+(e.g. a real `AnthropicClientAdapter` wrapping the `anthropic` SDK, a
+cassette-backed stand-in for deterministic replay in CI).
 
 The adapter layer exists to:
 
 1. Decouple eval orchestration from any single vendor SDK so we can swap
    providers (e.g. Anthropic → a future multiplexer) without touching the
    funnel, synthetic-gen, or reporting layers.
-2. Support **replay cassettes** for deterministic unit/integration tests:
-   every adapter may be constructed with a `Cassette` that plays back
-   pre-recorded responses instead of issuing live calls. See the `Cassette`
-   Protocol below for the replay-cassette hook contract.
+2. Support **replay cassettes** for deterministic unit/integration tests.
+   Replay is a construction-time decision, not a per-call hook: the adapter
+   factories select ``provider: cassette`` and return the file-backed
+   stand-ins from :mod:`migration_evals.adapters_cassette`, which satisfy
+   the same Protocols as the live implementations.
 3. Give D3's "vendor-in-at-pinned-SHA" posture a single chokepoint so
    security/version audits only have to look in one module.
 
@@ -29,31 +30,13 @@ from typing import Any, Protocol, runtime_checkable
 
 
 @runtime_checkable
-class Cassette(Protocol):
-    """Replay-cassette hook used by every adapter.
-
-    A cassette yields pre-recorded responses in deterministic order. Adapters
-    that accept a cassette **must** consult it before issuing any real
-    network call; in replay mode `next_response()` is authoritative.
-    """
-
-    def next_response(self) -> Mapping[str, Any]:
-        """Return the next recorded response envelope."""
-        ...
-
-    def record(self, request: Mapping[str, Any], response: Mapping[str, Any]) -> None:
-        """Append a request/response pair to the cassette (record mode)."""
-        ...
-
-
-@runtime_checkable
 class AnthropicAdapter(Protocol):
     """Minimum Anthropic Messages API surface used by the migration eval.
 
-    Concrete implementations wrap the official `anthropic` SDK; a replay
-    implementation reads from a `Cassette`. The adapter is responsible for
-    prompt caching headers, retry policy, and cost accounting - none of
-    which are specified by this Protocol.
+    Concrete implementations wrap the official `anthropic` SDK, the
+    Claude Code CLI, or replay from a cassette directory. The adapter is
+    responsible for prompt caching headers, retry policy, and cost
+    accounting - none of which are specified by this Protocol.
     """
 
     def messages_create(
@@ -63,7 +46,6 @@ class AnthropicAdapter(Protocol):
         messages: Iterable[Mapping[str, Any]],
         system: str | None = None,
         max_tokens: int = 1024,
-        cassette: Cassette | None = None,
         **kwargs: Any,
     ) -> Mapping[str, Any]:
         """Issue a single Messages API call and return the response envelope."""
@@ -85,7 +67,6 @@ class SandboxAdapter(Protocol):
         *,
         image: str,
         env: Mapping[str, str] | None = None,
-        cassette: Cassette | None = None,
     ) -> str:
         """Create a sandbox and return its id."""
         ...
@@ -96,7 +77,6 @@ class SandboxAdapter(Protocol):
         *,
         command: str,
         timeout_s: int = 600,
-        cassette: Cassette | None = None,
     ) -> Mapping[str, Any]:
         """Execute a shell command inside the sandbox and return stdout/stderr/exit."""
         ...
@@ -120,7 +100,6 @@ class OpenRewriteAdapter(Protocol):
         *,
         repo_path: str,
         recipe: str,
-        cassette: Cassette | None = None,
     ) -> Mapping[str, Any]:
         """Run an OpenRewrite recipe on a checked-out repo path."""
         ...
@@ -135,7 +114,6 @@ class CodeSearchAdapter(Protocol):
         *,
         query: str,
         repo: str | None = None,
-        cassette: Cassette | None = None,
     ) -> Iterable[Mapping[str, Any]]:
         """Run a code search and yield result envelopes."""
         ...
@@ -150,7 +128,6 @@ class GitHubAdapter(Protocol):
         *,
         owner: str,
         repo: str,
-        cassette: Cassette | None = None,
     ) -> Mapping[str, Any]:
         """Return repository metadata."""
         ...
@@ -162,7 +139,6 @@ class GitHubAdapter(Protocol):
         repo: str,
         dest: str,
         ref: str | None = None,
-        cassette: Cassette | None = None,
     ) -> str:
         """Clone a repo to `dest` and return the checked-out commit SHA."""
         ...
@@ -178,7 +154,6 @@ class DockerAdapter(Protocol):
         context_dir: str,
         dockerfile: str,
         tag: str,
-        cassette: Cassette | None = None,
     ) -> str:
         """Build an image from a Dockerfile and return the image id."""
         ...
@@ -190,14 +165,12 @@ class DockerAdapter(Protocol):
         command: str,
         timeout_s: int = 600,
         env: Mapping[str, str] | None = None,
-        cassette: Cassette | None = None,
     ) -> Mapping[str, Any]:
         """Run a one-shot container and return stdout/stderr/exit."""
         ...
 
 
 __all__ = [
-    "Cassette",
     "AnthropicAdapter",
     "SandboxAdapter",
     "OpenRewriteAdapter",

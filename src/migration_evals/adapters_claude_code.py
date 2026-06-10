@@ -94,7 +94,6 @@ class ClaudeCodeAdapter:
         messages: Iterable[Mapping[str, Any]],
         system: Any | None = None,
         max_tokens: int = 1024,
-        cassette: Any | None = None,  # ignored; Protocol artefact
         **kwargs: Any,
     ) -> Mapping[str, Any]:
         materialised = list(messages)

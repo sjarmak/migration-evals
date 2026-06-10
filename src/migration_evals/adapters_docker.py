@@ -237,7 +237,6 @@ class DockerSandboxAdapter:
         *,
         image: str,
         env: Mapping[str, str] | None = None,
-        cassette: Any | None = None,
     ) -> str:
         """Start a detached, hardened container and return its id.
 
@@ -844,7 +843,6 @@ class DockerSandboxAdapter:
         *,
         command: str,
         timeout_s: int = 600,
-        cassette: Any | None = None,
     ) -> Mapping[str, Any]:
         """Execute ``command`` inside the sandbox via ``sh -c``."""
         container_id = self._containers[sandbox_id]
@@ -940,9 +938,9 @@ def build_sandbox_adapter(
         # Imported here to avoid a top-level cycle: cli.py already
         # imports from migration_evals and would otherwise pull this
         # module in at import time.
-        from migration_evals.cli import _CassetteSandboxAdapter
+        from migration_evals.adapters_cassette import CassetteSandboxAdapter
 
-        return _CassetteSandboxAdapter(Path(repo_path).name, cassette_dir)
+        return CassetteSandboxAdapter(Path(repo_path).name, cassette_dir)
 
     if provider == "docker":
         policy_cfg = adapters_cfg.get("sandbox_policy")

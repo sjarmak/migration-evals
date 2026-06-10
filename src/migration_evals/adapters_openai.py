@@ -229,7 +229,6 @@ class OpenAIJudgeAdapter:
         messages: Iterable[Mapping[str, Any]],
         system: Any | None = None,
         max_tokens: int = 1024,
-        cassette: Any | None = None,  # ignored; Protocol artefact
         **kwargs: Any,
     ) -> Mapping[str, Any]:
         materialised = list(messages)
@@ -259,7 +258,7 @@ class OpenAIJudgeAdapter:
             "model": model,
             "messages": chat_messages,
             "max_completion_tokens": max_tokens,
-            **{k: v for k, v in kwargs.items() if k != "cassette"},
+            **kwargs,
         }
 
         client = (
@@ -273,10 +272,7 @@ class OpenAIJudgeAdapter:
             "messages": chat_messages,
             "max_completion_tokens": max_tokens,
         }
-        for key, value in kwargs.items():
-            if key == "cassette":
-                continue
-            sdk_kwargs[key] = value
+        sdk_kwargs.update(kwargs)
 
         response = client.chat.completions.create(**sdk_kwargs)
         raw = response.model_dump() if hasattr(response, "model_dump") else dict(response)
@@ -364,7 +360,6 @@ class _CassetteOpenAIAdapter:
         messages: Iterable[Mapping[str, Any]],
         system: Any = None,
         max_tokens: int = 1024,
-        cassette: Any = None,
         **kwargs: Any,
     ) -> Mapping[str, Any]:
         self.call_count += 1

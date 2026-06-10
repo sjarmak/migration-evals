@@ -164,18 +164,13 @@ def test_messages_create_omits_system_when_none() -> None:
     assert sent_messages[0]["role"] != "system"
 
 
-def test_messages_create_strips_cassette_kwarg() -> None:
-    """``cassette`` is a Protocol artefact for replay adapters; never forward
-    it to the live SDK."""
-    client = _FakeOpenAIClient(_stub_chat_response())
-    adapter = OpenAIJudgeAdapter(client=client)
-    adapter.messages_create(
-        model="gpt-4o-mini",
-        messages=[{"role": "user", "content": "x"}],
-        max_tokens=8,
-        cassette=object(),
-    )
-    assert "cassette" not in client.chat.completions.calls[0]
+def test_messages_create_has_no_cassette_parameter() -> None:
+    """Replay is a construction-time provider choice, not a per-call hook;
+    the dead ``cassette`` kwarg was removed from the adapter surface."""
+    import inspect
+
+    sig = inspect.signature(OpenAIJudgeAdapter.messages_create)
+    assert "cassette" not in sig.parameters
 
 
 def test_messages_create_uses_max_completion_tokens() -> None:
@@ -376,7 +371,7 @@ def test_default_cost_rates_have_required_keys() -> None:
 
 def test_cassette_adapter_replays_envelope(tmp_path: Path) -> None:
     """Cassette adapter reads ``<dir>/<repo>.json`` and replays the
-    envelope. Mirrors the existing _CassetteAnthropicAdapter behaviour."""
+    envelope. Mirrors the CassetteAnthropicAdapter behaviour."""
     cassette_dir = tmp_path / "openai_cassettes"
     cassette_dir.mkdir()
     (cassette_dir / "repo01.json").write_text(

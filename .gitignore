@@ -48,3 +48,6 @@ env/
 .beads/*
 !.beads/config.yaml
 !.beads/metadata.json
+
+# Operator-local Claude notes (not shared)
+CLAUDE.local.md

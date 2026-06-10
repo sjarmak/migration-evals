@@ -86,7 +86,6 @@ class DualFamilyJudgeAdapter:
         messages: Iterable[Mapping[str, Any]],
         system: Any | None = None,
         max_tokens: int = 1024,
-        cassette: Any | None = None,
         **kwargs: Any,
     ) -> Mapping[str, Any]:
         # Materialize once so both sides see byte-identical payloads.
@@ -108,7 +107,6 @@ class DualFamilyJudgeAdapter:
                 messages=materialised,
                 system=system,
                 max_tokens=max_tokens,
-                cassette=cassette,
                 **kwargs,
             )
         except Exception as exc:
@@ -119,7 +117,6 @@ class DualFamilyJudgeAdapter:
                 messages=materialised,
                 system=system,
                 max_tokens=max_tokens,
-                cassette=cassette,
                 **kwargs,
             )
         except Exception as exc:

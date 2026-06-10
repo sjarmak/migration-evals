@@ -20,9 +20,14 @@ import argparse
 import json
 import os
 import sys
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
+
+from migration_evals.adapters_cassette import (
+    CassetteAnthropicAdapter,
+    CassetteSandboxAdapter,
+)
 
 SUBCOMMANDS = ("run", "report", "regression", "harness", "probe")
 
@@ -246,115 +251,6 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-# ---------------------------------------------------------------------------
-# Replay-cassette adapter wiring (used when --repos points at fixture dir)
-# ---------------------------------------------------------------------------
-
-
-class _CassetteSandboxAdapter:
-    """Cassette-backed sandbox stand-in for fixture/replay runs.
-
-    Reads pre-recorded ``(exit_code, stdout, stderr)`` envelopes from a
-    JSON file under ``$MIGRATION_EVAL_FAKE_SANDBOX_CASSETTE_DIR``. The
-    file name matches the repo directory name. A command with no recorded
-    envelope still replays as a success (fixture scaffolding stays
-    minimal) but the envelope is stamped ``cassette_miss=True`` and a
-    warning is emitted - the publication gate refuses results that carry
-    the stamp, so a typo'd cassette dir can never produce a publishable
-    all-green run.
-    """
-
-    def __init__(self, repo_name: str, cassette_dir: Path | None) -> None:
-        self._repo_name = repo_name
-        self._cassette_dir = cassette_dir
-        self._records: dict[str, Mapping[str, Any]] = {}
-        self._warned_miss = False
-        if cassette_dir is not None:
-            cassette_path = cassette_dir / f"{repo_name}.json"
-            if cassette_path.is_file():
-                try:
-                    self._records = dict(json.loads(cassette_path.read_text()))
-                except (OSError, ValueError):
-                    self._records = {}
-        self._sandbox_counter = 0
-
-    def create_sandbox(self, *, image: str, env: Any = None, cassette: Any = None) -> str:
-        self._sandbox_counter += 1
-        return f"sandbox-{self._repo_name}-{self._sandbox_counter}"
-
-    def exec(
-        self, sandbox_id: str, *, command: str, timeout_s: int = 600, cassette: Any = None
-    ) -> Mapping[str, Any]:
-        record = self._records.get(command)
-        if record is None:
-            if not self._warned_miss:
-                self._warned_miss = True
-                print(
-                    f"warning: sandbox cassette miss for repo "
-                    f"{self._repo_name!r} (command {command!r}); replaying "
-                    f"default success - result will be stamped cassette_miss",
-                    file=sys.stderr,
-                )
-            return {"exit_code": 0, "stdout": "", "stderr": "", "cassette_miss": True}
-        return dict(record)
-
-    def destroy_sandbox(self, sandbox_id: str) -> None:  # pragma: no cover
-        return None
-
-
-class _CassetteAnthropicAdapter:
-    """Cassette-backed Anthropic stand-in for the judge tier.
-
-    Loads a recorded response envelope from
-    ``<judge_cassette_dir>/<repo_name>.json``. When no cassette is
-    present the funnel still does not block - a PASS envelope is
-    replayed - but it is stamped ``cassette_miss=True`` and a warning is
-    emitted; the publication gate refuses results carrying the stamp.
-    """
-
-    def __init__(self, repo_name: str, cassette_dir: Path | None) -> None:
-        self._repo_name = repo_name
-        self._cassette_dir = cassette_dir
-        self.last_request: dict[str, Any] = {}
-        self.call_count = 0
-
-    def messages_create(
-        self,
-        *,
-        model: str,
-        messages: Iterable[Mapping[str, Any]],
-        system: Any = None,
-        max_tokens: int = 1024,
-        cassette: Any = None,
-        **kwargs: Any,
-    ) -> Mapping[str, Any]:
-        self.call_count += 1
-        # Capture so a real implementation can audit the cache_control block.
-        self.last_request = {
-            "model": model,
-            "messages": list(messages),
-            "system": system,
-            "max_tokens": max_tokens,
-            **kwargs,
-        }
-        if self._cassette_dir is not None:
-            cassette_path = self._cassette_dir / f"{self._repo_name}.json"
-            if cassette_path.is_file():
-                try:
-                    return json.loads(cassette_path.read_text())
-                except (OSError, ValueError):
-                    pass
-        print(
-            f"warning: judge cassette miss for repo {self._repo_name!r}; "
-            f"replaying default PASS - result will be stamped cassette_miss",
-            file=sys.stderr,
-        )
-        return {
-            "content": [{"type": "text", "text": "PASS judge defaulted to pass"}],
-            "cassette_miss": True,
-        }
-
-
 def _load_repo_meta(repo_dir: Path) -> dict[str, Any]:
     meta_path = repo_dir / "meta.json"
     if not meta_path.is_file():
@@ -479,8 +375,8 @@ def _handle_run(args: argparse.Namespace) -> int:
         meta = _load_repo_meta(repo_dir)
         recipe = _build_recipe_from_meta(meta)
         adapters = {
-            "sandbox": _CassetteSandboxAdapter(repo_dir.name, sandbox_cassette_dir),
-            "anthropic": _CassetteAnthropicAdapter(repo_dir.name, judge_cassette_dir),
+            "sandbox": CassetteSandboxAdapter(repo_dir.name, sandbox_cassette_dir),
+            "anthropic": CassetteAnthropicAdapter(repo_dir.name, judge_cassette_dir),
             "enable_daikon": False,
         }
         funnel_result = run_funnel(
@@ -566,7 +462,7 @@ def _handle_harness(args: argparse.Namespace) -> int:
 
     cassette_env = os.environ.get("MIGRATION_EVAL_FAKE_HARNESS_CASSETTE_DIR")
     cassette_dir = Path(cassette_env) if cassette_env else None
-    adapter = _CassetteAnthropicAdapter(repo_path.name, cassette_dir)
+    adapter = CassetteAnthropicAdapter(repo_path.name, cassette_dir)
 
     if args.action == "validate":
         # Structural validation: try to build a Recipe from meta.json.

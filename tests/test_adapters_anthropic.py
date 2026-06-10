@@ -106,18 +106,13 @@ def test_messages_create_returns_dict_envelope() -> None:
     assert "cassette" not in forwarded
 
 
-def test_messages_create_strips_cassette_kwarg() -> None:
-    """``cassette`` is a Protocol artefact for replay adapters and must not
-    leak into the live SDK call."""
-    client = _FakeClient(_stub_response())
-    adapter = AnthropicSDKAdapter(client=client)
-    adapter.messages_create(
-        model="claude-haiku-4-5",
-        messages=[{"role": "user", "content": "x"}],
-        max_tokens=8,
-        cassette=object(),
-    )
-    assert "cassette" not in client.messages.calls[0]
+def test_messages_create_has_no_cassette_parameter() -> None:
+    """Replay is a construction-time provider choice, not a per-call hook;
+    the dead ``cassette`` kwarg was removed from the adapter surface."""
+    import inspect
+
+    sig = inspect.signature(AnthropicSDKAdapter.messages_create)
+    assert "cassette" not in sig.parameters
 
 
 def test_messages_create_accumulates_cost() -> None:
@@ -271,10 +266,10 @@ def test_constructor_does_not_import_anthropic_when_client_passed(
 
 
 def test_build_anthropic_adapter_defaults_to_cassette(tmp_path: Path) -> None:
-    from migration_evals.cli import _CassetteAnthropicAdapter
+    from migration_evals.adapters_cassette import CassetteAnthropicAdapter
 
     adapter = build_anthropic_adapter(repo_path=tmp_path, adapters_cfg={}, cassette_dir=None)
-    assert isinstance(adapter, _CassetteAnthropicAdapter)
+    assert isinstance(adapter, CassetteAnthropicAdapter)
 
 
 def test_build_anthropic_adapter_selects_sdk(

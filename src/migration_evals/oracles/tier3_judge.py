@@ -104,7 +104,6 @@ def run(
     *,
     model: str = DEFAULT_MODEL,
     max_tokens: int = DEFAULT_MAX_TOKENS,
-    cassette: Any | None = None,
     cost_usd: float = DEFAULT_COST_USD,
 ) -> OracleVerdict:
     """Call the judge and return a judge-tier verdict.
@@ -126,7 +125,6 @@ def run(
         messages=[{"role": "user", "content": user_msg}],
         system=system_blocks,
         max_tokens=max_tokens,
-        cassette=cassette,
     )
     raw_text = _extract_text(envelope)
 

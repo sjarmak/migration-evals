@@ -148,20 +148,13 @@ def test_cost_and_call_count_accumulate(monkeypatch: pytest.MonkeyPatch) -> None
     assert adapter.total_cost_usd == pytest.approx(0.0246)
 
 
-def test_cassette_kwarg_is_stripped(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Protocol artefact - must never end up on the claude command line."""
-    recorder = _Recorder([_StubProc(stdout=_ok_envelope())])
-    monkeypatch.setattr(subprocess, "run", recorder)
+def test_messages_create_has_no_cassette_parameter() -> None:
+    """Replay is a construction-time provider choice, not a per-call hook;
+    the dead ``cassette`` kwarg was removed from the adapter surface."""
+    import inspect
 
-    adapter = ClaudeCodeAdapter()
-    adapter.messages_create(
-        model="claude-haiku-4-5",
-        messages=[{"role": "user", "content": "x"}],
-        max_tokens=8,
-        cassette=object(),
-    )
-    flat = " ".join(recorder.calls[0]["args"])
-    assert "cassette" not in flat
+    sig = inspect.signature(ClaudeCodeAdapter.messages_create)
+    assert "cassette" not in sig.parameters
 
 
 def test_system_blocks_flatten_to_string(monkeypatch: pytest.MonkeyPatch) -> None:

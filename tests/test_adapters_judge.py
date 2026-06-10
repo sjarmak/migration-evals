@@ -160,27 +160,13 @@ def test_dual_judge_envelope_content_defaults_to_anthropic_text() -> None:
     assert envelope["content"][0]["text"] == "PASS anthropic"
 
 
-def test_dual_judge_strips_cassette_kwarg_from_each_call() -> None:
-    """Cassette is a Protocol artefact; should not leak into either side."""
-    anthropic = _FakeJudge("PASS")
-    other = _FakeJudge("PASS", family="openai")
-    adapter = DualFamilyJudgeAdapter(
-        anthropic_adapter=anthropic,
-        other_adapter=other,
-        other_model="gpt-4o-mini",
-    )
-    adapter.messages_create(
-        model="claude-haiku-4-5",
-        messages=[{"role": "user", "content": "x"}],
-        max_tokens=8,
-        cassette=object(),
-    )
-    # Cassette kwarg is forwarded to each side's messages_create as a kwarg
-    # (the Protocol shape allows it); but it must reach them via the named
-    # parameter, not as an unknown extra. The fake captures it on
-    # last_request so we can assert it's been passed cleanly.
-    assert "cassette" in anthropic.last_request
-    assert "cassette" in other.last_request
+def test_dual_judge_has_no_cassette_parameter() -> None:
+    """Replay is a construction-time provider choice, not a per-call hook;
+    the dead ``cassette`` kwarg was removed from the adapter surface."""
+    import inspect
+
+    sig = inspect.signature(DualFamilyJudgeAdapter.messages_create)
+    assert "cassette" not in sig.parameters
 
 
 # ---------------------------------------------------------------------------
