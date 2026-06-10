@@ -39,6 +39,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 from collections.abc import Iterable, Mapping
 from pathlib import Path
 from typing import Any
@@ -344,8 +345,10 @@ class _CassetteOpenAIAdapter:
 
     Loads a recorded envelope from ``<cassette_dir>/<repo_name>.json``
     and adds the ``_judge_family: openai`` marker so dual-mode tests can
-    distinguish the source. Falls back to a hard-coded PASS envelope
-    when no cassette is present so the funnel never blocks offline.
+    distinguish the source. When no cassette is present the funnel still
+    does not block - a PASS envelope is replayed - but it is stamped
+    ``cassette_miss=True`` and a warning is emitted; the publication
+    gate refuses results carrying the stamp.
     """
 
     def __init__(self, repo_name: str, cassette_dir: Path | None) -> None:
@@ -381,8 +384,15 @@ class _CassetteOpenAIAdapter:
                 except (OSError, ValueError):
                     envelope = None
         if envelope is None:
+            print(
+                f"warning: openai judge cassette miss for repo "
+                f"{self._repo_name!r}; replaying default PASS - result "
+                f"will be stamped cassette_miss",
+                file=sys.stderr,
+            )
             envelope = {
                 "content": [{"type": "text", "text": "PASS judge defaulted to pass"}],
+                "cassette_miss": True,
             }
         envelope.setdefault("_judge_family", "openai")
         return envelope

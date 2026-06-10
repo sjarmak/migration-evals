@@ -207,12 +207,12 @@ def _join_pairs(
             str(result.get("repo_url", "")),
             str(result.get("commit_sha", "")),
         )
-        entry = gold_by_key.get(key)
-        if entry is None:
+        gold_entry = gold_by_key.get(key)
+        if gold_entry is None:
             dropped_funnel += 1
             continue
         funnel_x.append(_funnel_pass(result))
-        gold_y.append(_gold_pass(entry))
+        gold_y.append(_gold_pass(gold_entry))
         matched.add(key)
 
     dropped_gold = sum(1 for key in gold_by_key if key not in matched)

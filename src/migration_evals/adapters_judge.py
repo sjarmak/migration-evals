@@ -52,6 +52,12 @@ class DualFamilyJudgeAdapter:
 
     Cost (when each side reports it on ``total_cost_usd``) is summed on
     the wrapper's own ``total_cost_usd`` for funnel-level accounting.
+
+    Failure contract: when exactly one side raises, the combined
+    envelope carries ``anthropic_error`` / ``other_error`` (string)
+    instead of that side's envelope so Tier 3 can emit a judge-error
+    verdict distinguishable from a genuine FAIL. When both sides raise,
+    the call raises ``RuntimeError`` — the judge tier itself is down.
     """
 
     def __init__(
@@ -92,33 +98,59 @@ class DualFamilyJudgeAdapter:
             "system": system,
             "max_tokens": max_tokens,
         }
-        anthropic_envelope = self._anthropic.messages_create(
-            model=model,
-            messages=materialised,
-            system=system,
-            max_tokens=max_tokens,
-            cassette=cassette,
-            **kwargs,
-        )
-        other_envelope = self._other.messages_create(
-            model=self._other_model,
-            messages=materialised,
-            system=system,
-            max_tokens=max_tokens,
-            cassette=cassette,
-            **kwargs,
-        )
+        anthropic_envelope: Mapping[str, Any] | None = None
+        other_envelope: Mapping[str, Any] | None = None
+        anthropic_error: str | None = None
+        other_error: str | None = None
+        try:
+            anthropic_envelope = self._anthropic.messages_create(
+                model=model,
+                messages=materialised,
+                system=system,
+                max_tokens=max_tokens,
+                cassette=cassette,
+                **kwargs,
+            )
+        except Exception as exc:
+            anthropic_error = f"{type(exc).__name__}: {exc}"
+        try:
+            other_envelope = self._other.messages_create(
+                model=self._other_model,
+                messages=materialised,
+                system=system,
+                max_tokens=max_tokens,
+                cassette=cassette,
+                **kwargs,
+            )
+        except Exception as exc:
+            other_error = f"{type(exc).__name__}: {exc}"
+
+        if anthropic_error and other_error:
+            # Both families down — the judge tier itself is broken;
+            # propagate so the trial surfaces as a harness failure rather
+            # than a quiet FAIL verdict.
+            raise RuntimeError(
+                "dual-family judge: both adapters failed "
+                f"(anthropic: {anthropic_error}; other: {other_error})"
+            )
+
         self.call_count += 1
+        dual: dict[str, Any] = {"other_model": self._other_model}
+        if anthropic_envelope is not None:
+            dual["anthropic_envelope"] = dict(anthropic_envelope)
+        else:
+            dual["anthropic_error"] = anthropic_error
+        if other_envelope is not None:
+            dual["other_envelope"] = dict(other_envelope)
+        else:
+            dual["other_error"] = other_error
         # Top-level content stays anthropic-shaped so any consumer that
         # ignores _dual_family still sees a coherent verdict text.
+        content = list(anthropic_envelope.get("content") or []) if anthropic_envelope else []
         return {
-            "content": list(anthropic_envelope.get("content") or []),
+            "content": content,
             "model": model,
-            "_dual_family": {
-                "anthropic_envelope": dict(anthropic_envelope),
-                "other_envelope": dict(other_envelope),
-                "other_model": self._other_model,
-            },
+            "_dual_family": dual,
         }
 
 

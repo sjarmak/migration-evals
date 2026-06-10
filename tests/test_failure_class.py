@@ -16,8 +16,8 @@ import pytest
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_REPO_ROOT))
 
-from migration_evals.failure_class import classify
-from migration_evals.types import FailureClass
+from migration_evals.failure_class import classify  # noqa: E402
+from migration_evals.types import FailureClass  # noqa: E402
 
 CASES_DIR = _REPO_ROOT / "tests" / "fixtures" / "failure_class_cases"
 

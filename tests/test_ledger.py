@@ -20,7 +20,7 @@ import pytest
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_REPO_ROOT))
 
-from migration_evals.ledger import (
+from migration_evals.ledger import (  # noqa: E402
     compute_content_hash,
     compute_regression,
     iter_trial_results,

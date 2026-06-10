@@ -84,6 +84,10 @@ def run(
         "stdout_tail": str(envelope.get("stdout", ""))[-1024:],
         "stderr_tail": str(envelope.get("stderr", ""))[-1024:],
     }
+    if envelope.get("cassette_miss"):
+        # A replay adapter answered without a recorded envelope; this
+        # verdict proves nothing and must never reach publication.
+        details["cassette_miss"] = True
     return OracleVerdict(tier=TIER_NAME, passed=passed, cost_usd=cost_usd, details=details)
 
 

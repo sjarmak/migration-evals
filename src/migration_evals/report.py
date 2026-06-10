@@ -591,12 +591,23 @@ def _format_efficiency_section(eff: Mapping[str, Any] | None) -> str:
 
 def _format_contamination(contam: Mapping[str, Any]) -> str:
     flag = "YES" if contam.get("warning_flag") else "no"
+
+    def fmt(value: Any) -> str:
+        return f"{value:.4f}" if isinstance(value, (int, float)) else "n/a (empty bucket)"
+
+    p_value = contam.get("p_value")
+    if isinstance(p_value, (int, float)):
+        significant = "yes" if contam.get("significant") else "no"
+        p_line = f"- p_value: {p_value:.4f} (significant at 0.05: {significant})"
+    else:
+        p_line = "- p_value: n/a (insufficient or degenerate data)"
     return (
-        f"- score_pre_cutoff: {contam.get('score_pre', 0.0):.4f} "
+        f"- score_pre_cutoff: {fmt(contam.get('score_pre'))} "
         f"(n={contam.get('n_pre', 0)})\n"
-        f"- score_post_cutoff: {contam.get('score_post', 0.0):.4f} "
+        f"- score_post_cutoff: {fmt(contam.get('score_post'))} "
         f"(n={contam.get('n_post', 0)})\n"
-        f"- gap_pp: {contam.get('gap_pp', 0.0):.4f}\n"
+        f"- gap_pp: {fmt(contam.get('gap_pp'))}\n"
+        f"{p_line}\n"
         f"- warning_flag: {flag}"
     )
 

@@ -83,8 +83,12 @@ def _ast_verdict(repo_path: Path, recipe: Recipe) -> OracleVerdict:
     )
 
 
-def _failure_class_for(tier_name: str) -> str:
+def _failure_class_for(tier_name: str, verdict: OracleVerdict) -> str:
     """Map the tier that short-circuited to a :class:`FailureClass` value."""
+    if verdict.details.get("judge_error"):
+        # A judge adapter erroring (e.g. one family of a dual-judge pair
+        # unreachable) is a harness fault, not a verdict on the agent.
+        return FailureClass.HARNESS_ERROR.value
     if tier_name == tier0_diff.TIER_NAME:
         # A malformed patch / unparseable file is the agent's fault, not the
         # harness or the oracle.
@@ -178,7 +182,7 @@ def run_funnel(
                 per_tier_verdict=tuple(verdicts),
                 final_verdict=verdict,
                 total_cost_usd=round(total_cost, 6),
-                failure_class=_failure_class_for(tier_name),
+                failure_class=_failure_class_for(tier_name, verdict),
                 quality_verdicts=quality_verdicts,
             )
 

@@ -275,6 +275,27 @@ def test_tier3_judge_dual_family_preserves_per_judge_text() -> None:
     assert "test command is wrong" in verdict.details["judge_text_other"]
 
 
+def test_tier3_judge_dual_family_one_sided_error_is_judge_error() -> None:
+    """An errored side must surface as judge_error, never as a genuine FAIL."""
+    recipe = _make_recipe()
+    envelope = {
+        "content": [{"type": "text", "text": "PASS anthropic"}],
+        "_dual_family": {
+            "anthropic_envelope": {"content": [{"type": "text", "text": "PASS anthropic"}]},
+            "other_error": "TimeoutError: openai judge unreachable",
+            "other_model": "gpt-4o-mini",
+        },
+    }
+    cassette = FakeAnthropicCassette(envelope)
+    verdict = tier3_judge.run(FIXTURE_REPOS / "repo01", recipe, cassette)
+    assert verdict.passed is False
+    assert verdict.details["judge_error"] is True
+    assert "openai judge unreachable" in verdict.details["other_error"]
+    # No per-judge verdicts: one side never produced one.
+    assert "verdict_anthropic" not in verdict.details
+    assert "verdicts_disagreed" not in verdict.details
+
+
 # -- Tier 4 -------------------------------------------------------------------
 
 

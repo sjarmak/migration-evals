@@ -185,3 +185,47 @@ def test_cli_harness_validate_smoke() -> None:
         timeout=30,
     )
     assert proc.returncode == 0, proc.stderr
+
+
+# ---------------------------------------------------------------------------
+# Cassette-miss stamping (bead migration_evals-du2)
+# ---------------------------------------------------------------------------
+
+
+def test_sandbox_cassette_miss_is_stamped(tmp_path) -> None:
+    """A command with no recorded envelope replays success but carries the
+    cassette_miss stamp so the publication gate can refuse the result."""
+    from migration_evals.cli import _CassetteSandboxAdapter
+
+    adapter = _CassetteSandboxAdapter("repoX", tmp_path)  # no repoX.json
+    sandbox_id = adapter.create_sandbox(image="img")
+    envelope = adapter.exec(sandbox_id, command="mvn compile")
+    assert envelope["exit_code"] == 0
+    assert envelope["cassette_miss"] is True
+
+
+def test_sandbox_cassette_hit_is_not_stamped(tmp_path) -> None:
+    import json as _json
+
+    from migration_evals.cli import _CassetteSandboxAdapter
+
+    (tmp_path / "repoY.json").write_text(
+        _json.dumps({"mvn compile": {"exit_code": 1, "stdout": "", "stderr": "boom"}})
+    )
+    adapter = _CassetteSandboxAdapter("repoY", tmp_path)
+    sandbox_id = adapter.create_sandbox(image="img")
+    envelope = adapter.exec(sandbox_id, command="mvn compile")
+    assert envelope["exit_code"] == 1
+    assert "cassette_miss" not in envelope
+
+
+def test_judge_cassette_miss_is_stamped(tmp_path) -> None:
+    from migration_evals.cli import _CassetteAnthropicAdapter
+
+    adapter = _CassetteAnthropicAdapter("repoZ", tmp_path)  # no repoZ.json
+    envelope = adapter.messages_create(
+        model="claude-haiku-4-5",
+        messages=[{"role": "user", "content": "x"}],
+    )
+    assert envelope["cassette_miss"] is True
+    assert envelope["content"][0]["text"].startswith("PASS")

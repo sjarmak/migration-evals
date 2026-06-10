@@ -31,10 +31,12 @@ def _row(passed: bool, created: str | None) -> dict:
 def test_returns_contamination_report_dataclass() -> None:
     report = split_scores([], CUTOFF)
     assert isinstance(report, ContaminationReport)
-    assert report.score_pre == 0.0
-    assert report.score_post == 0.0
-    assert report.gap_pp == 0.0
+    assert report.score_pre is None
+    assert report.score_post is None
+    assert report.gap_pp is None
     assert report.warning_flag is False
+    assert report.p_value is None
+    assert report.significant is None
 
 
 def test_gap_under_threshold_no_warning() -> None:
@@ -79,20 +81,25 @@ def test_threshold_is_strictly_greater_than_5() -> None:
     assert WARNING_THRESHOLD_PP == 5.0
 
 
-def test_empty_pre_bucket_defaults_to_zero() -> None:
+def test_empty_pre_bucket_reports_none() -> None:
+    """No data is distinguishable from a 0% pass rate."""
     rows = [_row(True, "2025-06-01"), _row(False, "2025-09-01")]
     report = split_scores(rows, CUTOFF)
     assert report.n_pre == 0
-    assert report.score_pre == 0.0
+    assert report.score_pre is None
+    assert report.gap_pp is None
+    assert report.warning_flag is False
+    assert report.p_value is None
     assert report.n_post == 2
     assert report.score_post == pytest.approx(0.5)
 
 
-def test_empty_post_bucket_defaults_to_zero() -> None:
+def test_empty_post_bucket_reports_none() -> None:
     rows = [_row(True, "2020-06-01"), _row(True, "2021-09-01")]
     report = split_scores(rows, CUTOFF)
     assert report.n_post == 0
-    assert report.score_post == 0.0
+    assert report.score_post is None
+    assert report.gap_pp is None
     assert report.score_pre == pytest.approx(1.0)
 
 
@@ -138,7 +145,38 @@ def test_to_dict_round_trip() -> None:
         "warning_flag",
         "n_pre",
         "n_post",
+        "p_value",
+        "significant",
     }
+
+
+def test_large_gap_on_tiny_buckets_is_not_significant() -> None:
+    """A 33pp gap on 3-vs-3 trials is noise; p_value must say so."""
+    pre = [_row(True, "2020-06-01")] * 2 + [_row(False, "2020-06-01")]
+    post = [_row(True, "2025-06-01")] + [_row(False, "2025-06-01")] * 2
+    report = split_scores(pre + post, CUTOFF)
+    assert report.warning_flag is True  # tripwire still fires
+    assert report.p_value is not None and report.p_value > 0.05
+    assert report.significant is False
+
+
+def test_large_gap_on_large_buckets_is_significant() -> None:
+    """The same 20pp gap on 200-vs-200 trials is real signal."""
+    pre = [_row(True, "2020-06-01")] * 140 + [_row(False, "2020-06-01")] * 60
+    post = [_row(True, "2025-06-01")] * 100 + [_row(False, "2025-06-01")] * 100
+    report = split_scores(pre + post, CUTOFF)
+    assert report.warning_flag is True
+    assert report.p_value is not None and report.p_value < 0.05
+    assert report.significant is True
+
+
+def test_degenerate_pooled_rate_yields_no_p_value() -> None:
+    """All-pass buckets leave the z statistic undefined; p_value is None."""
+    rows = [_row(True, "2020-06-01")] * 5 + [_row(True, "2025-06-01")] * 5
+    report = split_scores(rows, CUTOFF)
+    assert report.gap_pp == pytest.approx(0.0)
+    assert report.p_value is None
+    assert report.significant is None
 
 
 def test_invalid_cutoff_type_raises() -> None:

@@ -16,8 +16,8 @@ _REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_REPO_ROOT))
 
 
-from migration_evals.synthetic import java8_generator
-from migration_evals.synthetic.primitives import ALL_MODULES
+from migration_evals.synthetic import java8_generator  # noqa: E402
+from migration_evals.synthetic.primitives import ALL_MODULES  # noqa: E402
 
 
 def _hash_dir(path: Path) -> str:

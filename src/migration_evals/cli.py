@@ -256,14 +256,19 @@ class _CassetteSandboxAdapter:
 
     Reads pre-recorded ``(exit_code, stdout, stderr)`` envelopes from a
     JSON file under ``$MIGRATION_EVAL_FAKE_SANDBOX_CASSETTE_DIR``. The
-    file name matches the repo directory name. Default behavior when the
-    cassette is absent is to return a successful exit envelope.
+    file name matches the repo directory name. A command with no recorded
+    envelope still replays as a success (fixture scaffolding stays
+    minimal) but the envelope is stamped ``cassette_miss=True`` and a
+    warning is emitted - the publication gate refuses results that carry
+    the stamp, so a typo'd cassette dir can never produce a publishable
+    all-green run.
     """
 
     def __init__(self, repo_name: str, cassette_dir: Path | None) -> None:
         self._repo_name = repo_name
         self._cassette_dir = cassette_dir
         self._records: dict[str, Mapping[str, Any]] = {}
+        self._warned_miss = False
         if cassette_dir is not None:
             cassette_path = cassette_dir / f"{repo_name}.json"
             if cassette_path.is_file():
@@ -282,10 +287,15 @@ class _CassetteSandboxAdapter:
     ) -> Mapping[str, Any]:
         record = self._records.get(command)
         if record is None:
-            # Default: pretend the command succeeded. This keeps fixture
-            # scaffolding minimal - only failing cases need cassette
-            # entries.
-            return {"exit_code": 0, "stdout": "", "stderr": ""}
+            if not self._warned_miss:
+                self._warned_miss = True
+                print(
+                    f"warning: sandbox cassette miss for repo "
+                    f"{self._repo_name!r} (command {command!r}); replaying "
+                    f"default success - result will be stamped cassette_miss",
+                    file=sys.stderr,
+                )
+            return {"exit_code": 0, "stdout": "", "stderr": "", "cassette_miss": True}
         return dict(record)
 
     def destroy_sandbox(self, sandbox_id: str) -> None:  # pragma: no cover
@@ -296,8 +306,10 @@ class _CassetteAnthropicAdapter:
     """Cassette-backed Anthropic stand-in for the judge tier.
 
     Loads a recorded response envelope from
-    ``<judge_cassette_dir>/<repo_name>.json``. Falls back to a hard-coded
-    PASS envelope when no cassette is present so the funnel never blocks.
+    ``<judge_cassette_dir>/<repo_name>.json``. When no cassette is
+    present the funnel still does not block - a PASS envelope is
+    replayed - but it is stamped ``cassette_miss=True`` and a warning is
+    emitted; the publication gate refuses results carrying the stamp.
     """
 
     def __init__(self, repo_name: str, cassette_dir: Path | None) -> None:
@@ -332,7 +344,15 @@ class _CassetteAnthropicAdapter:
                     return json.loads(cassette_path.read_text())
                 except (OSError, ValueError):
                     pass
-        return {"content": [{"type": "text", "text": "PASS judge defaulted to pass"}]}
+        print(
+            f"warning: judge cassette miss for repo {self._repo_name!r}; "
+            f"replaying default PASS - result will be stamped cassette_miss",
+            file=sys.stderr,
+        )
+        return {
+            "content": [{"type": "text", "text": "PASS judge defaulted to pass"}],
+            "cassette_miss": True,
+        }
 
 
 def _load_repo_meta(repo_dir: Path) -> dict[str, Any]:

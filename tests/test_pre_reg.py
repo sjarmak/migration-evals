@@ -306,3 +306,118 @@ def test_gate_require_gold_anchor_fails_on_eval_broken(tmp_path: Path) -> None:
     result = _run_gate(staged, "--require-gold-anchor")
     assert result.returncode == 1
     assert "eval_broken=true" in result.stderr
+
+
+# -- judge kappa calibration extension ----------------------------------------
+
+
+def _write_judge_calibration(
+    run_dir: Path,
+    *,
+    unreliable_pairs: list[str],
+    low_sample_pairs: list[str] | None = None,
+) -> Path:
+    path = run_dir / "judge_calibration.json"
+    payload = {
+        "n_trials": 20,
+        "kappa_floor": 0.6,
+        "min_trials": 10,
+        "pairs": [],
+        "unreliable_pairs": unreliable_pairs,
+        "low_sample_pairs": low_sample_pairs or [],
+    }
+    path.write_text(json.dumps(payload, indent=2))
+    manifest_path = run_dir / "manifest.json"
+    manifest = json.loads(manifest_path.read_text())
+    manifest["judge_calibration"] = str(path)
+    manifest_path.write_text(json.dumps(manifest, indent=2))
+    return path
+
+
+def test_gate_require_judge_calibration_fails_when_undeclared(tmp_path: Path) -> None:
+    staged = _stage_run(RUN_STAMPED, tmp_path / "run_judge_undeclared")
+    result = _run_gate(staged, "--require-judge-calibration")
+    assert result.returncode == 1
+    assert "judge_calibration" in result.stderr
+
+
+def test_gate_passes_with_reliable_judge_calibration(tmp_path: Path) -> None:
+    staged = _stage_run(RUN_STAMPED, tmp_path / "run_judge_reliable")
+    _write_judge_calibration(staged, unreliable_pairs=[])
+    result = _run_gate(staged, "--require-judge-calibration")
+    assert result.returncode == 0, result.stderr
+
+
+def test_gate_fails_on_unreliable_judge_pair(tmp_path: Path) -> None:
+    staged = _stage_run(RUN_STAMPED, tmp_path / "run_judge_unreliable")
+    _write_judge_calibration(staged, unreliable_pairs=["anthropic-other"])
+    result = _run_gate(staged)  # enforced even without the flag once declared
+    assert result.returncode == 1
+    assert "unreliable" in result.stderr
+    assert "anthropic-other" in result.stderr
+
+
+def test_gate_warns_on_low_sample_judge_pairs_but_passes(tmp_path: Path) -> None:
+    staged = _stage_run(RUN_STAMPED, tmp_path / "run_judge_low_n")
+    _write_judge_calibration(staged, unreliable_pairs=[], low_sample_pairs=["anthropic-human"])
+    result = _run_gate(staged, "--require-judge-calibration")
+    assert result.returncode == 0, result.stderr
+    assert "WARNING" in result.stderr
+    assert "anthropic-human" in result.stderr
+
+
+# -- cassette_miss enforcement -------------------------------------------------
+
+
+def test_gate_fails_on_cassette_miss_stamp(tmp_path: Path) -> None:
+    """A verdict fabricated by a replay default must never pass the gate."""
+    staged = _stage_run(RUN_STAMPED, tmp_path / "run_cassette_miss")
+    trial_result = staged / "trial_001" / "result.json"
+    payload = json.loads(trial_result.read_text())
+    payload["funnel"] = {
+        "per_tier_verdict": [
+            {
+                "tier": "compile_only",
+                "passed": True,
+                "cost_usd": 0.01,
+                "details": {"exit_code": 0, "cassette_miss": True},
+            }
+        ]
+    }
+    trial_result.write_text(json.dumps(payload, indent=2))
+
+    result = _run_gate(staged)
+    assert result.returncode == 1
+    assert "cassette_miss" in result.stderr
+
+
+def test_gate_finds_deeply_nested_cassette_miss(tmp_path: Path) -> None:
+    """The stamp is caught even inside raw judge envelopes."""
+    staged = _stage_run(RUN_STAMPED, tmp_path / "run_nested_miss")
+    trial_result = staged / "trial_001" / "result.json"
+    payload = json.loads(trial_result.read_text())
+    payload["funnel"] = {
+        "final_verdict": {
+            "details": {
+                "raw_envelope": {"_dual_family": {"other_envelope": {"cassette_miss": True}}}
+            }
+        }
+    }
+    trial_result.write_text(json.dumps(payload, indent=2))
+
+    result = _run_gate(staged)
+    assert result.returncode == 1
+    assert "cassette_miss" in result.stderr
+
+
+def test_gate_fails_on_malformed_judge_calibration(tmp_path: Path) -> None:
+    staged = _stage_run(RUN_STAMPED, tmp_path / "run_judge_malformed")
+    path = staged / "judge_calibration.json"
+    path.write_text(json.dumps({"not_a_summary": True}))
+    manifest_path = staged / "manifest.json"
+    manifest = json.loads(manifest_path.read_text())
+    manifest["judge_calibration"] = str(path)
+    manifest_path.write_text(json.dumps(manifest, indent=2))
+    result = _run_gate(staged)
+    assert result.returncode == 1
+    assert "unreliable_pairs" in result.stderr

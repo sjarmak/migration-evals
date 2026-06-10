@@ -31,6 +31,7 @@ from typing import Any
 
 __all__ = [
     "KAPPA_FLOOR",
+    "MIN_CALIBRATION_TRIALS",
     "JudgeAgreement",
     "cohen_kappa_binary",
     "load_trials",
@@ -44,6 +45,11 @@ __all__ = [
 # Bead spec calls 0.6 the unreliable cutoff, which sits just inside the
 # moderate band.
 KAPPA_FLOOR: float = 0.6
+
+# Below this per-pair sample count kappa is dominated by sampling noise
+# (with n=1 it is exactly 1.0 or -1.0); the bead spec's overlap slice is
+# ~20 trials, so 10 is a permissive floor for flagging, not gating.
+MIN_CALIBRATION_TRIALS: int = 10
 
 
 @dataclass(frozen=True)
@@ -144,6 +150,7 @@ def summarise_calibration(trials: Iterable[Mapping[str, Any]]) -> dict[str, Any]
     return {
         "n_trials": len(full),
         "kappa_floor": KAPPA_FLOOR,
+        "min_trials": MIN_CALIBRATION_TRIALS,
         "pairs": [
             {
                 "rater1": a.rater1,
@@ -151,10 +158,14 @@ def summarise_calibration(trials: Iterable[Mapping[str, Any]]) -> dict[str, Any]
                 "n": a.n,
                 "kappa": _kappa_for_json(a.kappa),
                 "unreliable": a.unreliable,
+                "low_sample": a.n < MIN_CALIBRATION_TRIALS,
             }
             for a in agreements
         ],
         "unreliable_pairs": [f"{a.rater1}-{a.rater2}" for a in agreements if a.unreliable],
+        "low_sample_pairs": [
+            f"{a.rater1}-{a.rater2}" for a in agreements if a.n < MIN_CALIBRATION_TRIALS
+        ],
     }
 
 

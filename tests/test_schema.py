@@ -18,8 +18,8 @@ from pathlib import Path
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_REPO_ROOT))
 
-import jsonschema
-import pytest
+import jsonschema  # noqa: E402
+import pytest  # noqa: E402
 
 REPO_ROOT = _REPO_ROOT
 SCHEMA_PATH = REPO_ROOT / "schemas" / "mig_result.schema.json"

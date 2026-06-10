@@ -99,9 +99,9 @@ def _group_by_iterator(results: Sequence[Mapping]) -> dict[str, list[dict]]:
     return groups
 
 
-def _percentile(values: Sequence[float], pct: float) -> float | None:
+def _percentile(values: Sequence[float], pct: float) -> float:
     if not values:
-        return None
+        raise ValueError("_percentile requires a non-empty sequence")
     sorted_v = sorted(values)
     if pct <= 0:
         return sorted_v[0]

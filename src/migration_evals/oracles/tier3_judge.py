@@ -137,23 +137,40 @@ def run(
         "cache_control_sent": True,
         "repo_path": str(repo_path),
     }
+    if isinstance(envelope, Mapping) and envelope.get("cassette_miss"):
+        # A replay adapter answered without a recorded envelope; this
+        # verdict proves nothing and must never reach publication.
+        details["cassette_miss"] = True
 
     dual = envelope.get("_dual_family") if isinstance(envelope, Mapping) else None
     if isinstance(dual, Mapping):
-        anthropic_text = _extract_text(dual.get("anthropic_envelope") or {})
-        other_text = _extract_text(dual.get("other_envelope") or {})
-        verdict_anthropic = bool(_PASS_RE.match(anthropic_text))
-        verdict_other = bool(_PASS_RE.match(other_text))
-        verdicts_disagreed = verdict_anthropic != verdict_other
-        # Stricter than either alone: PASS iff both agree on PASS.
-        passed = verdict_anthropic and verdict_other
         details["dual_family"] = True
         details["other_model"] = dual.get("other_model")
-        details["verdict_anthropic"] = verdict_anthropic
-        details["verdict_other"] = verdict_other
-        details["verdicts_disagreed"] = verdicts_disagreed
-        details["judge_text_anthropic"] = anthropic_text
-        details["judge_text_other"] = other_text
+        anthropic_error = dual.get("anthropic_error")
+        other_error = dual.get("other_error")
+        if anthropic_error or other_error:
+            # One side errored: this is a judge/harness fault, not a
+            # verdict on the migration. Fail the tier but mark it
+            # judge_error so it is never read as a genuine FAIL.
+            passed = False
+            details["judge_error"] = True
+            if anthropic_error:
+                details["anthropic_error"] = str(anthropic_error)
+            if other_error:
+                details["other_error"] = str(other_error)
+        else:
+            anthropic_text = _extract_text(dual.get("anthropic_envelope") or {})
+            other_text = _extract_text(dual.get("other_envelope") or {})
+            verdict_anthropic = bool(_PASS_RE.match(anthropic_text))
+            verdict_other = bool(_PASS_RE.match(other_text))
+            verdicts_disagreed = verdict_anthropic != verdict_other
+            # Stricter than either alone: PASS iff both agree on PASS.
+            passed = verdict_anthropic and verdict_other
+            details["verdict_anthropic"] = verdict_anthropic
+            details["verdict_other"] = verdict_other
+            details["verdicts_disagreed"] = verdicts_disagreed
+            details["judge_text_anthropic"] = anthropic_text
+            details["judge_text_other"] = other_text
     else:
         passed = bool(_PASS_RE.match(raw_text))
 

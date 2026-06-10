@@ -301,3 +301,89 @@ def test_build_judge_adapter_requires_other_model_when_dual(tmp_path: Path) -> N
             anthropic_cassette_dir=None,
             openai_cassette_dir=None,
         )
+
+
+# ---------------------------------------------------------------------------
+# One-sided failure contract (bead migration_evals-7bo)
+# ---------------------------------------------------------------------------
+
+
+class _RaisingJudge:
+    """A judge whose API call always raises."""
+
+    def __init__(self, exc: Exception) -> None:
+        self._exc = exc
+        self.call_count = 0
+
+    def messages_create(self, **kwargs: Any) -> Mapping[str, Any]:
+        self.call_count += 1
+        raise self._exc
+
+
+def test_dual_judge_other_side_failure_surfaces_error_not_envelope() -> None:
+    adapter = DualFamilyJudgeAdapter(
+        anthropic_adapter=_FakeJudge("PASS anthropic"),
+        other_adapter=_RaisingJudge(TimeoutError("openai down")),
+        other_model="gpt-4o-mini",
+    )
+    envelope = adapter.messages_create(
+        model="claude-haiku-4-5",
+        messages=[{"role": "user", "content": "x"}],
+        max_tokens=8,
+    )
+    dual = envelope["_dual_family"]
+    assert "other_envelope" not in dual
+    assert "TimeoutError" in dual["other_error"]
+    assert "openai down" in dual["other_error"]
+    # The healthy side's envelope is still present and content is coherent.
+    assert dual["anthropic_envelope"]["content"][0]["text"] == "PASS anthropic"
+    assert envelope["content"][0]["text"] == "PASS anthropic"
+
+
+def test_dual_judge_anthropic_side_failure_surfaces_error() -> None:
+    adapter = DualFamilyJudgeAdapter(
+        anthropic_adapter=_RaisingJudge(ConnectionError("anthropic down")),
+        other_adapter=_FakeJudge("PASS openai", family="openai"),
+        other_model="gpt-4o-mini",
+    )
+    envelope = adapter.messages_create(
+        model="claude-haiku-4-5",
+        messages=[{"role": "user", "content": "x"}],
+        max_tokens=8,
+    )
+    dual = envelope["_dual_family"]
+    assert "anthropic_envelope" not in dual
+    assert "ConnectionError" in dual["anthropic_error"]
+    assert dual["other_envelope"]["content"][0]["text"] == "PASS openai"
+    # Top-level content is empty (anthropic side never answered).
+    assert envelope["content"] == []
+
+
+def test_dual_judge_both_sides_failing_raises() -> None:
+    adapter = DualFamilyJudgeAdapter(
+        anthropic_adapter=_RaisingJudge(ConnectionError("anthropic down")),
+        other_adapter=_RaisingJudge(TimeoutError("openai down")),
+        other_model="gpt-4o-mini",
+    )
+    with pytest.raises(RuntimeError, match="both adapters failed"):
+        adapter.messages_create(
+            model="claude-haiku-4-5",
+            messages=[{"role": "user", "content": "x"}],
+            max_tokens=8,
+        )
+
+
+def test_dual_judge_one_sided_failure_still_calls_other_side() -> None:
+    """The healthy side must still be consulted (no fail-fast skip)."""
+    other = _FakeJudge("PASS openai", family="openai")
+    adapter = DualFamilyJudgeAdapter(
+        anthropic_adapter=_RaisingJudge(ConnectionError("anthropic down")),
+        other_adapter=other,
+        other_model="gpt-4o-mini",
+    )
+    adapter.messages_create(
+        model="claude-haiku-4-5",
+        messages=[{"role": "user", "content": "x"}],
+        max_tokens=8,
+    )
+    assert other.call_count == 1

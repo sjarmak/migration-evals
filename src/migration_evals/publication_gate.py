@@ -4,9 +4,14 @@
 Fails CI if any ``result.json`` under a run directory is missing an
 ``oracle_spec_sha`` / ``recipe_spec_sha`` / ``pre_reg_sha`` stamp, or if any
 stored stamp does not match the sha256 of the committed spec file it refers
-to. With ``--require-calibration``, the gate also refuses runs whose
+to. Results carrying a ``cassette_miss`` stamp anywhere (a replay adapter
+fabricated a verdict because no cassette entry existed) are always refused.
+With ``--require-calibration``, the gate also refuses runs whose
 recipe lacks a committed ``calibration.json`` or whose per-tier FPR / FNR
 exceeds the thresholds declared in ``docs/hypotheses_and_thresholds.md``.
+With ``--require-judge-calibration`` (or whenever the manifest declares
+``judge_calibration``), it refuses runs whose cross-family judge kappa
+summary reports unreliable rater pairs.
 
 Manifest contract
 -----------------
@@ -49,7 +54,11 @@ REQUIRED_MANIFEST_KEYS = ("oracle_spec", "recipe_spec", "hypotheses")
 # rather than a hand-authored recipe). ``calibration_report`` points at
 # the per-recipe calibration.json produced by ``scripts/calibrate.py``;
 # the gate consults it whenever ``--require-calibration`` is set.
-OPTIONAL_MANIFEST_KEYS = ("prompt_spec", "calibration_report")
+# ``judge_calibration`` points at the kappa summary produced by
+# ``scripts/judge_calibrate.py``; its unreliable-pair floor is enforced
+# whenever the key is present, and the key itself becomes mandatory under
+# ``--require-judge-calibration``.
+OPTIONAL_MANIFEST_KEYS = ("prompt_spec", "calibration_report", "judge_calibration")
 STAMP_FIELDS = {
     "oracle_spec_sha": "oracle_spec",
     "recipe_spec_sha": "recipe_spec",
@@ -187,11 +196,90 @@ def _check_calibration(run_dir: Path, manifest: dict, *, require: bool) -> int |
     return None
 
 
+def _find_cassette_miss(node: object, path: str = "$") -> str | None:
+    """Return the JSON path of the first truthy ``cassette_miss`` stamp.
+
+    Replay adapters stamp ``cassette_miss=True`` on any envelope they
+    fabricated because no recorded cassette entry existed. Such a verdict
+    proves nothing about the trial, so a result carrying the stamp
+    anywhere (tier details, raw envelopes, dual-family blocks) must never
+    pass the gate.
+    """
+    if isinstance(node, dict):
+        if node.get("cassette_miss"):
+            return f"{path}.cassette_miss"
+        for key, value in node.items():
+            found = _find_cassette_miss(value, f"{path}.{key}")
+            if found is not None:
+                return found
+    elif isinstance(node, list):
+        for index, value in enumerate(node):
+            found = _find_cassette_miss(value, f"{path}[{index}]")
+            if found is not None:
+                return found
+    return None
+
+
+def _check_judge_calibration(run_dir: Path, manifest: dict, *, require: bool) -> int | None:
+    """Enforce the cross-family judge kappa floor (bead migration_evals-71b).
+
+    A dual-judge run must not ship while any rater pair sits below the
+    kappa floor (or is NaN from a constant rater). The manifest's
+    ``judge_calibration`` key points at the summary JSON written by
+    ``scripts/judge_calibrate.py``; the gate enforces it whenever the
+    key is present, and requires the key under
+    ``--require-judge-calibration``. Low per-pair sample counts are
+    warned about (sampling noise) but do not fail the gate on their own.
+
+    Returns ``None`` on success or skip; ``1`` on failure.
+    """
+    raw = manifest.get("judge_calibration")
+    if not raw:
+        if require:
+            return _fail(
+                f"manifest.json missing 'judge_calibration' "
+                f"(required by --require-judge-calibration) under {run_dir}"
+            )
+        return None
+    calibration_path = _resolve_spec_path(run_dir, raw)
+    if not calibration_path.is_file():
+        return _fail(f"judge_calibration file missing: {calibration_path}")
+    try:
+        with calibration_path.open() as fh:
+            summary = json.load(fh)
+    except json.JSONDecodeError as exc:
+        return _fail(f"{calibration_path}: invalid JSON ({exc})")
+    if not isinstance(summary, dict) or not isinstance(summary.get("unreliable_pairs"), list):
+        return _fail(
+            f"{calibration_path}: not a judge calibration summary "
+            "(expected an object with an 'unreliable_pairs' list)"
+        )
+
+    low_sample = summary.get("low_sample_pairs")
+    if isinstance(low_sample, list) and low_sample:
+        print(
+            f"publication_gate: WARNING: {calibration_path}: judge "
+            f"calibration pairs with low sample counts (kappa is noise-"
+            f"dominated): {', '.join(str(p) for p in low_sample)}",
+            file=sys.stderr,
+        )
+
+    unreliable = summary["unreliable_pairs"]
+    if unreliable:
+        return _fail(
+            f"{calibration_path}: judge calibration reports unreliable "
+            f"pairs (kappa below floor or undefined): "
+            f"{', '.join(str(p) for p in unreliable)}"
+        )
+    return None
+
+
 def check_run(
     run_dir: Path,
     *,
     require_gold_anchor: bool = False,
     require_calibration: bool = False,
+    require_judge_calibration: bool = False,
 ) -> int:
     """Return 0 if the run passes the gate, 1 otherwise."""
     if not run_dir.is_dir():
@@ -207,6 +295,10 @@ def check_run(
     calibration_failure = _check_calibration(run_dir, manifest, require=require_calibration)
     if calibration_failure is not None:
         return calibration_failure
+
+    judge_failure = _check_judge_calibration(run_dir, manifest, require=require_judge_calibration)
+    if judge_failure is not None:
+        return judge_failure
 
     # Precompute expected SHAs from the committed files referenced in the
     # manifest. Required stamps are always enforced; optional stamps
@@ -247,6 +339,14 @@ def check_run(
                     f"{result_path}: stale stamp {stamp_field!r} "
                     f"(stored={stored!r}, expected={expected!r})"
                 )
+
+        miss_path = _find_cassette_miss(payload)
+        if miss_path is not None:
+            return _fail(
+                f"{result_path}: cassette_miss stamp at {miss_path} - a "
+                f"replay adapter fabricated this verdict (no recorded "
+                f"cassette entry); the run is not publishable"
+            )
 
     gold_failure = _check_gold_anchor(run_dir, require=require_gold_anchor)
     if gold_failure is not None:
@@ -292,6 +392,17 @@ def _build_parser() -> argparse.ArgumentParser:
             "under '## Calibration thresholds (per tier)'."
         ),
     )
+    parser.add_argument(
+        "--require-judge-calibration",
+        action="store_true",
+        help=(
+            "Require manifest.json to declare a 'judge_calibration' "
+            "path (the kappa summary from scripts/judge_calibrate.py); "
+            "refuse the run if any rater pair is below the kappa floor. "
+            "Without this flag, the floor is still enforced whenever "
+            "the manifest declares the key."
+        ),
+    )
     return parser
 
 
@@ -301,6 +412,7 @@ def main(argv: list[str] | None = None) -> int:
         args.check_run,
         require_gold_anchor=args.require_gold_anchor,
         require_calibration=args.require_calibration,
+        require_judge_calibration=args.require_judge_calibration,
     )
 
 

@@ -18,10 +18,10 @@ from pathlib import Path
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_REPO_ROOT))
 
-import pytest
+import pytest  # noqa: E402
 
-from migration_evals import python23_probe
-from migration_evals.synthetic import python2_generator
+from migration_evals import python23_probe  # noqa: E402
+from migration_evals.synthetic import python2_generator  # noqa: E402
 
 _FIXTURE_REPOS = Path(__file__).resolve().parent / "fixtures" / "python2_repos"
 
