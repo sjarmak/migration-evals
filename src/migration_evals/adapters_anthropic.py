@@ -38,19 +38,30 @@ change.
 from __future__ import annotations
 
 import os
+import sys
 from collections.abc import Iterable, Mapping
 from pathlib import Path
 from typing import Any
 
+from migration_evals.cost_utils import (
+    estimate_input_tokens,
+    rates_staleness_warning,
+    worst_case_cost,
+)
+
 __all__ = [
     "AnthropicSDKAdapter",
+    "DEFAULT_COST_RATES_AS_OF",
     "BudgetExceededError",
     "DEFAULT_COST_RATES",
     "build_anthropic_adapter",
 ]
 
 
-# Approximate per-million-token rates as of 2026-04. USD per 1M tokens.
+DEFAULT_COST_RATES_AS_OF = "2026-04-01"
+
+# Approximate per-million-token rates as of DEFAULT_COST_RATES_AS_OF.
+# USD per 1M tokens.
 # Source: https://www.anthropic.com/api/pricing - rate updates land roughly
 # quarterly; refresh this table when they do. The funnel uses these only
 # for the budget guard and post-call cost accounting; mispricing degrades
@@ -84,51 +95,6 @@ class BudgetExceededError(RuntimeError):
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-
-
-def _estimate_input_tokens(messages: Iterable[Mapping[str, Any]], system: Any) -> int:
-    """Rough char/4 input-token estimate, sufficient for budget guarding.
-
-    The Anthropic tokenizer is BPE; 4 chars per token is the documented
-    rule of thumb. We deliberately do not import a real tokenizer here -
-    the budget guard is a coarse safety net, not a billing predictor.
-    """
-    char_count = 0
-    if isinstance(system, str):
-        char_count += len(system)
-    elif isinstance(system, list):
-        for blk in system:
-            if isinstance(blk, Mapping):
-                text = blk.get("text")
-                if isinstance(text, str):
-                    char_count += len(text)
-    for msg in messages:
-        content = msg.get("content")
-        if isinstance(content, str):
-            char_count += len(content)
-        elif isinstance(content, list):
-            for blk in content:
-                if isinstance(blk, Mapping):
-                    text = blk.get("text")
-                    if isinstance(text, str):
-                        char_count += len(text)
-    return max(1, char_count // 4)
-
-
-def _worst_case_cost(
-    *,
-    model: str,
-    in_tokens_est: int,
-    max_tokens: int,
-    cost_rates: Mapping[str, Mapping[str, float]],
-) -> float | None:
-    """Return USD upper bound for the next call, or None when unknown."""
-    rates = cost_rates.get(model)
-    if rates is None:
-        return None
-    input_cost = (in_tokens_est * rates["input"]) / 1_000_000
-    output_cost = (max_tokens * rates["output"]) / 1_000_000
-    return input_cost + output_cost
 
 
 def _actual_cost(
@@ -202,6 +168,12 @@ class AnthropicSDKAdapter:
         self._cost_rates: Mapping[str, Mapping[str, float]] = (
             cost_rates if cost_rates is not None else DEFAULT_COST_RATES
         )
+        if cost_rates is None:
+            warning = rates_staleness_warning(
+                DEFAULT_COST_RATES_AS_OF, label="anthropic default cost rates"
+            )
+            if warning:
+                print(f"warning: {warning}", file=sys.stderr)
         self._per_call_budget_usd = per_call_budget_usd
         self.total_cost_usd: float = 0.0
         self.call_count: int = 0
@@ -223,8 +195,8 @@ class AnthropicSDKAdapter:
         materialised_messages = list(messages)
         # Pre-call budget guard.
         if self._per_call_budget_usd is not None:
-            in_est = _estimate_input_tokens(materialised_messages, system)
-            worst = _worst_case_cost(
+            in_est = estimate_input_tokens(materialised_messages, system)
+            worst = worst_case_cost(
                 model=model,
                 in_tokens_est=in_est,
                 max_tokens=max_tokens,

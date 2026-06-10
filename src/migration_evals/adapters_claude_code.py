@@ -47,6 +47,8 @@ import subprocess
 from collections.abc import Iterable, Mapping
 from typing import Any
 
+from migration_evals.cost_utils import flatten_system
+
 __all__ = ["ClaudeCodeAdapter", "ClaudeCodeError"]
 
 
@@ -97,7 +99,7 @@ class ClaudeCodeAdapter:
         **kwargs: Any,
     ) -> Mapping[str, Any]:
         materialised = list(messages)
-        system_text = _flatten_system(system)
+        system_text = flatten_system(system)
         user_prompt = _compose_user_prompt(materialised)
 
         # Capture before subprocess call so a thrown exception still
@@ -182,28 +184,6 @@ class ClaudeCodeAdapter:
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-
-
-def _flatten_system(system: Any) -> str:
-    """Collapse the AnthropicAdapter ``system`` payload into a single string.
-
-    Accepts None, a plain string, or a list of content blocks. Block-level
-    ``cache_control`` markers are intentionally dropped - the paid-API form
-    of prompt caching is not consumed by ``claude -p``.
-    """
-    if system is None:
-        return ""
-    if isinstance(system, str):
-        return system
-    if isinstance(system, list):
-        parts: list[str] = []
-        for blk in system:
-            if isinstance(blk, Mapping):
-                text = blk.get("text")
-                if isinstance(text, str) and text:
-                    parts.append(text)
-        return "\n\n".join(parts)
-    return str(system)
 
 
 def _compose_user_prompt(messages: Iterable[Mapping[str, Any]]) -> str:
