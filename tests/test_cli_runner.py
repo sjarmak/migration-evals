@@ -9,13 +9,14 @@ import sys
 import time
 from pathlib import Path
 
+import pytest
 import yaml
 from jsonschema import Draft7Validator
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_REPO_ROOT))
 
-from migration_evals.runner import run_from_config  # noqa: E402
+from migration_evals.runner import _parse_repo_entries, run_from_config  # noqa: E402
 
 REPO_ROOT = _REPO_ROOT
 SMOKE_CONFIG = REPO_ROOT / "configs" / "java8_17_smoke.yaml"
@@ -116,6 +117,79 @@ def test_run_from_config_missing_required_key(tmp_path: Path) -> None:
     bad.write_text(yaml.safe_dump({"migration_id": "x"}))
     rc = run_from_config(bad)
     assert rc == 2
+
+
+# ---------------------------------------------------------------------------
+# Repo-entry parsing guard rails (runner._parse_repo_entries)
+# ---------------------------------------------------------------------------
+
+
+def test_parse_repo_entries_rejects_non_mapping() -> None:
+    with pytest.raises(ValueError, match=r"repos\[0\] must be a mapping; got str"):
+        _parse_repo_entries(["not-a-mapping"])
+
+
+def test_parse_repo_entries_missing_path() -> None:
+    with pytest.raises(ValueError, match=r"repos\[0\] missing required field 'path'"):
+        _parse_repo_entries([{"seed": 1}])
+
+
+def test_parse_repo_entries_missing_seed() -> None:
+    with pytest.raises(ValueError, match=r"repos\[1\] missing required field 'seed'"):
+        _parse_repo_entries([{"path": "repo01", "seed": 1}, {"path": "repo02"}])
+
+
+# ---------------------------------------------------------------------------
+# run_from_config validation exit codes (stamps + repo-path guards)
+# ---------------------------------------------------------------------------
+
+
+def test_run_from_config_missing_stamps_keys(tmp_path: Path, capsys) -> None:
+    cfg = tmp_path / "no_stamps.yaml"
+    cfg.write_text(
+        yaml.safe_dump(
+            {
+                "migration_id": "java8_17",
+                "agent_model": "claude-sonnet-4-6",
+                "variant": "smoke",
+                "output_root": str(tmp_path / "out"),
+                "repos": [{"path": str(tmp_path / "repo01"), "seed": 1}],
+                # stamps deliberately omits recipe_spec + hypotheses.
+                "stamps": {"oracle_spec": str(tmp_path / "oracle.yaml")},
+            }
+        )
+    )
+    rc = run_from_config(cfg)
+    assert rc == 2
+    err = capsys.readouterr().err
+    assert "config 'stamps' must include oracle_spec, recipe_spec, and hypotheses" in err
+
+
+def test_run_from_config_nonexistent_repo_path(tmp_path: Path, capsys) -> None:
+    missing_repo = tmp_path / "does_not_exist"
+    cfg = tmp_path / "bad_repo.yaml"
+    cfg.write_text(
+        yaml.safe_dump(
+            {
+                "migration_id": "java8_17",
+                "agent_model": "claude-sonnet-4-6",
+                "variant": "smoke",
+                "output_root": str(tmp_path / "out"),
+                "repos": [{"path": str(missing_repo), "seed": 1}],
+                # Stamp paths only need to be non-null to clear the stamps
+                # guard; the repo-path check fires before they are read.
+                "stamps": {
+                    "oracle_spec": str(tmp_path / "oracle.yaml"),
+                    "recipe_spec": str(tmp_path / "recipe.yaml"),
+                    "hypotheses": str(tmp_path / "hypotheses.md"),
+                },
+            }
+        )
+    )
+    rc = run_from_config(cfg)
+    assert rc == 2
+    err = capsys.readouterr().err
+    assert f"error: repo path does not exist: {missing_repo}" in err
 
 
 # ---------------------------------------------------------------------------

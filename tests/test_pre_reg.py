@@ -210,6 +210,44 @@ def test_gate_fails_on_nonexistent_dir(tmp_path: Path) -> None:
     assert "does not exist" in result.stderr
 
 
+def test_gate_fails_on_invalid_json_manifest(tmp_path: Path) -> None:
+    # Copy the run without going through _stage_run (which json-parses the
+    # manifest) so we can leave a deliberately malformed body in place.
+    staged = tmp_path / "run_bad_json"
+    shutil.copytree(RUN_STAMPED, staged)
+    (staged / "manifest.json").write_text("{ not valid json")
+
+    result = _run_gate(staged)
+    assert result.returncode == 1
+    assert "manifest.json is not valid JSON" in result.stderr
+
+
+def test_gate_fails_on_non_object_manifest(tmp_path: Path) -> None:
+    staged = tmp_path / "run_list_manifest"
+    shutil.copytree(RUN_STAMPED, staged)
+    (staged / "manifest.json").write_text(json.dumps(["oracle_spec", "recipe_spec"]))
+
+    result = _run_gate(staged)
+    assert result.returncode == 1
+    assert "manifest.json must be a JSON object" in result.stderr
+
+
+def test_gate_fails_on_manifest_missing_required_keys(tmp_path: Path) -> None:
+    staged = _stage_run(RUN_STAMPED, tmp_path / "run_missing_keys")
+    manifest_path = staged / "manifest.json"
+    manifest = json.loads(manifest_path.read_text())
+    # Drop two of the three required keys; the gate must name what's missing.
+    manifest.pop("recipe_spec", None)
+    manifest.pop("hypotheses", None)
+    manifest_path.write_text(json.dumps(manifest, indent=2))
+
+    result = _run_gate(staged)
+    assert result.returncode == 1
+    assert "manifest.json missing required keys" in result.stderr
+    assert "recipe_spec" in result.stderr
+    assert "hypotheses" in result.stderr
+
+
 @pytest.mark.parametrize("field", ["oracle_spec_sha", "recipe_spec_sha", "pre_reg_sha"])
 def test_gate_names_each_stale_stamp_field(tmp_path: Path, field: str) -> None:
     staged = _stage_run(RUN_STAMPED, tmp_path / f"run_stale_{field}")
