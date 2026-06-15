@@ -29,6 +29,7 @@ from migration_evals.adapters_docker import (  # noqa: E402
     DockerSandboxAdapter,
     build_sandbox_adapter,
 )
+from migration_evals.adapters_docker_egress import EgressFilterManager  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # subprocess.run recorder
@@ -855,7 +856,7 @@ def test_pull_proxy_sidecar_is_hardened(tmp_path: Path, monkeypatch: pytest.Monk
     # permissions, so checking only the UID would let "65534:0" through.
     # We also assert the value matches PROXY_SIDECAR_USER so the test
     # fails loudly if someone changes the constant without updating here.
-    from migration_evals.adapters_docker import (  # noqa: E402
+    from migration_evals.adapters_docker_egress import (  # noqa: E402
         PROXY_SIDECAR_PIDS_LIMIT,
         PROXY_SIDECAR_TMPFS_MOUNT,
         PROXY_SIDECAR_USER,
@@ -906,7 +907,8 @@ def test_pull_proxy_sidecar_is_hardened(tmp_path: Path, monkeypatch: pytest.Monk
     # Rendered tinyproxy.conf must redirect PidFile and LogFile to the
     # tmpfs at /tmp; otherwise the sidecar crashes on startup under a
     # read-only rootfs (default paths land in /var/run or /var/log).
-    rendered_conf = adapter._render_proxy_config(allow_cidr="10.0.0.0/24")
+    egress_mgr = EgressFilterManager(docker_bin="docker", policy=policy)
+    rendered_conf = egress_mgr._render_proxy_config(allow_cidr="10.0.0.0/24")
     assert re.search(
         r'^PidFile\s+"?/tmp/', rendered_conf, re.MULTILINE
     ), "tinyproxy.conf must point PidFile at /tmp so it lands in the tmpfs"
@@ -1016,7 +1018,7 @@ def test_anchored_host_regex_tolerates_port_suffix() -> None:
     be tolerant of both so an allowlisted host is not silently
     denied on a version skew.
     """
-    pattern = re.compile(DockerSandboxAdapter._anchored_host_regex("example.com"))
+    pattern = re.compile(EgressFilterManager._anchored_host_regex("example.com"))
     assert pattern.match("example.com"), "must match bare host"
     assert pattern.match("example.com:443"), "must match host:443"
     assert pattern.match("example.com:80"), "must match host:80"
@@ -1042,7 +1044,7 @@ def test_anchored_host_regex_documents_zero_port_gap() -> None:
     parser-based check) is a deliberate change, not an accidental
     behaviour drift.
     """
-    pattern = re.compile(DockerSandboxAdapter._anchored_host_regex("example.com"))
+    pattern = re.compile(EgressFilterManager._anchored_host_regex("example.com"))
     assert pattern.match(
         "example.com:0"
     ), "regex still admits :0 (reserved, but OS rejects at socket layer)"
@@ -1059,7 +1061,7 @@ def test_anchored_host_regex_documents_high_port_gap() -> None:
     semantically-too-broad allowlist pattern. This test pins the
     documented gap.
     """
-    pattern = re.compile(DockerSandboxAdapter._anchored_host_regex("example.com"))
+    pattern = re.compile(EgressFilterManager._anchored_host_regex("example.com"))
     assert pattern.match(
         "example.com:99999"
     ), "regex still admits :99999 (out of TCP range, but OS rejects)"
@@ -1076,7 +1078,7 @@ def test_anchored_host_regex_rejects_more_than_five_port_digits() -> None:
     without claiming full numeric-range validation (see the two
     documenting tests above).
     """
-    pattern = re.compile(DockerSandboxAdapter._anchored_host_regex("example.com"))
+    pattern = re.compile(EgressFilterManager._anchored_host_regex("example.com"))
     # Boundary: 5-digit ports must still be accepted. Without this
     # assertion an accidental over-tightening to ``{1,4}`` would pass
     # silently — the documenting tests above don't pin the upper
@@ -1106,31 +1108,29 @@ def test_render_proxy_config_validates_allow_cidr_against_injection() -> None:
     # Newline injection: the canonical motivating case. A naive
     # interpolation would render two tinyproxy directives, the second
     # an attacker-controlled ``Listen 0.0.0.0:9999``-style line.
-    rendered = DockerSandboxAdapter._safe_cidr("10.0.0.0/24\nListen 0.0.0.0:9999")
+    rendered = EgressFilterManager._safe_cidr("10.0.0.0/24\nListen 0.0.0.0:9999")
     assert rendered == "0.0.0.0/0", (
         f"newline-bearing CIDR must be rejected and fall back to 0.0.0.0/0; " f"got {rendered!r}"
     )
 
     # Other non-CIDR garbage that should also fall back rather than be
     # passed through verbatim into the conf.
-    assert DockerSandboxAdapter._safe_cidr("not-a-cidr") == "0.0.0.0/0"
-    assert DockerSandboxAdapter._safe_cidr("10.0.0.0/24 evil") == "0.0.0.0/0"
-    assert DockerSandboxAdapter._safe_cidr("") == "0.0.0.0/0"
-    assert DockerSandboxAdapter._safe_cidr("10.0.0.0/99") == "0.0.0.0/0"
+    assert EgressFilterManager._safe_cidr("not-a-cidr") == "0.0.0.0/0"
+    assert EgressFilterManager._safe_cidr("10.0.0.0/24 evil") == "0.0.0.0/0"
+    assert EgressFilterManager._safe_cidr("") == "0.0.0.0/0"
+    assert EgressFilterManager._safe_cidr("10.0.0.0/99") == "0.0.0.0/0"
 
     # Valid CIDRs (network and host-bit-set forms) round-trip. Docker's
     # IPAM emits the canonical network form; accepting strict=False keeps
     # us tolerant of upstream formatting changes that could emit a
     # host-bit-set form.
-    assert DockerSandboxAdapter._safe_cidr("10.0.0.0/24") == "10.0.0.0/24"
-    assert DockerSandboxAdapter._safe_cidr("172.18.0.0/16") == "172.18.0.0/16"
+    assert EgressFilterManager._safe_cidr("10.0.0.0/24") == "10.0.0.0/24"
+    assert EgressFilterManager._safe_cidr("172.18.0.0/16") == "172.18.0.0/16"
     # IPv6 CIDR is also valid (Docker can emit IPv6 IPAM configs).
-    assert DockerSandboxAdapter._safe_cidr("fd00::/64") == "fd00::/64"
+    assert EgressFilterManager._safe_cidr("fd00::/64") == "fd00::/64"
 
 
-def test_render_proxy_config_blocks_newline_injection_at_render_site(
-    tmp_path: Path,
-) -> None:
+def test_render_proxy_config_blocks_newline_injection_at_render_site() -> None:
     """Render-time test: a newline in ``allow_cidr`` must not produce a
     multi-line ``Allow`` directive in the generated conf (4cz).
 
@@ -1139,8 +1139,8 @@ def test_render_proxy_config_blocks_newline_injection_at_render_site(
     future refactor that drops the validation call from the render path
     fails this test even if ``_safe_cidr`` is still correct in isolation.
     """
-    adapter = DockerSandboxAdapter(tmp_path)
-    conf = adapter._render_proxy_config(allow_cidr="10.0.0.0/24\nListen 0.0.0.0:9999")
+    egress_mgr = EgressFilterManager(docker_bin="docker", policy=SandboxPolicy.hardened_default())
+    conf = egress_mgr._render_proxy_config(allow_cidr="10.0.0.0/24\nListen 0.0.0.0:9999")
     # The conf must contain exactly one ``Allow`` directive.
     allow_lines = [line for line in conf.splitlines() if line.startswith("Allow ")]
     assert allow_lines == ["Allow 0.0.0.0/0"], (
@@ -1206,9 +1206,9 @@ def test_pull_proxy_run_failure_cleans_up_network(
     """If the proxy sidecar fails to start (e.g. image not pulled), the
     half-created per-sandbox network must be torn down so we don't leak
     docker resources across runs. The on-disk ``config_dir`` created by
-    ``_setup_egress_filter`` must also be cleaned up via
-    ``_cleanup_scratch`` so the proxy-failure path does not leak
-    ``mig-eval-proxyconf-*`` directories alongside the half-built
+    ``EgressFilterManager.setup`` must also be cleaned up via
+    ``EgressFilterManager._rmtree`` so the proxy-failure path does not
+    leak ``mig-eval-proxyconf-*`` directories alongside the half-built
     sandbox.
     """
     err = subprocess.CalledProcessError(
@@ -1227,25 +1227,25 @@ def test_pull_proxy_run_failure_cleans_up_network(
     )
     monkeypatch.setattr(subprocess, "run", recorder)
 
-    # Spy on _cleanup_scratch (a @staticmethod) so we can assert that the
-    # ExitStack-registered cleanup actually fires for the egress
-    # config_dir on the proxy-failure path. We delegate to the real
+    # Spy on EgressFilterManager._rmtree (a @staticmethod) so we can
+    # assert that the ExitStack-registered cleanup actually fires for the
+    # egress config_dir on the proxy-failure path. We delegate to the real
     # implementation so the on-disk teardown still happens.
     cleanup_calls: list[Path] = []
-    original_cleanup = DockerSandboxAdapter._cleanup_scratch
+    original_cleanup = EgressFilterManager._rmtree
 
     def _spy_cleanup(path: Path) -> None:
         cleanup_calls.append(path)
         original_cleanup(path)
 
     # The ``staticmethod(...)`` wrapper is load-bearing: production code
-    # registers the callback as ``stack.callback(self._cleanup_scratch, ...)``,
+    # registers the callback as ``stack.callback(self._rmtree, ...)``,
     # which goes through the descriptor protocol on the class. Patching the
     # class attribute with a bare function would cause Python to bind ``self``
     # as the first argument at attribute lookup, producing a TypeError when
     # the callback fires. Wrapping in ``staticmethod`` matches the original
     # decorator and bypasses binding so the spy receives only ``config_dir``.
-    monkeypatch.setattr(DockerSandboxAdapter, "_cleanup_scratch", staticmethod(_spy_cleanup))
+    monkeypatch.setattr(EgressFilterManager, "_rmtree", staticmethod(_spy_cleanup))
 
     policy = SandboxPolicy(network="pull", network_allowlist=("registry-1.docker.io",))
     adapter = DockerSandboxAdapter(tmp_path, policy=policy)
@@ -1256,13 +1256,13 @@ def test_pull_proxy_run_failure_cleans_up_network(
     assert netrms, "must clean up the per-sandbox network when proxy run fails"
 
     # The egress config_dir (mig-eval-proxyconf-<suffix>) is created on
-    # disk by _setup_egress_filter and registered for cleanup via
+    # disk by EgressFilterManager.setup and registered for cleanup via
     # ExitStack. On the proxy-run failure path the stack must unwind it,
     # not just the docker network.
     proxyconf_cleanups = [p for p in cleanup_calls if p.name.startswith("mig-eval-proxyconf-")]
     assert proxyconf_cleanups, (
-        "must call _cleanup_scratch on the egress config_dir when proxy "
-        f"run fails; saw cleanup calls: {cleanup_calls!r}"
+        "must call EgressFilterManager._rmtree on the egress config_dir when "
+        f"proxy run fails; saw cleanup calls: {cleanup_calls!r}"
     )
     # And the directory must actually be gone from disk afterwards
     # (i.e. the spy did not just record the call; the real cleanup ran).
