@@ -26,6 +26,10 @@ dependencies = [
     "PyYAML>=6.0",
     "Jinja2>=3.1",
     "jsonschema>=4.0",
+    # jsonschema imports attrs at import time. attrs is a transitive
+    # dependency of jsonschema, but pin it explicitly so a constrained
+    # resolver can never drop it and silently break test collection.
+    "attrs>=23.1",
 ]
 
 [project.optional-dependencies]
