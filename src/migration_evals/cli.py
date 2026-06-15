@@ -29,8 +29,6 @@ from migration_evals.adapters_cassette import (
     CassetteSandboxAdapter,
 )
 
-SUBCOMMANDS = ("run", "report", "regression", "harness", "probe")
-
 STAGE_CHOICES = ("compile", "tests", "judge", "daikon", "all")
 DEFAULT_STAGE = "all"
 
@@ -40,16 +38,6 @@ DEFAULT_STAGE = "all"
 DEFAULT_ORACLE_SPEC_SHA = "oracle-spec-v0"
 DEFAULT_RECIPE_SPEC_SHA = "recipe-spec-v0"
 DEFAULT_PRE_REG_SHA = "pre-reg-v0"
-
-
-def _stub(name: str) -> int:
-    """Placeholder handler for a subcommand whose real logic has not landed."""
-    print(
-        f"[migration_eval] '{name}' is a scaffold stub - "
-        "downstream work units will wire up real behaviour.",
-        file=sys.stderr,
-    )
-    return 0
 
 
 def _add_run(subparsers: argparse._SubParsersAction) -> None:
@@ -574,19 +562,17 @@ def main(argv: Sequence[str] | None = None) -> int:
     if not args.command:
         parser.print_help()
         return 0
-    if args.command == "regression":
-        return _handle_regression(args)
-    if args.command == "run":
-        return _handle_run(args)
-    if args.command == "report":
-        return _handle_report(args)
-    if args.command == "iterator-report":
-        return _handle_iterator_report(args)
-    if args.command == "harness":
-        return _handle_harness(args)
-    if args.command == "probe":
-        return _handle_probe(args)
-    return _stub(args.command)
+    handlers = {
+        "run": _handle_run,
+        "report": _handle_report,
+        "iterator-report": _handle_iterator_report,
+        "regression": _handle_regression,
+        "harness": _handle_harness,
+        "probe": _handle_probe,
+    }
+    # argparse guarantees args.command is one of the registered subcommands
+    # (or None, handled above), so the lookup never misses.
+    return handlers[args.command](args)
 
 
 if __name__ == "__main__":

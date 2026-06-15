@@ -16,6 +16,7 @@ from jsonschema import Draft7Validator
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_REPO_ROOT))
 
+from migration_evals.cli import main as cli_main  # noqa: E402
 from migration_evals.runner import _parse_repo_entries, run_from_config  # noqa: E402
 
 REPO_ROOT = _REPO_ROOT
@@ -237,6 +238,74 @@ def test_cli_run_config_smoke_under_two_minutes(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 # Harness + probe subcommand wiring (AC#8 - all subcommands exist)
 # ---------------------------------------------------------------------------
+
+
+# ---------------------------------------------------------------------------
+# run subcommand argument-guard error branches (cli._handle_run)
+# ---------------------------------------------------------------------------
+
+
+def test_cli_run_requires_config_or_repos(capsys) -> None:
+    rc = cli_main(["run"])
+    assert rc == 2
+    err = capsys.readouterr().err
+    assert "requires either a config" in err
+
+
+def test_cli_run_repos_without_out(tmp_path: Path, capsys) -> None:
+    repos_dir = tmp_path / "repos"
+    repos_dir.mkdir()
+    rc = cli_main(["run", "--repos", str(repos_dir)])
+    assert rc == 2
+    err = capsys.readouterr().err
+    assert "--out is required when --repos is provided" in err
+
+
+def test_cli_run_repos_nonexistent_dir(tmp_path: Path, capsys) -> None:
+    missing = tmp_path / "nope"
+    rc = cli_main(["run", "--repos", str(missing), "--out", str(tmp_path / "out")])
+    assert rc == 2
+    err = capsys.readouterr().err
+    assert f"--repos directory does not exist: {missing}" in err
+
+
+# ---------------------------------------------------------------------------
+# harness subcommand argument-guard error branches (cli._handle_harness)
+# ---------------------------------------------------------------------------
+
+
+def test_cli_harness_requires_action(capsys) -> None:
+    rc = cli_main(["harness"])
+    assert rc == 2
+    err = capsys.readouterr().err
+    assert "harness requires an action (synth|validate)" in err
+
+
+def test_cli_harness_requires_repo(capsys) -> None:
+    rc = cli_main(["harness", "synth"])
+    assert rc == 2
+    err = capsys.readouterr().err
+    assert "harness requires --repo" in err
+
+
+def test_cli_harness_repo_not_found(tmp_path: Path, capsys) -> None:
+    missing = tmp_path / "no_repo"
+    rc = cli_main(["harness", "validate", "--repo", str(missing)])
+    assert rc == 2
+    err = capsys.readouterr().err
+    assert f"--repo directory not found: {missing}" in err
+
+
+# ---------------------------------------------------------------------------
+# Top-level dispatch: no subcommand prints help and exits 0
+# ---------------------------------------------------------------------------
+
+
+def test_cli_no_command_prints_help(capsys) -> None:
+    rc = cli_main([])
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "Migration eval framework CLI" in out
 
 
 def test_cli_harness_validate_smoke() -> None:
