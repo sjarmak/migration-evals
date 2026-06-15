@@ -8,6 +8,7 @@ result.json files in <3 minutes.
 from __future__ import annotations
 
 import json
+import logging
 import os
 import subprocess
 import sys
@@ -269,9 +270,11 @@ def test_cli_run_stage_compile_emits_10_valid_results(tmp_path: Path) -> None:
 # -- quality phase error isolation (bead migration_evals-442) -----------------
 
 
-def test_quality_phase_exception_is_errored_not_skipped(monkeypatch) -> None:
+def test_quality_phase_exception_is_errored_not_skipped(monkeypatch, caplog) -> None:
     """A bug in a quality oracle must surface as errored=True with the
-    exception preserved - never masquerade as an intentional skip."""
+    exception preserved - never masquerade as an intentional skip - and
+    must be logged with a traceback so it is not silently swallowed in a
+    long run."""
     from migration_evals.oracles import quality as quality_mod
     from migration_evals.quality_spec import QualitySpec
 
@@ -286,7 +289,8 @@ def test_quality_phase_exception_is_errored_not_skipped(monkeypatch) -> None:
         "anthropic": StubAnthropic("PASS"),
         "quality_spec": QualitySpec(),
     }
-    result = run_funnel(FIXTURE_REPOS / "repo01", recipe, adapters)
+    with caplog.at_level(logging.WARNING, logger="migration_evals.funnel"):
+        result = run_funnel(FIXTURE_REPOS / "repo01", recipe, adapters)
     assert result.final_verdict.passed is True  # cascade verdict unaffected
     quality = dict(result.quality_verdicts)
     verdict = quality["quality_phase"]
@@ -294,6 +298,13 @@ def test_quality_phase_exception_is_errored_not_skipped(monkeypatch) -> None:
     assert verdict.details["error_type"] == "RuntimeError"
     assert "quality oracle bug" in verdict.details["error"]
     assert "skipped" not in verdict.details
+
+    # The error is logged before the errored verdict is recorded, with a
+    # traceback (exc_info), so a real oracle bug is visible in a long run.
+    records = [r for r in caplog.records if r.name == "migration_evals.funnel"]
+    assert any(
+        r.levelno == logging.WARNING and r.exc_info is not None for r in records
+    ), "expected a WARNING with exc_info from funnel on quality-oracle raise"
 
 
 def test_judge_error_short_circuit_classified_as_harness_error() -> None:

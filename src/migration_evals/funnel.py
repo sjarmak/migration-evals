@@ -17,6 +17,7 @@ signature. The known keys are ``"sandbox"``, ``"anthropic"``, and
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any
@@ -33,16 +34,22 @@ from migration_evals.oracles.verdict import FunnelResult, OracleVerdict
 from migration_evals.synthetic import ast_oracle
 from migration_evals.types import TIER_ORDER, FailureClass
 
+LOG = logging.getLogger(__name__)
+
 AST_TIER_NAME = "ast_conformance"
 AST_DEFAULT_COST_USD = 0.0
 
-# Stage alias table - maps CLI --stage values to the set of tiers to run.
-# "all" is the canonical TIER_ORDER from types.py so the funnel, the
-# report tables, and new tiers stay in sync from one declaration.
+# Stage alias table - the single source of truth mapping stage names to the
+# set of tiers to run. Both the CLI ``--stage`` filter and the config
+# ``stages:`` list resolve through this table, so funnel, runner, report
+# tables, and new tiers stay in sync from one declaration.
+# "all" is the canonical TIER_ORDER from types.py; per-stage entries follow
+# tier order so the mapping reads as the funnel cascade.
 STAGE_ALIASES: dict[str, tuple[str, ...]] = {
     "diff": (tier0_diff.TIER_NAME,),
     "compile": (tier1_compile.TIER_NAME,),
     "tests": (tier2_tests.TIER_NAME,),
+    "ast": (AST_TIER_NAME,),
     "judge": (tier3_judge.TIER_NAME,),
     "daikon": (tier4_daikon.TIER_NAME,),
     "all": TIER_ORDER,
@@ -232,6 +239,11 @@ def _run_quality_oracles_safe(
     try:
         return run_quality_oracles(repo_path, quality_spec)
     except Exception as exc:
+        LOG.warning(
+            "quality oracle raised %s; recording errored quality_phase verdict",
+            type(exc).__name__,
+            exc_info=True,
+        )
         errored = OracleVerdict(
             tier="quality_phase",
             passed=True,
