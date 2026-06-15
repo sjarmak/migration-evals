@@ -91,7 +91,8 @@ if str(_SCRIPTS) not in sys.path:
 import pull_changesets  # noqa: E402
 
 from migration_evals.changesets import get_provider  # noqa: E402
-from migration_evals.runner import STAGE_TO_TIER, run_from_config  # noqa: E402
+from migration_evals.funnel import STAGE_ALIASES  # noqa: E402
+from migration_evals.runner import run_from_config  # noqa: E402
 
 
 def load_recipe_template(path: Path) -> dict[str, Any]:
@@ -257,9 +258,9 @@ def _parse_stages(raw: str) -> list[str]:
     """Parse a comma-separated --stages value, validate against the runner's
     canonical stage map."""
     stages = [s.strip() for s in raw.split(",") if s.strip()]
-    bad = [s for s in stages if s not in STAGE_TO_TIER]
+    bad = [s for s in stages if s not in STAGE_ALIASES]
     if bad:
-        raise ValueError(f"unknown stages {bad}; valid: {', '.join(sorted(STAGE_TO_TIER))}")
+        raise ValueError(f"unknown stages {bad}; valid: {', '.join(sorted(STAGE_ALIASES))}")
     return stages
 
 

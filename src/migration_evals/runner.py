@@ -34,28 +34,16 @@ import yaml
 
 from migration_evals.adapters_docker import build_sandbox_adapter
 from migration_evals.adapters_judge import build_judge_adapter
-from migration_evals.cli import (
-    _build_recipe_from_meta,
-    _load_repo_meta,
-)
+from migration_evals.dates import parse_iso_date
 from migration_evals.failure_class import classify as classify_failure
-from migration_evals.funnel import run_funnel
+from migration_evals.funnel import STAGE_ALIASES, run_funnel
+from migration_evals.harness.meta import _build_recipe_from_meta, _load_repo_meta
 from migration_evals.pre_reg import stamp_result
 from migration_evals.quality_spec import QualitySpec
 from migration_evals.result_payload import funnel_core_fields, trial_score
 from migration_evals.types import FailureClass
 
 LOG = logging.getLogger(__name__)
-
-# Tier -> CLI stage name, used when config enumerates stages.
-STAGE_TO_TIER = {
-    "diff": "diff_valid",
-    "compile": "compile_only",
-    "tests": "tests",
-    "judge": "judge",
-    "daikon": "daikon",
-    "ast": "ast_conformance",
-}
 
 
 @dataclass(frozen=True)
@@ -89,12 +77,12 @@ def _resolve_stages_for_config(stages_cfg: Sequence[str] | None) -> tuple[str, .
         return None
     tiers: list[str] = []
     for stage in stages_cfg:
-        tier = STAGE_TO_TIER.get(str(stage))
-        if tier is None:
+        alias = STAGE_ALIASES.get(str(stage))
+        if alias is None:
             raise ValueError(
-                f"unknown stage {stage!r} in config; expected one of " f"{sorted(STAGE_TO_TIER)}"
+                f"unknown stage {stage!r} in config; expected one of " f"{sorted(STAGE_ALIASES)}"
             )
-        tiers.append(tier)
+        tiers.extend(alias)
     return tuple(tiers)
 
 
@@ -122,7 +110,7 @@ def _build_payload(
     # date is strictly before the model cutoff. Both fields are populated
     # (one as the trial's score, the other as ``null``) so the aggregate
     # report can bucket without re-parsing dates.
-    created_date = _parse_date(repo_created_at)
+    created_date = parse_iso_date(repo_created_at)
     if model_cutoff_date is not None and created_date is not None:
         if created_date < model_cutoff_date:
             pre_score = score
@@ -156,23 +144,6 @@ def _build_payload(
         "pre_reg_sha": "",
     }
     return payload
-
-
-def _parse_date(raw: Any) -> date | None:
-    if raw is None:
-        return None
-    if isinstance(raw, date):
-        return raw
-    if not isinstance(raw, str) or not raw:
-        return None
-    try:
-        return date.fromisoformat(raw[:10])
-    except ValueError:
-        return None
-
-
-def _coerce_cutoff(raw: Any) -> date | None:
-    return _parse_date(raw)
 
 
 def _finalize_failure_class(
@@ -240,7 +211,7 @@ def run_from_config(config_path: Path) -> int:
 
     repo_entries = _parse_repo_entries(list(repos_raw))
     stages = _resolve_stages_for_config(raw_cfg.get("stages"))
-    cutoff = _coerce_cutoff(raw_cfg.get("model_cutoff_date"))
+    cutoff = parse_iso_date(raw_cfg.get("model_cutoff_date"))
 
     adapters_cfg = raw_cfg.get("adapters") or {}
     sandbox_cassette_dir = _as_path(adapters_cfg.get("sandbox_cassette_dir"))
