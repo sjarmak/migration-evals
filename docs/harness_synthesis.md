@@ -90,9 +90,11 @@ A weekly cron invokes `revalidate(harness_root, ttl_days=7)`:
   line to `runs/analysis/_harnesses/_audit.log`.
 
 The future full drift check will also rebuild the Dockerfile and compare
-the image digest; for now `_rebuild_ok` is a stub that always returns
-`True`. A `rebuild_check` callable can be passed to `revalidate` for tests
-or experimental deployments.
+the image digest. That rebuild signal is not implemented inline: callers
+pass it via the optional `rebuild_check` callable, and when none is
+supplied the rebuild-based eviction is skipped entirely - never silently
+treated as a passing rebuild. When `rebuild_check` is provided and returns
+`False`, the entry is evicted with reason `rebuild_failed`.
 
 ## Audit log format
 
