@@ -276,6 +276,84 @@ def test_drift_rebuild_check_can_evict(tmp_path: Path) -> None:
     assert key not in report.stale_hashes
 
 
+def test_drift_without_rebuild_check_skips_rebuild_path(tmp_path: Path) -> None:
+    """With no ``rebuild_check`` supplied, the rebuild-based eviction is
+    skipped entirely - it must never silently behave as an always-passing
+    rebuild (bead migration_evals-a8j: removed the hardcoded-True stub)."""
+    key = _seed_entry(tmp_path, FIXTURE_REPOS / "repo1", age_days=0)
+    report = revalidate(tmp_path, ttl_days=7)
+    assert key not in report.evicted
+    assert key not in report.stale_hashes
+    assert (tmp_path / key / cache_mod.RECIPE_FILE_NAME).is_file()
+
+
+def _set_raw_cached_at(root: Path, key: str, value: object) -> None:
+    """Rewrite a cache entry's recipe.json ``cached_at`` to an arbitrary
+    raw value (or drop it when ``value`` is ``...``) so tests can drive
+    the corrupt-timestamp and naive-timestamp branches of ``revalidate``."""
+    recipe_path = root / key / cache_mod.RECIPE_FILE_NAME
+    raw = json.loads(recipe_path.read_text())
+    if value is ...:
+        raw.pop("cached_at", None)
+    else:
+        raw["cached_at"] = value
+    recipe_path.write_text(json.dumps(raw))
+
+
+def test_drift_missing_root_returns_empty(tmp_path: Path) -> None:
+    """A harness root that does not exist yet is a clean no-op, not an
+    error — the weekly pass can run before the cache is first populated."""
+    report = revalidate(tmp_path / "never-created", ttl_days=7)
+    assert report.stale_hashes == []
+    assert report.evicted == []
+
+
+def test_drift_skips_non_entry_children(tmp_path: Path) -> None:
+    """``_iter_cache_entries`` ignores loose files and underscore-prefixed
+    bookkeeping dirs (e.g. ``_audit.log``) so they never look like cache
+    entries to evict."""
+    (tmp_path / "loose-file.txt").write_text("not a cache entry")
+    (tmp_path / "_audit").mkdir()  # underscore-prefixed dir is bookkeeping
+    (tmp_path / "_audit" / cache_mod.RECIPE_FILE_NAME).write_text("{}")
+    report = revalidate(tmp_path, ttl_days=7)
+    assert report.stale_hashes == []
+    assert report.evicted == []
+
+
+def test_drift_negative_ttl_raises(tmp_path: Path) -> None:
+    """A negative TTL is a caller bug (every entry would be 'expired'),
+    so revalidate fails fast rather than nuking the whole cache."""
+    with pytest.raises(ValueError, match="ttl_days must be non-negative"):
+        revalidate(tmp_path, ttl_days=-1)
+
+
+def test_drift_evicts_entry_with_unreadable_timestamp(tmp_path: Path) -> None:
+    """A cache entry whose ``cached_at`` is missing/corrupt cannot have its
+    age judged, so it is evicted defensively with reason
+    ``missing_timestamp`` (and recorded as stale)."""
+    key = _seed_entry(tmp_path, FIXTURE_REPOS / "repo1", age_days=0)
+    _set_raw_cached_at(tmp_path, key, ...)  # drop the field → cached_at() -> None
+    report = revalidate(tmp_path, ttl_days=7)
+    assert key in report.stale_hashes
+    assert key in report.evicted
+    assert not (tmp_path / key).exists()
+    audit = (tmp_path / cache_mod.AUDIT_LOG_NAME).read_text().splitlines()
+    reasons = {json.loads(line)["reason"] for line in audit}
+    assert "missing_timestamp" in reasons
+
+
+def test_drift_normalizes_naive_timestamp(tmp_path: Path) -> None:
+    """A naive (tz-unaware) ``cached_at`` is treated as UTC rather than
+    crashing on the aware/naive comparison; a recent naive stamp is not
+    stale and survives the pass."""
+    key = _seed_entry(tmp_path, FIXTURE_REPOS / "repo1", age_days=0)
+    _set_raw_cached_at(tmp_path, key, "2026-06-14T00:00:00")  # no 'Z', no offset
+    report = revalidate(tmp_path, ttl_days=7)
+    assert key not in report.stale_hashes
+    assert key not in report.evicted
+    assert (tmp_path / key / cache_mod.RECIPE_FILE_NAME).is_file()
+
+
 # -- no direct anthropic import ----------------------------------------------
 
 

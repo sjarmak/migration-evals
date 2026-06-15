@@ -1171,6 +1171,152 @@ def test_cve_disappears_truncates_long_stderr_in_reason(
     assert len(embedded) <= cve_disappears.MAX_REASON_TEXT_CHARS
 
 
+def test_cve_disappears_skipped_on_oserror_truncates_reason(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An OSError from the trivy execve (e.g. ENOEXEC, permission denied)
+    must degrade to a skipped verdict, and its ``__str__`` — which can
+    embed the absolute failing-binary path — must be capped to
+    MAX_REASON_TEXT_CHARS so it cannot bloat or leak into result.json."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _patch_trivy_seam(monkeypatch)
+    long_msg = "permission denied: /opt/" + ("y" * 500) + "/trivy"
+
+    def _raises(_repo: Path, _cli: str) -> cve_disappears._TrivyResult:
+        raise OSError(long_msg)
+
+    monkeypatch.setattr(cve_disappears, "_run_trivy", _raises)
+    spec = QualitySpec(cve_id=_FAKE_CVE, cve_scanner_tool="trivy")
+    verdict = cve_disappears.run(repo, spec)
+    assert verdict.passed is True
+    assert verdict.details["skipped"] is True
+    assert verdict.details["reason"].startswith("trivy invocation failed:")
+    # The scanner fields are carried through for debuggability.
+    assert verdict.details["scanner_tool"] == "trivy"
+    assert verdict.details["cve_id"] == _FAKE_CVE
+    embedded = verdict.details["reason"].split("trivy invocation failed: ", 1)[1]
+    assert len(embedded) <= cve_disappears.MAX_REASON_TEXT_CHARS
+
+
+def test_run_trivy_builds_offline_argv_and_wraps_result(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The ``_run_trivy`` seam builds a fixed, shell-free argv with the
+    documented offline-hardening flags and wraps the completed process in
+    a ``_TrivyResult``. Exercising the real body (not a stub) guards the
+    flag set against silent drift."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    captured: dict[str, Any] = {}
+
+    def _fake_run(argv: list[str], **kwargs: Any) -> Any:
+        captured["argv"] = argv
+        captured["kwargs"] = kwargs
+        return subprocess.CompletedProcess(argv, returncode=0, stdout="{}", stderr="")
+
+    monkeypatch.setattr(cve_disappears.subprocess, "run", _fake_run)
+    result = cve_disappears._run_trivy(repo, "/fake/trivy")
+
+    assert isinstance(result, cve_disappears._TrivyResult)
+    assert result.returncode == 0
+    assert result.stdout == "{}"
+    argv = captured["argv"]
+    assert argv[0] == "/fake/trivy"
+    assert argv[1] == "fs"
+    assert argv[-1] == str(repo)
+    # Offline-hardening flags must all be present (drift guard).
+    for flag in ("--skip-db-update", "--skip-java-db-update", "--offline-scan"):
+        assert flag in argv
+    assert captured["kwargs"]["timeout"] == cve_disappears.TRIVY_TIMEOUT_SECONDS
+    assert captured["kwargs"]["check"] is False
+
+
+def test_query_trivy_version_parses_version_line(monkeypatch: pytest.MonkeyPatch) -> None:
+    """When ``trivy --version`` emits a ``Version: <semver>`` line the
+    semver is extracted; the value is later stamped into details so
+    ``oracle_spec_sha`` cannot lie about which scanner produced a verdict."""
+
+    def _fake_run(argv: list[str], **kwargs: Any) -> Any:
+        return subprocess.CompletedProcess(
+            argv, returncode=0, stdout="Version: 0.51.1\n", stderr=""
+        )
+
+    monkeypatch.setattr(cve_disappears.subprocess, "run", _fake_run)
+    assert cve_disappears._query_trivy_version("/fake/trivy") == "0.51.1"
+
+
+def test_query_trivy_version_falls_back_to_first_line(monkeypatch: pytest.MonkeyPatch) -> None:
+    """No recognisable ``Version:`` token → the function falls back to the
+    first non-empty output line rather than returning None, so a debugger
+    still gets *something* identifying the binary."""
+
+    def _fake_run(argv: list[str], **kwargs: Any) -> Any:
+        return subprocess.CompletedProcess(argv, returncode=0, stdout="", stderr="trivy 0.9 (rc)\n")
+
+    monkeypatch.setattr(cve_disappears.subprocess, "run", _fake_run)
+    assert cve_disappears._query_trivy_version("/fake/trivy") == "trivy 0.9 (rc)"
+
+
+def test_query_trivy_version_returns_none_on_oserror(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A failed version probe is best-effort: an OSError yields None
+    (the verdict still records scanner_version=None) rather than crashing
+    the whole oracle."""
+
+    def _raises(argv: list[str], **kwargs: Any) -> Any:
+        raise OSError("no such binary")
+
+    monkeypatch.setattr(cve_disappears.subprocess, "run", _raises)
+    assert cve_disappears._query_trivy_version("/fake/trivy") is None
+
+
+def test_query_trivy_version_returns_none_on_empty_output(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Both stdout and stderr empty → None (no first line to fall back to)."""
+
+    def _fake_run(argv: list[str], **kwargs: Any) -> Any:
+        return subprocess.CompletedProcess(argv, returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(cve_disappears.subprocess, "run", _fake_run)
+    assert cve_disappears._query_trivy_version("/fake/trivy") is None
+
+
+def test_which_trivy_returns_path_or_none() -> None:
+    """The PATH-resolution seam returns either a resolved string path or
+    None — never raises — so the on-PATH gate in ``run`` is well-defined."""
+    resolved = cve_disappears._which_trivy()
+    assert resolved is None or isinstance(resolved, str)
+
+
+def test_scan_for_cve_rejects_malformed_shapes() -> None:
+    """``_scan_for_cve`` walks the trivy shape explicitly: anything that
+    isn't ``dict -> Results:list -> dict -> Vulnerabilities:list -> dict``
+    is treated as 'CVE not found' rather than crashing or matching
+    tolerantly (a future schema change surfaces as a miss, not a guess)."""
+    cve = _FAKE_CVE
+    # Top-level not a dict.
+    assert cve_disappears._scan_for_cve(["not", "a", "dict"], cve) is False
+    # Results missing / not a list.
+    assert cve_disappears._scan_for_cve({"Results": "nope"}, cve) is False
+    # A non-dict Results entry is skipped; Vulnerabilities not a list is skipped.
+    payload = {"Results": ["bad-entry", {"Vulnerabilities": "nope"}]}
+    assert cve_disappears._scan_for_cve(payload, cve) is False
+    # A non-dict vuln entry is skipped, the matching dict entry is found.
+    payload = {"Results": [{"Vulnerabilities": ["bad", {"VulnerabilityID": cve}]}]}
+    assert cve_disappears._scan_for_cve(payload, cve) is True
+
+
+def test_extract_db_updated_at_handles_missing_metadata() -> None:
+    """The DB ``UpdatedAt`` stamp is optional: a non-dict payload or any
+    missing/blank link in ``Metadata.DB.UpdatedAt`` yields None (so a
+    verdict can still be produced without it)."""
+    assert cve_disappears._extract_db_updated_at("not-a-dict") is None
+    assert cve_disappears._extract_db_updated_at({}) is None
+    assert cve_disappears._extract_db_updated_at({"Metadata": {"DB": {}}}) is None
+    assert cve_disappears._extract_db_updated_at({"Metadata": {"DB": {"UpdatedAt": ""}}}) is None
+    ok = {"Metadata": {"DB": {"UpdatedAt": "2026-04-26T00:00:00Z"}}}
+    assert cve_disappears._extract_db_updated_at(ok) == "2026-04-26T00:00:00Z"
+
+
 # ---------------------------------------------------------------------------
 # run_quality_oracles + funnel integration
 # ---------------------------------------------------------------------------

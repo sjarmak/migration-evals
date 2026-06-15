@@ -24,6 +24,7 @@ sys.path.insert(0, str(_REPO_ROOT / "src"))
 
 from migration_evals.stats import (  # noqa: E402
     Z_95,
+    _percentile,
     bootstrap_mean_ci,
     bootstrap_proportion_ci,
     wilson_interval,
@@ -145,3 +146,42 @@ def test_bootstrap_mean_matches_proportion_on_indicator() -> None:
     prop = bootstrap_proportion_ci(flags, n_bootstrap=1000, seed=42)
     mean = bootstrap_mean_ci([1.0 if f else 0.0 for f in flags], n_bootstrap=1000, seed=42)
     assert prop == mean
+
+
+# ---------------------------------------------------------------------------
+# _percentile boundaries (the bootstrap CI endpoints rely on these)
+# ---------------------------------------------------------------------------
+
+
+def test_percentile_empty_raises() -> None:
+    """An empty sample has no percentile; the helper fails loud rather than
+    returning a misleading 0.0 that would silently widen a CI."""
+    with pytest.raises(ValueError, match="empty input"):
+        _percentile([], 50.0)
+
+
+def test_percentile_clamps_low_and_high_boundaries() -> None:
+    """pct<=0 returns the min and pct>=100 returns the max with no
+    interpolation — this is what pins the 2.5/97.5 bootstrap-CI endpoints
+    to real observed values."""
+    vals = [1.0, 2.0, 3.0, 4.0]
+    assert _percentile(vals, 0.0) == 1.0
+    assert _percentile(vals, -5.0) == 1.0
+    assert _percentile(vals, 100.0) == 4.0
+    assert _percentile(vals, 150.0) == 4.0
+
+
+def test_percentile_exact_index_no_interpolation() -> None:
+    """When the rank lands on an exact index (lo==hi) the value is returned
+    directly rather than interpolated against itself."""
+    vals = [10.0, 20.0, 30.0, 40.0, 50.0]
+    # 50th percentile of 5 evenly-spaced points lands exactly on the median.
+    assert _percentile(vals, 50.0) == 30.0
+
+
+def test_percentile_interpolates_between_points() -> None:
+    """A rank between two indices linearly interpolates (the non-boundary
+    path) — keeps the CI endpoints smooth as the bootstrap distribution
+    shifts."""
+    vals = [0.0, 10.0]
+    assert _percentile(vals, 25.0) == 2.5

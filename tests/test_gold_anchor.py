@@ -26,6 +26,7 @@ import pytest  # noqa: E402
 from migration_evals.gold_anchor import (  # noqa: E402
     CorrelationReport,
     GoldEntry,
+    _phi,
     correlate,
     load_gold_set,
 )
@@ -110,6 +111,48 @@ def test_load_gold_set_rejects_missing_field(tmp_path: Path) -> None:
     )
     with pytest.raises(ValueError):
         load_gold_set(path)
+
+
+def test_load_gold_set_rejects_non_dict_entry(tmp_path: Path) -> None:
+    """A JSON array whose elements are not objects must be rejected with
+    an index-pointed error rather than crashing on attribute access — the
+    gold set is a hand-curated correlation anchor, so a malformed entry is
+    a data-integrity failure, not something to coerce."""
+    path = tmp_path / "bad.json"
+    path.write_text(json.dumps([["not", "an", "object"]]))
+    with pytest.raises(ValueError, match="entry #0 .* must be an object"):
+        load_gold_set(path)
+
+
+def test_load_gold_set_rejects_invalid_label_category(tmp_path: Path) -> None:
+    """``GoldEntry.__post_init__`` enforces the label_category enum; an
+    out-of-set value surfaces as a ValueError at load time rather than
+    silently corrupting the three-way label split."""
+    path = tmp_path / "bad.json"
+    path.write_text(
+        json.dumps(
+            [
+                {
+                    "repo_url": "https://github.com/ex/a",
+                    "commit_sha": "a" * 40,
+                    "human_verdict": "accept",
+                    "reviewer_notes": "",
+                    "labeled_at": "2025-01-01T00:00:00Z",
+                    "label_category": "not-a-real-category",
+                }
+            ]
+        )
+    )
+    with pytest.raises(ValueError, match="label_category"):
+        load_gold_set(path)
+
+
+def test_phi_rejects_mismatched_lengths() -> None:
+    """The Phi coefficient is only defined on parallel sequences; a length
+    mismatch is a caller bug and must raise rather than silently zip-truncate
+    to a wrong correlation."""
+    with pytest.raises(ValueError, match="same length"):
+        _phi([1, 0, 1], [1, 0])
 
 
 # ---------------------------------------------------------------------------
