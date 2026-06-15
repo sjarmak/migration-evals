@@ -168,27 +168,59 @@ def _finalize_failure_class(
     return FailureClass.AGENT_ERROR.value
 
 
-def run_from_config(config_path: Path) -> int:
-    """Execute a config-driven migration eval run.
+class _ConfigError(Exception):
+    """Raised when a config-driven run cannot proceed.
 
-    Returns an exit code. Writes one ``result.json`` per repo under
-    ``output_root``. A ``summary.json`` is written at ``output_root`` with
-    the three stamps + run metadata to make the report step trivially
-    quick.
+    Carries the exact stderr message and process exit code so the
+    top-level ``run_from_config`` can report and return without
+    re-deriving either.
     """
-    config_path = Path(config_path)
+
+    def __init__(self, message: str, code: int = 2) -> None:
+        super().__init__(message)
+        self.code = code
+
+
+@dataclass(frozen=True)
+class _RunConfig:
+    """Validated, fully-resolved inputs for a config-driven run."""
+
+    migration_id: str
+    agent_model: str
+    variant: str
+    output_root: Path
+    agent_runner: str | None
+    iterator_id: str | None
+    repo_entries: list[RepoEntry]
+    stages: tuple[str, ...] | None
+    cutoff: date | None
+    adapters_cfg: Mapping[str, Any]
+    sandbox_cassette_dir: Path | None
+    anthropic_cassette_dir: Path | None
+    openai_cassette_dir: Path | None
+    quality_spec: QualitySpec
+    oracle_spec: Path
+    recipe_spec: Path
+    hypotheses: Path
+    prompt_spec: Path | None
+    model_cutoff_raw: Any
+
+
+def _parse_config(config_path: Path) -> _RunConfig:
+    """Parse and validate the YAML config into a :class:`_RunConfig`.
+
+    Raises :class:`_ConfigError` (carrying the stderr message and exit
+    code) on any validation failure.
+    """
     if not config_path.is_file():
-        print(f"error: config file not found: {config_path}", file=sys.stderr)
-        return 2
+        raise _ConfigError(f"error: config file not found: {config_path}")
 
     raw_cfg = yaml.safe_load(config_path.read_text())
     if not isinstance(raw_cfg, Mapping):
-        print(
+        raise _ConfigError(
             f"error: config at {config_path} must decode to a mapping; "
-            f"got {type(raw_cfg).__name__}",
-            file=sys.stderr,
+            f"got {type(raw_cfg).__name__}"
         )
-        return 2
 
     try:
         migration_id = str(raw_cfg["migration_id"])
@@ -197,8 +229,7 @@ def run_from_config(config_path: Path) -> int:
         output_root = Path(str(raw_cfg["output_root"]))
         repos_raw = raw_cfg["repos"]
     except KeyError as exc:
-        print(f"error: config missing required key: {exc.args[0]!r}", file=sys.stderr)
-        return 2
+        raise _ConfigError(f"error: config missing required key: {exc.args[0]!r}")
 
     agent_runner_raw = raw_cfg.get("agent_runner")
     agent_runner: str | None = str(agent_runner_raw) if agent_runner_raw else None
@@ -206,8 +237,7 @@ def run_from_config(config_path: Path) -> int:
     iterator_id: str | None = str(iterator_id_raw) if iterator_id_raw else None
 
     if not isinstance(repos_raw, Sequence) or not repos_raw:
-        print("error: config 'repos' must be a non-empty list", file=sys.stderr)
-        return 2
+        raise _ConfigError("error: config 'repos' must be a non-empty list")
 
     repo_entries = _parse_repo_entries(list(repos_raw))
     stages = _resolve_stages_for_config(raw_cfg.get("stages"))
@@ -226,11 +256,9 @@ def run_from_config(config_path: Path) -> int:
     hypotheses = _as_path(stamps_cfg.get("hypotheses"))
     prompt_spec = _as_path(stamps_cfg.get("prompt_spec"))
     if oracle_spec is None or recipe_spec is None or hypotheses is None:
-        print(
-            "error: config 'stamps' must include oracle_spec, recipe_spec, " "and hypotheses paths",
-            file=sys.stderr,
+        raise _ConfigError(
+            "error: config 'stamps' must include oracle_spec, recipe_spec, " "and hypotheses paths"
         )
-        return 2
 
     # Recipe templates may declare a top-level `sandbox_policy:` block so
     # per-recipe defaults live alongside the recipe rather than being
@@ -242,92 +270,151 @@ def run_from_config(config_path: Path) -> int:
     if merged_policy is not None:
         adapters_cfg = {**adapters_cfg, "sandbox_policy": merged_policy}
 
-    output_root.mkdir(parents=True, exist_ok=True)
-    written = 0
-    for repo_entry in repo_entries:
-        if not repo_entry.path.is_dir():
-            print(
-                f"error: repo path does not exist: {repo_entry.path}",
-                file=sys.stderr,
-            )
-            return 2
-        meta = _load_repo_meta(repo_entry.path)
-        recipe = _build_recipe_from_meta(meta)
-        adapters = {
-            "sandbox": build_sandbox_adapter(
-                repo_path=repo_entry.path,
-                adapters_cfg=adapters_cfg,
-                cassette_dir=sandbox_cassette_dir,
-            ),
-            "anthropic": build_judge_adapter(
-                repo_path=repo_entry.path,
-                adapters_cfg=adapters_cfg,
-                anthropic_cassette_dir=anthropic_cassette_dir,
-                openai_cassette_dir=openai_cassette_dir,
-            ),
-            "enable_daikon": False,
-            "quality_spec": quality_spec,
-        }
-        trial_started_at = datetime.now(tz=timezone.utc).isoformat()
-        funnel_result = run_funnel(
-            repo_entry.path,
-            recipe,
-            adapters,
-            is_synthetic=bool(meta.get("is_synthetic", False)),
-            stages=stages,
-        )
-        trial_finished_at = datetime.now(tz=timezone.utc).isoformat()
-        base_payload = _build_payload(
-            repo_entry=repo_entry,
-            repo_meta=meta,
-            funnel_result=funnel_result,
-            migration_id=migration_id,
-            agent_model=agent_model,
-            agent_runner=agent_runner,
-            iterator_id=iterator_id,
-            started_at=trial_started_at,
-            finished_at=trial_finished_at,
-            variant=variant,
-            model_cutoff_date=cutoff,
-        )
-        stamped = stamp_result(base_payload, oracle_spec, recipe_spec, hypotheses, prompt_spec)
+    return _RunConfig(
+        migration_id=migration_id,
+        agent_model=agent_model,
+        variant=variant,
+        output_root=output_root,
+        agent_runner=agent_runner,
+        iterator_id=iterator_id,
+        repo_entries=repo_entries,
+        stages=stages,
+        cutoff=cutoff,
+        adapters_cfg=adapters_cfg,
+        sandbox_cassette_dir=sandbox_cassette_dir,
+        anthropic_cassette_dir=anthropic_cassette_dir,
+        openai_cassette_dir=openai_cassette_dir,
+        quality_spec=quality_spec,
+        oracle_spec=oracle_spec,
+        recipe_spec=recipe_spec,
+        hypotheses=hypotheses,
+        prompt_spec=prompt_spec,
+        model_cutoff_raw=raw_cfg.get("model_cutoff_date"),
+    )
 
-        trial_dir = output_root / f"{repo_entry.path.name}_{repo_entry.seed}"
-        trial_dir.mkdir(parents=True, exist_ok=True)
-        result_path = trial_dir / "result.json"
+
+def _build_adapters(repo_entry: RepoEntry, cfg: _RunConfig) -> dict[str, Any]:
+    """Construct the per-repo adapter bundle for the funnel."""
+    return {
+        "sandbox": build_sandbox_adapter(
+            repo_path=repo_entry.path,
+            adapters_cfg=cfg.adapters_cfg,
+            cassette_dir=cfg.sandbox_cassette_dir,
+        ),
+        "anthropic": build_judge_adapter(
+            repo_path=repo_entry.path,
+            adapters_cfg=cfg.adapters_cfg,
+            anthropic_cassette_dir=cfg.anthropic_cassette_dir,
+            openai_cassette_dir=cfg.openai_cassette_dir,
+        ),
+        "enable_daikon": False,
+        "quality_spec": cfg.quality_spec,
+    }
+
+
+def _run_trial(repo_entry: RepoEntry, cfg: _RunConfig) -> None:
+    """Run one repo through the funnel and write its ``result.json``.
+
+    Raises :class:`_ConfigError` when the repo path is missing.
+    """
+    if not repo_entry.path.is_dir():
+        raise _ConfigError(f"error: repo path does not exist: {repo_entry.path}")
+    meta = _load_repo_meta(repo_entry.path)
+    recipe = _build_recipe_from_meta(meta)
+    adapters = _build_adapters(repo_entry, cfg)
+    trial_started_at = datetime.now(tz=timezone.utc).isoformat()
+    funnel_result = run_funnel(
+        repo_entry.path,
+        recipe,
+        adapters,
+        is_synthetic=bool(meta.get("is_synthetic", False)),
+        stages=cfg.stages,
+    )
+    trial_finished_at = datetime.now(tz=timezone.utc).isoformat()
+    base_payload = _build_payload(
+        repo_entry=repo_entry,
+        repo_meta=meta,
+        funnel_result=funnel_result,
+        migration_id=cfg.migration_id,
+        agent_model=cfg.agent_model,
+        agent_runner=cfg.agent_runner,
+        iterator_id=cfg.iterator_id,
+        started_at=trial_started_at,
+        finished_at=trial_finished_at,
+        variant=cfg.variant,
+        model_cutoff_date=cfg.cutoff,
+    )
+    stamped = stamp_result(
+        base_payload, cfg.oracle_spec, cfg.recipe_spec, cfg.hypotheses, cfg.prompt_spec
+    )
+
+    trial_dir = cfg.output_root / f"{repo_entry.path.name}_{repo_entry.seed}"
+    trial_dir.mkdir(parents=True, exist_ok=True)
+    result_path = trial_dir / "result.json"
+    result_path.write_text(json.dumps(stamped, indent=2, sort_keys=True) + "\n")
+
+    # After writing, re-resolve failure_class using the newly-available
+    # trial artifacts. This is a no-op when the funnel already assigned
+    # one (the common case); it exists so future trial writers that emit
+    # status.txt / logs still get a correct classification.
+    final_class = _finalize_failure_class(stamped, trial_dir)
+    if final_class != stamped.get("failure_class"):
+        stamped["failure_class"] = final_class
         result_path.write_text(json.dumps(stamped, indent=2, sort_keys=True) + "\n")
 
-        # After writing, re-resolve failure_class using the newly-available
-        # trial artifacts. This is a no-op when the funnel already assigned
-        # one (the common case); it exists so future trial writers that emit
-        # status.txt / logs still get a correct classification.
-        final_class = _finalize_failure_class(stamped, trial_dir)
-        if final_class != stamped.get("failure_class"):
-            stamped["failure_class"] = final_class
-            result_path.write_text(json.dumps(stamped, indent=2, sort_keys=True) + "\n")
-        written += 1
 
+def _write_summary(cfg: _RunConfig, written: int) -> None:
+    """Write ``summary.json`` with the three stamps + run metadata."""
     summary_stamps = {
-        "oracle_spec_sha": _sha_of(oracle_spec),
-        "recipe_spec_sha": _sha_of(recipe_spec),
-        "pre_reg_sha": _sha_of(hypotheses),
+        "oracle_spec_sha": _sha_of(cfg.oracle_spec),
+        "recipe_spec_sha": _sha_of(cfg.recipe_spec),
+        "pre_reg_sha": _sha_of(cfg.hypotheses),
     }
-    if prompt_spec is not None:
-        summary_stamps["prompt_sha"] = _sha_of(prompt_spec)
+    if cfg.prompt_spec is not None:
+        summary_stamps["prompt_sha"] = _sha_of(cfg.prompt_spec)
     summary = {
-        "migration_id": migration_id,
-        "agent_model": agent_model,
-        "agent_runner": agent_runner,
-        "iterator_id": iterator_id,
-        "variant": variant,
-        "output_root": str(output_root),
+        "migration_id": cfg.migration_id,
+        "agent_model": cfg.agent_model,
+        "agent_runner": cfg.agent_runner,
+        "iterator_id": cfg.iterator_id,
+        "variant": cfg.variant,
+        "output_root": str(cfg.output_root),
         "n_trials": written,
-        "model_cutoff_date": raw_cfg.get("model_cutoff_date"),
+        "model_cutoff_date": cfg.model_cutoff_raw,
         "stamps": summary_stamps,
     }
-    (output_root / "summary.json").write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n")
+    (cfg.output_root / "summary.json").write_text(
+        json.dumps(summary, indent=2, sort_keys=True) + "\n"
+    )
+
+
+def run_from_config(config_path: Path) -> int:
+    """Execute a config-driven migration eval run.
+
+    Returns an exit code. Writes one ``result.json`` per repo under
+    ``output_root``. A ``summary.json`` is written at ``output_root`` with
+    the three stamps + run metadata to make the report step trivially
+    quick.
+    """
+    try:
+        cfg = _parse_config(Path(config_path))
+    except _ConfigError as exc:
+        print(str(exc), file=sys.stderr)
+        return exc.code
+
+    cfg.output_root.mkdir(parents=True, exist_ok=True)
+    written = 0
+    for repo_entry in cfg.repo_entries:
+        try:
+            _run_trial(repo_entry, cfg)
+        except _ConfigError as exc:
+            print(str(exc), file=sys.stderr)
+            return exc.code
+        written += 1
+
+    _write_summary(cfg, written)
     print(
-        f"run: wrote {written} result.json files under {output_root}",
+        f"run: wrote {written} result.json files under {cfg.output_root}",
         file=sys.stderr,
     )
     return 0
