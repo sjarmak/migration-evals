@@ -269,6 +269,18 @@ def test_cli_run_repos_nonexistent_dir(tmp_path: Path, capsys) -> None:
     assert f"--repos directory does not exist: {missing}" in err
 
 
+def test_stage_choices_match_funnel_aliases() -> None:
+    """--stage must accept exactly the tiers run_eval/config resolve through."""
+    from migration_evals.cli import _stage_choices
+    from migration_evals.funnel import STAGE_ALIASES
+
+    choices = _stage_choices()
+    assert tuple(choices) == tuple(STAGE_ALIASES)
+    # diff/ast were the tiers the old hardcoded list dropped (migration_evals-8hv).
+    assert "diff" in choices
+    assert "ast" in choices
+
+
 # ---------------------------------------------------------------------------
 # harness subcommand argument-guard error branches (cli._handle_harness)
 # ---------------------------------------------------------------------------

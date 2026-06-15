@@ -28,9 +28,23 @@ from migration_evals.adapters_cassette import (
     CassetteAnthropicAdapter,
     CassetteSandboxAdapter,
 )
+from migration_evals.harness.meta import _build_recipe_from_meta, _load_repo_meta
 
-STAGE_CHOICES = ("compile", "tests", "judge", "daikon", "all")
 DEFAULT_STAGE = "all"
+
+
+def _stage_choices() -> tuple[str, ...]:
+    """Valid ``--stage`` values, derived from the single source of truth.
+
+    ``funnel.STAGE_ALIASES`` is the one declaration the config ``stages:``
+    list and ``run_eval --stages`` already resolve through; deriving the CLI
+    surface from it keeps every entry point (including ``diff`` and ``ast``)
+    in sync instead of drifting against a third hardcoded list.
+    """
+    from migration_evals.funnel import STAGE_ALIASES
+
+    return tuple(STAGE_ALIASES)
+
 
 # These constants are placeholders that match the real spec SHAs once they
 # are wired through. Result.json carries them verbatim so downstream tools
@@ -64,7 +78,7 @@ def _add_run(subparsers: argparse._SubParsersAction) -> None:
     )
     p.add_argument(
         "--stage",
-        choices=STAGE_CHOICES,
+        choices=_stage_choices(),
         default=DEFAULT_STAGE,
         help="Restrict the funnel to a single tier (default: all).",
     )
@@ -237,38 +251,6 @@ def build_parser() -> argparse.ArgumentParser:
     _add_harness(subparsers)
     _add_probe(subparsers)
     return parser
-
-
-def _load_repo_meta(repo_dir: Path) -> dict[str, Any]:
-    meta_path = repo_dir / "meta.json"
-    if not meta_path.is_file():
-        return {}
-    try:
-        return json.loads(meta_path.read_text())
-    except (OSError, ValueError):
-        return {}
-
-
-def _build_recipe_from_meta(meta: Mapping[str, Any]):
-    """Construct a :class:`Recipe` from a fixture repo's ``meta.json``."""
-    from migration_evals.harness.recipe import Recipe
-
-    dockerfile = (
-        meta.get("dockerfile") or "FROM maven:3.9-eclipse-temurin-17\nWORKDIR /src\nCOPY . .\n"
-    )
-    build_cmd = meta.get("build_cmd") or "mvn -B -e compile"
-    test_cmd = meta.get("test_cmd") or "mvn -B -e test"
-    provenance = meta.get("harness_provenance") or {
-        "model": "claude-haiku-4-5",
-        "prompt_version": "v1",
-        "timestamp": "2026-04-24T00:00:00Z",
-    }
-    return Recipe(
-        dockerfile=dockerfile,
-        build_cmd=build_cmd,
-        test_cmd=test_cmd,
-        harness_provenance=provenance,
-    )
 
 
 def _resolve_stages(stage: str) -> tuple[str, ...] | None:
