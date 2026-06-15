@@ -17,7 +17,9 @@ sys.path.insert(0, str(_REPO_ROOT))
 from migration_evals.report import (  # noqa: E402
     _cost_aggregate,
     _efficiency_aggregate,
+    _format_funnel_table,
     _funnel_counts,
+    _per_tier_costs,
     build_report_data,
     format_report,
     generate_report,
@@ -191,8 +193,8 @@ def test_build_report_data_respects_cutoff_override(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-def _verdict(tier: str, *, passed: bool) -> dict:
-    return {"tier": tier, "passed": passed, "cost_usd": 0.0}
+def _verdict(tier: str, *, passed: bool, cost_usd: float = 0.0) -> dict:
+    return {"tier": tier, "passed": passed, "cost_usd": cost_usd}
 
 
 def _trial(
@@ -200,6 +202,7 @@ def _trial(
     success: bool,
     tiers: list[tuple[str, bool]],
     cost_usd: float | None = None,
+    tier_costs: list[float] | None = None,
     started_at: str | None = None,
     finished_at: str | None = None,
     iterator_id: str | None = None,
@@ -207,6 +210,9 @@ def _trial(
 ) -> dict:
     """Synthesize a result.json-shaped trial for aggregation tests."""
     verdicts = [_verdict(t, passed=p) for t, p in tiers]
+    if tier_costs:
+        for v, c in zip(verdicts, tier_costs):
+            v["cost_usd"] = c
     if usage_per_tier:
         for v, usage in zip(verdicts, usage_per_tier):
             v["details"] = {"usage": usage}
@@ -256,6 +262,109 @@ def test_funnel_counts_emits_wilson_and_bootstrap_cis() -> None:
     assert daikon_row["rate_ci_high"] == 0.0
     assert daikon_row["cumulative_ci_low"] == 0.0
     assert daikon_row["cumulative_ci_high"] == 0.0
+
+
+def test_per_tier_costs_aggregates_with_bootstrap_ci() -> None:
+    # compile_only priced on all 3 trials; tests only on the 2 that
+    # passed compile; later tiers nobody reached.
+    results = [
+        _trial(
+            success=True,
+            tiers=[("compile_only", True), ("tests", True)],
+            tier_costs=[0.01, 0.05],
+        ),
+        _trial(
+            success=True,
+            tiers=[("compile_only", True), ("tests", True)],
+            tier_costs=[0.02, 0.06],
+        ),
+        _trial(
+            success=False,
+            tiers=[("compile_only", False)],
+            tier_costs=[0.03],
+        ),
+    ]
+    rows = _per_tier_costs(results, n_bootstrap=200, bootstrap_seed=7)
+    by_tier = {r["tier_name"]: r for r in rows}
+
+    compile_row = by_tier["compile_only"]
+    assert compile_row["n_observed"] == 3
+    assert compile_row["total_cost"] == pytest.approx(0.06, abs=1e-9)
+    assert compile_row["avg_cost"] == pytest.approx(0.02, abs=1e-9)
+    # Bootstrap CI brackets the mean and stays within the observed range.
+    assert 0.01 <= compile_row["cost_ci_low"] <= 0.02
+    assert 0.02 <= compile_row["cost_ci_high"] <= 0.03
+
+    tests_row = by_tier["tests"]
+    assert tests_row["n_observed"] == 2
+    assert tests_row["total_cost"] == pytest.approx(0.11, abs=1e-9)
+    assert tests_row["avg_cost"] == pytest.approx(0.055, abs=1e-9)
+
+    # Tiers nobody reached: cost is None (unmeasured, not free) and the
+    # CI degrades to (0, 0) like the pass-rate funnel does.
+    daikon_row = by_tier["daikon"]
+    assert daikon_row["n_observed"] == 0
+    assert daikon_row["total_cost"] is None
+    assert daikon_row["avg_cost"] is None
+    assert daikon_row["cost_ci_low"] == 0.0
+    assert daikon_row["cost_ci_high"] == 0.0
+
+
+def test_funnel_table_renders_per_tier_cost_column() -> None:
+    results = [
+        _trial(
+            success=True,
+            tiers=[("compile_only", True), ("tests", True)],
+            tier_costs=[0.01, 0.05],
+        ),
+        _trial(
+            success=False,
+            tiers=[("compile_only", False)],
+            tier_costs=[0.03],
+        ),
+    ]
+    funnel_rows = _funnel_counts(results, n_bootstrap=200, bootstrap_seed=7)
+    cost_rows = _per_tier_costs(results, n_bootstrap=200, bootstrap_seed=7)
+    table = _format_funnel_table(funnel_rows, cost_rows)
+
+    assert "cost_per_tier" in table
+    # compile_only mean is (0.01 + 0.03) / 2 = 0.02, with a bracketed CI.
+    assert "$0.0200 [" in table
+    # tests reached by one trial at $0.05.
+    assert "$0.0500 [" in table
+    # Unreached tiers show a dash rather than $0.0000.
+    daikon_line = next(line for line in table.splitlines() if line.startswith("| daikon "))
+    assert daikon_line.rstrip().endswith("- |")
+
+
+def test_funnel_table_cost_column_dashes_when_no_cost_data() -> None:
+    results = [_trial(success=True, tiers=[("compile_only", True)])]
+    funnel_rows = _funnel_counts(results, n_bootstrap=200, bootstrap_seed=7)
+    # No cost rows supplied at all — column must still render, all dashes.
+    table = _format_funnel_table(funnel_rows)
+    assert "cost_per_tier" in table
+    compile_line = next(line for line in table.splitlines() if line.startswith("| compile_only "))
+    assert compile_line.rstrip().endswith("- |")
+
+
+def test_build_report_data_includes_per_tier_costs(tmp_path: Path) -> None:
+    run_dir = tmp_path / "run"
+    trial_dir = run_dir / "trial_001"
+    trial_dir.mkdir(parents=True)
+    trial = _trial(
+        success=True,
+        tiers=[("compile_only", True), ("tests", True)],
+        tier_costs=[0.01, 0.05],
+    )
+    import json
+
+    (trial_dir / "result.json").write_text(json.dumps(trial))
+    data = build_report_data(run_dir)
+    assert "per_tier_costs" in data
+    by_tier = {r["tier_name"]: r for r in data["per_tier_costs"]}
+    assert by_tier["compile_only"]["avg_cost"] == pytest.approx(0.01, abs=1e-9)
+    # And it surfaces in the rendered funnel table.
+    assert "cost_per_tier" in format_report(data)
 
 
 def test_cost_aggregate_dollars_per_success_and_latency() -> None:

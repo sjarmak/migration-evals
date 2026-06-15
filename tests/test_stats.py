@@ -24,6 +24,7 @@ sys.path.insert(0, str(_REPO_ROOT / "src"))
 
 from migration_evals.stats import (  # noqa: E402
     Z_95,
+    bootstrap_mean_ci,
     bootstrap_proportion_ci,
     wilson_interval,
 )
@@ -112,3 +113,35 @@ def test_bootstrap_changes_under_different_seed() -> None:
     # Not strictly required, but very likely to differ; if this ever
     # triggers a flake, raise n_bootstrap.
     assert a != b
+
+
+# ---------------------------------------------------------------------------
+# bootstrap_mean_ci (continuous)
+# ---------------------------------------------------------------------------
+
+
+def test_bootstrap_mean_empty_returns_zero_zero() -> None:
+    assert bootstrap_mean_ci([]) == (0.0, 0.0)
+
+
+def test_bootstrap_mean_constant_returns_that_value() -> None:
+    lo, hi = bootstrap_mean_ci([0.05] * 20, n_bootstrap=500, seed=1)
+    assert lo == pytest.approx(0.05)
+    assert hi == pytest.approx(0.05)
+
+
+def test_bootstrap_mean_brackets_observed_mean() -> None:
+    values = [0.01, 0.02, 0.03, 0.04, 0.05]
+    lo, hi = bootstrap_mean_ci(values, n_bootstrap=2000, seed=42)
+    assert lo <= 0.03 <= hi
+    assert 0.01 <= lo and hi <= 0.05
+
+
+def test_bootstrap_mean_matches_proportion_on_indicator() -> None:
+    # A proportion is just the mean of a 0/1 indicator, so the two
+    # entry points must agree bit-for-bit under the same seed — this is
+    # the contract that lets bootstrap_proportion_ci delegate.
+    flags = [True, False, True, True, False, True, False, True, True, False]
+    prop = bootstrap_proportion_ci(flags, n_bootstrap=1000, seed=42)
+    mean = bootstrap_mean_ci([1.0 if f else 0.0 for f in flags], n_bootstrap=1000, seed=42)
+    assert prop == mean

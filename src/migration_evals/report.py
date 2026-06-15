@@ -30,6 +30,7 @@ from typing import Any
 from migration_evals.contamination import split_scores
 from migration_evals.gold_anchor import CorrelationReport, correlate, load_gold_set
 from migration_evals.stats import (
+    bootstrap_mean_ci,
     bootstrap_proportion_ci,
     wilson_interval,
 )
@@ -152,6 +153,71 @@ def _funnel_counts(
                 "rate_ci_high": round(rate_ci_high, 6),
                 "cumulative_ci_low": round(cum_ci_low, 6),
                 "cumulative_ci_high": round(cum_ci_high, 6),
+            }
+        )
+    return rows
+
+
+def _per_tier_costs(
+    results: Sequence[Mapping[str, Any]],
+    *,
+    bootstrap_seed: int = 42,
+    n_bootstrap: int = 10_000,
+) -> list[dict[str, Any]]:
+    """Compute per-tier cost with a 95% bootstrap CI on the mean.
+
+    Mirrors :func:`_funnel_counts` over ``_TIER_ORDER`` so the report
+    always has one row per tier in canonical order. Each
+    ``per_tier_verdict`` already carries its own ``cost_usd`` (set by
+    the funnel cascade); here we slice that signal per tier instead of
+    rolling it into the single global ``total_cost_usd``, which proves
+    the cheap-tiers-filter-first premise — the early tiers should carry
+    most of the spend density only where the cascade fans out.
+
+    For each tier:
+
+    * ``n_observed`` — trials whose verdict for the tier records a
+      numeric ``cost_usd`` (i.e. the cascade reached it and priced it).
+    * ``total_cost`` — sum of those costs (``None`` when no trial
+      reached the tier, so a reader doesn't read an unmeasured tier as
+      free).
+    * ``avg_cost`` — ``total_cost / n_observed``.
+    * ``cost_ci_low`` / ``cost_ci_high`` — percentile bootstrap 95% CI
+      on the mean per-trial cost at this tier, resampling with
+      replacement. ``(0, 0)`` when ``n_observed == 0``. Seed and
+      ``n_bootstrap`` are exposed for deterministic tests, matching
+      :func:`_funnel_counts`.
+    """
+    rows: list[dict[str, Any]] = []
+    for tier in _TIER_ORDER:
+        costs: list[float] = []
+        for row in results:
+            verdicts = (row.get("funnel") or {}).get("per_tier_verdict") or []
+            for verdict in verdicts:
+                if not isinstance(verdict, Mapping):
+                    continue
+                if verdict.get("tier") != tier:
+                    continue
+                cost = verdict.get("cost_usd")
+                if isinstance(cost, (int, float)):
+                    costs.append(float(cost))
+                break
+        n_observed = len(costs)
+        total_cost = round(sum(costs), 6) if costs else None
+        avg_cost = round(total_cost / n_observed, 6) if total_cost is not None else None
+        cost_ci_low, cost_ci_high = bootstrap_mean_ci(
+            costs,
+            n_bootstrap=n_bootstrap,
+            seed=bootstrap_seed,
+        )
+        rows.append(
+            {
+                "tier_name": tier,
+                "n_observed": n_observed,
+                "total_cost": total_cost,
+                "avg_cost": avg_cost,
+                "cost_ci_low": round(cost_ci_low, 6),
+                "cost_ci_high": round(cost_ci_high, 6),
             }
         )
     return rows
@@ -485,10 +551,13 @@ def _stamp_block(
 # ---------------------------------------------------------------------------
 
 
-def _format_funnel_table(rows: Sequence[Mapping[str, Any]]) -> str:
+def _format_funnel_table(
+    rows: Sequence[Mapping[str, Any]],
+    costs: Sequence[Mapping[str, Any]] | None = None,
+) -> str:
     """Render the funnel table with Wilson + bootstrap 95% CIs.
 
-    The two CIs answer different questions and both matter:
+    The two rate CIs answer different questions and both matter:
 
     * The **rate CI** (Wilson, conditional on entering the tier) tells
       you how confidently you can publish the per-tier pass rate as a
@@ -496,14 +565,22 @@ def _format_funnel_table(rows: Sequence[Mapping[str, Any]]) -> str:
     * The **cumulative CI** (bootstrap, over all trials) tells you how
       confidently you can publish the end-to-end pass-through.
 
-    Empty tiers render the CI as ``-`` instead of ``[0.000, 0.000]`` so
-    a reader doesn't mistake "no signal" for "we measured zero".
+    ``costs`` (the rows from :func:`_per_tier_costs`) adds a
+    ``cost_per_tier`` column showing the mean per-trial cost at the tier
+    with its bootstrap 95% CI, so the economic funnel is publishable
+    alongside the pass-rate funnel. It is keyed back to each tier by
+    name, so the column is robust to ordering and degrades to ``-`` when
+    a tier has no priced trials or no cost data is supplied at all.
+
+    Empty tiers render every CI as ``-`` instead of ``[0.000, 0.000]``
+    so a reader doesn't mistake "no signal" for "we measured zero".
     """
+    cost_by_tier = {c["tier_name"]: c for c in (costs or [])}
     lines = [
         "| tier_name | n_entered | n_passed | n_failed | "
-        "rate_ci_95 | cumulative_pass_rate | cumulative_ci_95 |",
+        "rate_ci_95 | cumulative_pass_rate | cumulative_ci_95 | cost_per_tier |",
         "|-----------|-----------|----------|----------|"
-        "------------|----------------------|------------------|",
+        "------------|----------------------|------------------|---------------|",
     ]
     for row in rows:
         rate_lo = row.get("rate_ci_low")
@@ -518,10 +595,18 @@ def _format_funnel_table(rows: Sequence[Mapping[str, Any]]) -> str:
             cum_ci = f"[{cum_lo:.3f}, {cum_hi:.3f}]"
         else:
             cum_ci = "-"
+        cost_row = cost_by_tier.get(row["tier_name"])
+        avg_cost = cost_row.get("avg_cost") if cost_row is not None else None
+        if cost_row is not None and avg_cost is not None:
+            cost_lo = cost_row["cost_ci_low"]
+            cost_hi = cost_row["cost_ci_high"]
+            cost_cell = f"${avg_cost:.4f} [{cost_lo:.4f}, {cost_hi:.4f}]"
+        else:
+            cost_cell = "-"
         lines.append(
             f"| {row['tier_name']} | {row['n_entered']} | {row['n_passed']} | "
             f"{row['n_failed']} | {rate_ci} | "
-            f"{row['cumulative_pass_rate']:.4f} | {cum_ci} |"
+            f"{row['cumulative_pass_rate']:.4f} | {cum_ci} | {cost_cell} |"
         )
     return "\n".join(lines)
 
@@ -710,7 +795,7 @@ def format_report(data: Mapping[str, Any]) -> str:
     variant = summary.get("variant", "unknown")
     n_trials = summary.get("n_trials", data.get("n_trials", 0))
 
-    funnel_md = _format_funnel_table(data["funnel"])
+    funnel_md = _format_funnel_table(data["funnel"], data.get("per_tier_costs"))
     contamination_md = _format_contamination(data["contamination"])
     gold_md = _format_gold_section(data.get("gold_anchor"))
     stamps_md = _format_stamps(data["stamps"])
@@ -795,6 +880,7 @@ def build_report_data(
     )
 
     funnel_rows = _funnel_counts(results)
+    per_tier_costs = _per_tier_costs(results)
     contamination = split_scores(results, cutoff).to_dict()
     failure_classes = _failure_class_counts(results)
     stamps = _stamp_block(results, summary)
@@ -808,6 +894,7 @@ def build_report_data(
         "summary": summary,
         "n_trials": len(results),
         "funnel": funnel_rows,
+        "per_tier_costs": per_tier_costs,
         "contamination": contamination,
         "gold_anchor": gold_report,
         "stamps": stamps,

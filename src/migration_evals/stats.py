@@ -3,8 +3,12 @@
 * :func:`wilson_interval` — closed-form Wilson score 95% CI for a
   binomial proportion, used to bound each per-tier pass rate without
   pulling in scipy.
+* :func:`bootstrap_mean_ci` — percentile bootstrap 95% CI for the mean
+  of an arbitrary numeric sequence, used for per-tier cost.
 * :func:`bootstrap_proportion_ci` — percentile bootstrap 95% CI for the
-  mean of a 0/1 sequence, used for the cumulative pass-through rate.
+  mean of a 0/1 sequence, used for the cumulative pass-through rate. A
+  thin wrapper over :func:`bootstrap_mean_ci` (a proportion is just the
+  mean of an indicator).
 
 Both are stdlib-only and deterministic given the seed. The Wilson form
 matches the version cited in ``docs/PRD.md`` for "defensible, calibrated
@@ -43,6 +47,43 @@ def wilson_interval(k: int, n: int, *, z: float = Z_95) -> tuple[float, float]:
     return (lo, hi)
 
 
+def bootstrap_mean_ci(
+    values: Sequence[float],
+    *,
+    n_bootstrap: int = 10_000,
+    seed: int = 42,
+    confidence: float = 0.95,
+) -> tuple[float, float]:
+    """Percentile bootstrap CI for the mean of a numeric sequence.
+
+    Resamples ``values`` with replacement ``n_bootstrap`` times and
+    returns the ``(alpha/2, 1-alpha/2)`` percentiles of the bootstrap
+    mean distribution, where ``alpha = 1 - confidence``. Unlike
+    :func:`wilson_interval` (binomial-only) this places no bound on the
+    values, so it suits continuous quantities like per-tier cost.
+
+    Returns ``(0.0, 0.0)`` for an empty sequence, mirroring
+    :func:`wilson_interval` so call sites can treat the two
+    interchangeably.
+    """
+    n = len(values)
+    if n == 0:
+        return (0.0, 0.0)
+    vals = [float(v) for v in values]
+    rng = random.Random(seed)
+    boot_means: list[float] = []
+    for _ in range(n_bootstrap):
+        total = 0.0
+        for _ in range(n):
+            total += vals[rng.randrange(n)]
+        boot_means.append(total / n)
+    boot_means.sort()
+    alpha = 1.0 - confidence
+    lo = _percentile(boot_means, (alpha / 2.0) * 100.0)
+    hi = _percentile(boot_means, (1.0 - alpha / 2.0) * 100.0)
+    return (lo, hi)
+
+
 def bootstrap_proportion_ci(
     successes: Sequence[bool],
     *,
@@ -53,30 +94,21 @@ def bootstrap_proportion_ci(
     """Percentile bootstrap CI for the mean of a 0/1 sequence.
 
     ``successes`` is the per-trial pass/fail indicator for the rate of
-    interest (e.g. "did this trial make it past tier T"). The bootstrap
-    resamples with replacement ``n_bootstrap`` times and returns the
-    ``(alpha/2, 1-alpha/2)`` percentiles where ``alpha = 1 - confidence``.
+    interest (e.g. "did this trial make it past tier T"). Delegates to
+    :func:`bootstrap_mean_ci` over the 0/1 indicator — a proportion is
+    just the mean of an indicator — so both share one resampling path.
 
     Returns ``(0.0, 0.0)`` for an empty sequence, mirroring
     :func:`wilson_interval` so call sites can treat the two
     interchangeably.
     """
-    n = len(successes)
-    if n == 0:
-        return (0.0, 0.0)
-    flags = [1 if bool(s) else 0 for s in successes]
-    rng = random.Random(seed)
-    boot_means: list[float] = []
-    for _ in range(n_bootstrap):
-        total = 0
-        for _ in range(n):
-            total += flags[rng.randrange(n)]
-        boot_means.append(total / n)
-    boot_means.sort()
-    alpha = 1.0 - confidence
-    lo = _percentile(boot_means, (alpha / 2.0) * 100.0)
-    hi = _percentile(boot_means, (1.0 - alpha / 2.0) * 100.0)
-    return (lo, hi)
+    flags = [1.0 if bool(s) else 0.0 for s in successes]
+    return bootstrap_mean_ci(
+        flags,
+        n_bootstrap=n_bootstrap,
+        seed=seed,
+        confidence=confidence,
+    )
 
 
 def _percentile(sorted_vals: Sequence[float], pct: float) -> float:
@@ -97,4 +129,9 @@ def _percentile(sorted_vals: Sequence[float], pct: float) -> float:
     return sorted_vals[lo_idx] * (1 - frac) + sorted_vals[hi_idx] * frac
 
 
-__all__ = ["Z_95", "bootstrap_proportion_ci", "wilson_interval"]
+__all__ = [
+    "Z_95",
+    "bootstrap_mean_ci",
+    "bootstrap_proportion_ci",
+    "wilson_interval",
+]
