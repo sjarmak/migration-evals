@@ -33,6 +33,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from migration_evals.stats import _percentile
+
 ACCEPT = "accept"
 REJECT = "reject"
 VALID_VERDICTS = frozenset({ACCEPT, REJECT})
@@ -169,24 +171,6 @@ def _phi(x: Sequence[int], y: Sequence[int]) -> float:
         return 0.0
     denom = math.sqrt(denom_parts[0] * denom_parts[1] * denom_parts[2] * denom_parts[3])
     return numerator / denom
-
-
-def _percentile(sorted_values: Sequence[float], percent: float) -> float:
-    """Linear-interpolation percentile on a pre-sorted list."""
-    if not sorted_values:
-        raise ValueError("_percentile: empty input")
-    if percent <= 0:
-        return sorted_values[0]
-    if percent >= 100:
-        return sorted_values[-1]
-    n = len(sorted_values)
-    rank = (percent / 100.0) * (n - 1)
-    lo = int(math.floor(rank))
-    hi = int(math.ceil(rank))
-    if lo == hi:
-        return sorted_values[lo]
-    frac = rank - lo
-    return sorted_values[lo] * (1 - frac) + sorted_values[hi] * frac
 
 
 # ---------------------------------------------------------------------------

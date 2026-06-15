@@ -131,6 +131,7 @@ def _percentile(sorted_vals: Sequence[float], pct: float) -> float:
 
 __all__ = [
     "Z_95",
+    "_percentile",
     "bootstrap_mean_ci",
     "bootstrap_proportion_ci",
     "wilson_interval",

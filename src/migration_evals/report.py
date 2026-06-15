@@ -28,8 +28,10 @@ from pathlib import Path
 from typing import Any
 
 from migration_evals.contamination import split_scores
+from migration_evals.dates import parse_iso_date
 from migration_evals.gold_anchor import CorrelationReport, correlate, load_gold_set
 from migration_evals.stats import (
+    _percentile,
     bootstrap_mean_ci,
     bootstrap_proportion_ci,
     wilson_interval,
@@ -66,19 +68,6 @@ def _load_summary(run_dir: Path) -> dict[str, Any]:
         return json.loads(summary_path.read_text())
     except (OSError, json.JSONDecodeError):
         return {}
-
-
-def _coerce_cutoff(raw: Any) -> date | None:
-    if raw is None:
-        return None
-    if isinstance(raw, date):
-        return raw
-    if isinstance(raw, str) and raw:
-        try:
-            return date.fromisoformat(raw[:10])
-        except ValueError:
-            return None
-    return None
 
 
 # ---------------------------------------------------------------------------
@@ -352,24 +341,6 @@ def _coerce_seconds(started: Any, finished: Any) -> float | None:
     return delta if delta >= 0 else None
 
 
-def _percentile(values: Sequence[float], pct: float) -> float | None:
-    if not values:
-        return None
-    sorted_v = sorted(values)
-    if pct <= 0.0:
-        return sorted_v[0]
-    if pct >= 100.0:
-        return sorted_v[-1]
-    n = len(sorted_v)
-    rank = (pct / 100.0) * (n - 1)
-    lo = int(rank)
-    hi = lo + 1 if lo + 1 < n else lo
-    if lo == hi:
-        return sorted_v[lo]
-    frac = rank - lo
-    return sorted_v[lo] * (1 - frac) + sorted_v[hi] * frac
-
-
 def _trial_total_cost_usd(payload: Mapping[str, Any]) -> float | None:
     funnel = payload.get("funnel")
     if not isinstance(funnel, Mapping):
@@ -443,10 +414,9 @@ def _cost_aggregate(results: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
         for d in (_coerce_seconds(r.get("started_at"), r.get("finished_at")) for r in results)
         if d is not None
     ]
-    p50_lat = _percentile(latencies, 50.0)
-    p95_lat = _percentile(latencies, 95.0)
-    p50_lat = round(p50_lat, 3) if p50_lat is not None else None
-    p95_lat = round(p95_lat, 3) if p95_lat is not None else None
+    sorted_lat = sorted(latencies)
+    p50_lat = round(_percentile(sorted_lat, 50.0), 3) if sorted_lat else None
+    p95_lat = round(_percentile(sorted_lat, 95.0), 3) if sorted_lat else None
 
     tokens = [t for t in (_trial_total_tokens(r) for r in results) if t is not None]
     total_tokens = sum(tokens) if tokens else None
@@ -876,7 +846,7 @@ def build_report_data(
     summary = _load_summary(run_dir)
 
     cutoff = (
-        model_cutoff_date or _coerce_cutoff(summary.get("model_cutoff_date")) or _DEFAULT_CUTOFF
+        model_cutoff_date or parse_iso_date(summary.get("model_cutoff_date")) or _DEFAULT_CUTOFF
     )
 
     funnel_rows = _funnel_counts(results)

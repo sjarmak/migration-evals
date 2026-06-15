@@ -32,11 +32,12 @@ The module uses stdlib only; no numpy / pandas dependency.
 from __future__ import annotations
 
 import json
-import math
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
+
+from migration_evals.stats import _percentile
 
 UNBATCHED_KEY = "<unbatched>"
 
@@ -99,22 +100,6 @@ def _group_by_iterator(results: Sequence[Mapping]) -> dict[str, list[dict]]:
     return groups
 
 
-def _percentile(values: Sequence[float], pct: float) -> float:
-    if not values:
-        raise ValueError("_percentile requires a non-empty sequence")
-    sorted_v = sorted(values)
-    if pct <= 0:
-        return sorted_v[0]
-    if pct >= 100:
-        return sorted_v[-1]
-    rank = (pct / 100.0) * (len(sorted_v) - 1)
-    lo, hi = int(math.floor(rank)), int(math.ceil(rank))
-    if lo == hi:
-        return sorted_v[lo]
-    frac = rank - lo
-    return sorted_v[lo] * (1 - frac) + sorted_v[hi] * frac
-
-
 def _trial_cost(payload: Mapping) -> float | None:
     funnel = payload.get("funnel")
     if not isinstance(funnel, Mapping):
@@ -154,12 +139,12 @@ def _build_one(iterator_id: str, trials: Sequence[Mapping]) -> IteratorReport:
         tier = str(t.get("oracle_tier") or "unknown")
         oracle_tier_breakdown[tier] = oracle_tier_breakdown.get(tier, 0) + 1
 
-    costs = [c for c in (_trial_cost(t) for t in trials) if c is not None]
+    costs = sorted(c for c in (_trial_cost(t) for t in trials) if c is not None)
     total_cost = round(sum(costs), 6) if costs else None
     p50_cost = round(_percentile(costs, 50), 6) if costs else None
     p95_cost = round(_percentile(costs, 95), 6) if costs else None
 
-    durations = [d for d in (_trial_duration_seconds(t) for t in trials) if d is not None]
+    durations = sorted(d for d in (_trial_duration_seconds(t) for t in trials) if d is not None)
     p50_duration = round(_percentile(durations, 50), 3) if durations else None
     p95_duration = round(_percentile(durations, 95), 3) if durations else None
 

@@ -24,8 +24,10 @@ from __future__ import annotations
 import math
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date
 from typing import Any
+
+from migration_evals.dates import parse_iso_date
 
 WARNING_THRESHOLD_PP = 5.0
 SIGNIFICANCE_ALPHA = 0.05
@@ -63,21 +65,6 @@ class ContaminationReport:
             "p_value": self.p_value,
             "significant": self.significant,
         }
-
-
-def _parse_created_at(raw: Any) -> date | None:
-    """Return a :class:`date` or ``None`` if the value is missing/unparseable."""
-    if isinstance(raw, date) and not isinstance(raw, datetime):
-        return raw
-    if isinstance(raw, datetime):
-        return raw.date()
-    if not isinstance(raw, str) or not raw:
-        return None
-    # Accept "YYYY-MM-DD" or full ISO timestamps.
-    try:
-        return date.fromisoformat(raw[:10])
-    except ValueError:
-        return None
 
 
 def _is_pass(result: Mapping[str, Any]) -> bool:
@@ -132,7 +119,7 @@ def split_scores(
     for row in results:
         if not isinstance(row, Mapping):
             continue
-        created = _parse_created_at(row.get("repo_created_at"))
+        created = parse_iso_date(row.get("repo_created_at"))
         if created is None:
             continue
         passed = _is_pass(row)
