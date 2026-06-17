@@ -1,0 +1,216 @@
+// Views over the migration-evals model. Planned (#planned) and research
+// (#research) elements/relationships are dimmed + dashed so the "what exists
+// vs what is proposed" split is readable at a glance.
+
+views {
+
+  // Landscape — the whole system in context.
+  view index {
+    title 'migration-evals — system landscape'
+    include *
+
+    style * {
+      opacity 25%
+    }
+    style element.tag == #built, element.tag == #evolving {
+      opacity 100%
+    }
+    style element.tag == #planned {
+      color muted
+      border dashed
+    }
+    style element.tag == #research {
+      color indigo
+      border dashed
+    }
+  }
+
+  // The migration-evals system, decomposed into its containers.
+  view evalsSystem of evals {
+    title 'migration-evals — containers (built vs planned)'
+    include *
+
+    style element.tag == #planned {
+      color muted
+      border dashed
+    }
+    style element.tag == #research {
+      color indigo
+      border dashed
+    }
+  }
+
+  // The tiered oracle funnel — the core cascade.
+  view funnelContainer of evals.funnel {
+    title 'Tiered oracle funnel (M1) — components'
+    include *
+  }
+
+  // Task definition & intake.
+  view intakeContainer of evals.intake {
+    title 'Task definition & intake — components'
+    include *
+  }
+
+  // Build-harness synthesis (M2).
+  view harnessContainer of evals.harness {
+    title 'Build-harness synthesis (M2) — components'
+    include *
+
+    style element.tag == #evolving {
+      color amber
+    }
+  }
+
+  // Execution & inference adapters.
+  view adaptersContainer of evals.adapters {
+    title 'Execution & inference adapters — components'
+    include *
+  }
+
+  // Synthetic task generation (M3 / M9).
+  view syntheticContainer of evals.synthetic {
+    title 'Synthetic task generation (M3 / M9) — components'
+    include *
+
+    style element.tag == #evolving {
+      color amber
+    }
+  }
+
+  // Runner, stamping & gates.
+  view runnerContainer of evals.runner {
+    title 'Runner, stamping & validity gates — components'
+    include *
+  }
+
+  // Reporting & gold anchor.
+  view reportingContainer of evals.reporting {
+    title 'Reporting & gold anchor — components'
+    include *
+
+    style element.tag == #evolving {
+      color amber
+    }
+  }
+
+  // Risks & open questions — the elements that carry a #risk flag, with the
+  // open question stated in each box's description. The things a reviewer
+  // should probe, surfaced rather than discovered mid-meeting.
+  view risks {
+    title 'Risks & open questions'
+    include
+      evals,
+      element.tag == #risk,
+      evals.harness,
+      evals.funnel,
+      evals.synthetic,
+      evals.runner,
+      evals.reporting
+
+    style * {
+      opacity 30%
+    }
+    style element.tag == #risk {
+      opacity 100%
+      color red
+    }
+  }
+
+  // ───────────────────────────────────────────────────────────────────────
+  // Walkthrough flows (dynamic views) — the narrative spine of the review.
+  // ───────────────────────────────────────────────────────────────────────
+
+  // Flow 1 — one eval run, config to stamped result.
+  dynamic view evalRun {
+    title 'Walkthrough — one eval run, config to stamped result'
+    description 'The smoke path runs end-to-end from a fresh clone with no API keys, no Docker: the cassette adapters replay sandbox + judge so every tier is exercised offline. Stages are filtered by the config (compile, tests, judge for the smoke fixtures).'
+
+    evals.cli -> evals.runner.runLoop 'cli run --config java8_17_smoke.yaml'
+    evals.runner.runLoop -> evals.intake.runConfig 'read migration_id, repos, stages, stamps'
+    evals.runner.runLoop -> evals.harness.synth 'resolve recipe (cache-first)'
+    evals.runner.runLoop -> evals.funnel.tier0 'run_funnel(repo, recipe, adapters)'
+    evals.funnel.tier0 -> evals.funnel.tier1 'diff valid → compile'
+    evals.funnel.tier1 -> evals.funnel.tier2 'compile ok → tests'
+    evals.funnel.tier2 -> evals.funnel.tier3 'tests ok → judge'
+    evals.funnel.tier3 -> evals.funnel.verdict 'aggregate FunnelResult'
+    evals.funnel.verdict -> evals.runner.runLoop 'FunnelResult'
+    evals.runner.runLoop -> evals.runner.failureClass 'classify if failed'
+    evals.runner.runLoop -> evals.runner.preReg 'stamp oracle/recipe/pre_reg SHAs'
+    evals.runner.preReg -> evals.runner.resultStore 'write stamped result.json'
+  }
+
+  // Flow 2 — the funnel cascade against a real sandbox + LLM.
+  dynamic view funnelCascade {
+    title 'Walkthrough — the funnel cascade (live adapters)'
+    description 'Cheapest-first, short-circuit on first fail: ~40% die at T0/T1 for $0.01, only the residual ambiguous cases reach the $0.08 LLM judge. Each failing tier stamps exactly one failure_class so a 40-repo regression triages in under 2h.'
+
+    evals.funnel.tier0 -> evals.funnel.tier1 'patch applies → build'
+    evals.funnel.tier1 -> evals.adapters.sandboxAdapter 'recipe.build_cmd'
+    evals.adapters.sandboxAdapter -> docker 'exec in hardened container'
+    evals.funnel.tier1 -> evals.funnel.tier2 'exit 0 → tests'
+    evals.funnel.tier2 -> evals.adapters.sandboxAdapter 'recipe.test_cmd'
+    evals.funnel.tier2 -> evals.funnel.tier3 'exit 0 → judge'
+    evals.funnel.tier3 -> evals.adapters.anthropicAdapter 'rubric prompt (cached)'
+    evals.adapters.anthropicAdapter -> anthropic 'messages.create'
+    evals.funnel.tier3 -> evals.adapters.openaiAdapter 'dual-family second judge'
+    evals.funnel.tier3 -> evals.funnel.verdict 'aggregate FunnelResult + total cost'
+  }
+
+  // Flow 3 — synthetic generation + AST-ground-truth scoring.
+  dynamic view syntheticFlow {
+    title 'Walkthrough — synthetic generation + AST ground truth'
+    description 'Procedural repos give exact AST-level truth at zero marginal cost. The T2b oracle checks 5 primitives; the generator emits 10 — the ≤50% overlap (D5) keeps generator and oracle code-disjoint so a green oracle is not a tautology.'
+
+    evals.synthetic.java8Gen -> evals.intake.changesets 'generate orig/ + migrated/ repos (seeded)'
+    evals.intake.changesets -> evals.runner.runLoop 'task input'
+    evals.runner.runLoop -> evals.funnel.tier0 'run_funnel(is_synthetic=true)'
+    evals.funnel.tier2 -> evals.funnel.astOracle 'after tests → AST conformance'
+    evals.funnel.astOracle -> evals.synthetic.java8Gen 'compare migrated/ against expected primitives'
+    evals.funnel.astOracle -> evals.funnel.tier3 'pass → judge'
+  }
+
+  // Flow 4 — aggregation, contamination split, gold-anchor correlation.
+  dynamic view reportFlow {
+    title 'Walkthrough — report, contamination split, gold anchor'
+    description 'No headline number leaves the project until the publication gate is green: every result stamped, no cassette_miss, and the eval_broken gate (Phi<0.7 or CI-low<0.5) not tripped. The contamination split is mandatory on every report.'
+
+    evals.cli -> evals.reporting.report 'cli report --run <dir> --gold <path>'
+    evals.reporting.report -> evals.runner.resultStore 'load all result.json'
+    evals.reporting.report -> evals.reporting.stats 'Wilson per-tier CI'
+    evals.reporting.report -> evals.reporting.contamination 'pre/post-cutoff split (>5pp warns)'
+    evals.reporting.report -> evals.reporting.goldAnchor 'merge-survival correlation'
+    evals.reporting.goldAnchor -> evals.reporting.goldStore 'load harvested labels'
+    evals.reporting.goldAnchor -> evals.reporting.stats 'bootstrap CI on Phi → eval_broken'
+    evals.runner.pubGate -> evals.runner.resultStore 'gate: stamps valid, no cassette_miss'
+  }
+
+  // Planned-only lens: Should-Have / Nice-to-Have tracks in context.
+  view planned {
+    title 'Planned & research work'
+    include
+      evals,
+      evals.telemetry,
+      evals.irt,
+      evals.liveRefresh,
+      evals.transferability,
+      evals.funnel.tier4,
+      evals.runner.resultStore,
+      evals.reporting.goldAnchor,
+      github
+
+    style * {
+      opacity 30%
+    }
+    style element.tag == #planned {
+      opacity 100%
+      color muted
+      border dashed
+    }
+    style element.tag == #research {
+      opacity 100%
+      color indigo
+      border dashed
+    }
+  }
+}

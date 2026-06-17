@@ -1,0 +1,479 @@
+// The `migration-evals` tiered-oracle funnel.
+//
+// A post-hoc grader for agent-produced *batch-change diffs* (one mechanical
+// rule applied across many repos). The input is always (repo, base_commit,
+// patch.diff); how the agent produced it is out of scope. Each trial cascades
+// through cheap-to-expensive oracles (diff → compile → tests → AST → judge →
+// daikon), short-circuits on first failure, and emits one stamped JSON result.
+// Aggregation produces a per-tier funnel, a contamination split, and a
+// merge-survival correlation against a gold anchor.
+//
+// Pure Python with pluggable adapter Protocols (sandbox, LLM, changeset) so
+// the funnel is testable offline via replay cassettes; Docker / Anthropic SDK /
+// Claude-Code / OpenAI are the drop-in live implementations.
+//
+// Planned / research work is tagged so it renders distinctly from what is
+// already built (see spec.c4 for the tag legend). Elements carry `link`s to
+// their source and to the relevant design doc / PRD / ADR.
+
+model {
+
+  agent = actor 'Migration agent' {
+    description 'Upstream coding agent that already produced the (repo, base_commit, patch.diff) under grade — its authoring pipeline is out of scope'
+    link ../README.md 'Non-goals — grades diffs, not authoring'
+  }
+
+  oncall = actor 'On-call / reviewer' {
+    description 'Reads funnel reports, triages regressions by failure-class, owns publication-gate sign-off'
+    link ../docs/usage.md 'CLI quickstart'
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // External systems — execution substrate, inference backends, label source.
+  // All are behind adapter Protocols; cassette stand-ins ship for offline use.
+  // ─────────────────────────────────────────────────────────────────────────
+
+  docker = externalSystem 'Docker / OCI runtime' {
+    description 'Ephemeral hardened containers for tier-1 compile + tier-2 tests; --network none by default, tinyproxy egress sidecar when network=pull'
+    link ../docs/sandbox_outer_daemon.md 'Outer-daemon hardening'
+  }
+
+  anthropic = externalSystem 'Anthropic API' {
+    description 'Claude models for tier-3 LLM judge and LLM-inferred harness synthesis (prompt-cached, pre-call budget guard)'
+    link ../docs/oracle_funnel.md 'Backend selection'
+  }
+
+  claudeCode = externalSystem 'Claude Code CLI (OAuth)' {
+    description 'Subscription-billed judge/synth backend — `claude -p --output-format json`, no API key'
+    link ../src/migration_evals/adapters_claude_code.py 'adapters_claude_code.py'
+  }
+
+  openai = externalSystem 'OpenAI API' {
+    description 'Cross-family second judge for the optional dual-family mode (pairwise agreement required to pass)'
+    link ../src/migration_evals/adapters_openai.py 'adapters_openai.py'
+  }
+
+  github = externalSystem 'GitHub (gh CLI)' {
+    description 'Source of the merge-survival gold anchor — merged PRs touching migration idioms, survived ≥30 days without revert'
+    link ../scripts/mine_gold_anchor.py 'mine_gold_anchor.py'
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // The migration-evals system.
+  // ─────────────────────────────────────────────────────────────────────────
+
+  evals = system 'migration-evals' {
+    description 'Tiered-oracle funnel that grades agent batch-change diffs and reports a per-tier funnel + contamination split + merge-survival anchor'
+    link ../README.md 'Project README'
+    link ../docs/PRD.md 'Risk-annotated PRD v0.3 (M1–M9)'
+    link ../docs/premortem.md 'Premortem — failure modes R1–R15'
+
+    // ── Task definition & intake ───────────────────────────────────────────
+    intake = container 'Task definition & intake' {
+      description 'YAML run configs + recipe specs define the migration; changeset providers stage (repo, base_commit, patch.diff) for the funnel'
+      technology 'Python / YAML'
+      link ../configs 'configs/'
+
+      runConfig = datastore 'Run + recipe configs (YAML)' {
+        #built
+        description 'Run config (migration_id, model, repos, stages, adapters, stamps) + per-recipe spec (dockerfile, build/test cmds, quality block). Five migration shapes ship; CVE is excluded by ADR 0001'
+        link ../configs/java8_17_smoke.yaml 'java8_17_smoke.yaml'
+        link ../configs/recipes/java8_17.yaml 'recipes/java8_17.yaml'
+        link ../docs/agentic_migrations_coverage.md 'Coverage matrix'
+      }
+      oracleSpec = datastore 'Oracle spec (YAML)' {
+        #built
+        description 'Declares which tiers are enabled and what each asserts; its sha256 is stamped into every result as oracle_spec_sha'
+        link ../configs/oracle_spec.yaml 'oracle_spec.yaml'
+      }
+      changesets = component 'changesets — provider Protocol' {
+        #built
+        description 'ChangesetProvider.fetch(instance_id) → Changeset(base_commit, patch_diff, metadata); filesystem impl ships, S3/HTTP are user-supplied'
+        link ../src/migration_evals/changesets.py 'changesets.py'
+      }
+    }
+
+    // ── Build-harness synthesis (M2) ───────────────────────────────────────
+    harness = container 'Build-harness synthesis (M2)' {
+      description 'LLM-inferred Dockerfile + build/test recipe, content-hash cached so repeat runs cost zero adapter calls'
+      technology 'Python'
+      link ../src/migration_evals/harness 'harness/'
+      link ../docs/harness_synthesis.md 'Harness synthesis design'
+
+      synth = component 'synth — LLM synthesizer' {
+        #built
+        description 'Reads manifest + CI + README, asks an LLM for {dockerfile, build_cmd, test_cmd} JSON, stamps provenance (model, prompt_version, timestamp)'
+        link ../src/migration_evals/harness/synth.py 'synth.py'
+      }
+      recipeModel = component 'recipe — frozen Recipe dataclass' {
+        #built
+        description 'Immutable {dockerfile, build_cmd, test_cmd, harness_provenance}; deterministic to_json/from_json, forward-compatible'
+        link ../src/migration_evals/harness/recipe.py 'recipe.py'
+      }
+      hcache = datastore 'cache — content-hash recipe cache' {
+        #built
+        description 'runs/.../_harnesses/<hash>/ keyed on sha256(manifest+recipe); a hit skips synthesis entirely'
+        link ../src/migration_evals/harness/cache.py 'cache.py'
+      }
+      drift = component 'drift — stale-recipe detector' {
+        #evolving
+        #risk
+        description 'Re-validates cached recipes against fresh dependency resolution. RISK: cache keys on repo content-hash not resolved deps, so transitive drift can give a green compile on stale code (premortem Narrative 1, D5)'
+        link ../src/migration_evals/harness/drift.py 'drift.py'
+        link ../docs/premortem.md 'D5 — drift mitigation'
+      }
+    }
+
+    // ── The tiered oracle funnel (M1) — the core ───────────────────────────
+    funnel = container 'Tiered oracle funnel (M1)' {
+      description 'Cascades each trial T0→T1→T2→T2b→T3→T4 cheapest-first, short-circuits on first failure, aggregates per-tier verdicts into a FunnelResult'
+      technology 'Python'
+      link ../src/migration_evals/funnel.py 'funnel.py'
+      link ../docs/oracle_funnel.md 'Funnel design + cost math'
+
+      tier0 = component 'T0 diff_valid' {
+        #built
+        description '~$0.001 local: patch parses + applies cleanly to base commit (git apply --check). Catches hallucinated patches before any sandbox spend; failure = agent_error'
+        link ../src/migration_evals/oracles/tier0_diff.py 'tier0_diff.py'
+        link ../docs/tier0_skip.md 'Tier-0 (merge-survival) skip note'
+      }
+      tier1 = component 'T1 compile_only' {
+        #built
+        description '~$0.01 sandbox: recipe.build_cmd exits 0 inside the container. High-signal tier for mechanical transforms; build failure = harness_error'
+        link ../src/migration_evals/oracles/tier1_compile.py 'tier1_compile.py'
+      }
+      tier2 = component 'T2 tests' {
+        #built
+        description '~$0.03 sandbox: recipe.test_cmd exits 0 against the migrated repo. Test failure = agent_error; may be disabled per-recipe (e.g. dockerfile bump)'
+        link ../src/migration_evals/oracles/tier2_tests.py 'tier2_tests.py'
+      }
+      astOracle = component 'T2b ast_conformance' {
+        #built
+        #risk
+        description 'Free local regex check of 5 Java primitives (synthetic-only). RISK: regex, not a real parser — deliberately disjoint (≤50% overlap, D5) from the generator to break the tautology, but shallow'
+        link ../src/migration_evals/synthetic/ast_oracle.py 'ast_oracle.py'
+      }
+      tier3 = component 'T3 judge' {
+        #built
+        description '~$0.08 LLM: reads recipe + manifest + fixed rubric, returns PASS/FAIL with prompt-cache passthrough. Optional dual-family mode needs Claude AND OpenAI agreement'
+        link ../src/migration_evals/oracles/tier3_judge.py 'tier3_judge.py'
+        link ../src/migration_evals/adapters_judge.py 'adapters_judge.py'
+      }
+      tier4 = component 'T4 daikon (stub)' {
+        #planned
+        description 'Dynamic-invariant tier. v1 raises NotImplementedError; the funnel treats that as "skip tier". Deferred to v2 (PRD N1)'
+        link ../src/migration_evals/oracles/tier4_daikon.py 'tier4_daikon.py'
+      }
+      quality = component 'quality — batch-change oracles' {
+        #evolving
+        description 'Side oracles that distinguish a real migration from grep-and-sed: diff_minimality, idempotency, baseline_comparison, touched_paths (can enforce), cve_disappears (informational, per ADR 0001)'
+        link ../src/migration_evals/oracles/quality 'oracles/quality/'
+        link ../src/migration_evals/quality_spec.py 'quality_spec.py'
+      }
+      verdict = component 'verdict — Funnel result types' {
+        #built
+        description 'Frozen OracleVerdict (per tier) + FunnelResult (aggregate); safe to share across module boundaries'
+        link ../src/migration_evals/oracles/verdict.py 'verdict.py'
+      }
+    }
+
+    // ── Execution adapters ─────────────────────────────────────────────────
+    adapters = container 'Execution & inference adapters' {
+      description 'Protocol-typed seam between the funnel and any runtime; cassette stand-ins keep the suite offline, live adapters hit Docker / LLM APIs'
+      technology 'Python (typing.Protocol)'
+      link ../src/migration_evals/adapters.py 'adapters.py'
+
+      sandboxAdapter = component 'Docker sandbox adapter' {
+        #built
+        description 'create/exec/destroy a hardened container (--cap-drop=ALL, no-new-privileges, non-root); force-kills on timeout. Tiers 1 + 2'
+        link ../src/migration_evals/adapters_docker.py 'adapters_docker.py'
+        link ../src/migration_evals/sandbox_policy.py 'sandbox_policy.py'
+      }
+      egress = component 'Docker egress filter' {
+        #built
+        description 'Per-sandbox --internal bridge + tinyproxy sidecar (FilterDefaultDeny) for network=pull; the only escape hatch from the no-MASQUERADE internal net'
+        link ../src/migration_evals/adapters_docker_egress.py 'adapters_docker_egress.py'
+        link ../docs/adr/0002-tinyproxy-egress-image-replacement.md 'ADR 0002 — egress image'
+      }
+      anthropicAdapter = component 'Anthropic SDK adapter' {
+        #built
+        description 'Wraps the Claude SDK; cache_control passthrough, pre-call worst-case BudgetExceededError guard, post-call usage-based cost accounting'
+        link ../src/migration_evals/adapters_anthropic.py 'adapters_anthropic.py'
+      }
+      claudeCodeAdapter = component 'Claude Code CLI adapter' {
+        #built
+        description 'Subprocess `claude -p --output-format json`; OAuth-billed, system prompt flattened (no native cache marker)'
+        link ../src/migration_evals/adapters_claude_code.py 'adapters_claude_code.py'
+      }
+      openaiAdapter = component 'OpenAI SDK adapter' {
+        #built
+        description 'Second judge family for dual-family mode'
+        link ../src/migration_evals/adapters_openai.py 'adapters_openai.py'
+      }
+      cassetteAdapter = component 'Cassette replay adapters' {
+        #built
+        description 'File-backed sandbox + LLM stand-ins for offline CI; a missing entry stamps cassette_miss=True so the publication gate refuses the run'
+        link ../src/migration_evals/adapters_cassette.py 'adapters_cassette.py'
+      }
+    }
+
+    // ── Synthetic task generation (M3 / M9) ────────────────────────────────
+    synthetic = container 'Synthetic task generation' {
+      description 'Procedural repos with exact AST ground truth at zero marginal cost; generator and oracle kept code-disjoint (D5)'
+      technology 'Python'
+      link ../src/migration_evals/synthetic 'synthetic/'
+      link ../docs/synthetic_generator.md 'Generator design'
+
+      java8Gen = component 'java8_generator (10 primitives)' {
+        #built
+        description 'Deterministic Java 8 repos across lambda / var / Optional / text-blocks / records / sealed / pattern-match / switch / deprecated-API / dep-bumps; emits orig/ + migrated/ subtrees'
+        link ../src/migration_evals/synthetic/java8_generator.py 'java8_generator.py'
+      }
+      python2Gen = component 'python2_generator (M9 probe)' {
+        #evolving
+        description 'Python-idiosyncratic cases (str_bytes, setup_py_div, two_to_three) to stress-test schema generality — not a credible Python eval, a falsification probe'
+        link ../src/migration_evals/synthetic/python2_generator.py 'python2_generator.py'
+      }
+      probe = component 'python23_probe — schema-break gate' {
+        #evolving
+        #risk
+        description 'Runs the probe and flags schema mismatches. RISK / gate: if ≥2 of {M2 harness, M3 synthetic, M5 ledger} need schema revisions, the Java schema must be frozen before any external Java number ships (M9)'
+        link ../src/migration_evals/python23_probe.py 'python23_probe.py'
+        link ../docs/python23_probe.md 'Probe design'
+      }
+    }
+
+    // ── Result writer, stamping & validity gates ───────────────────────────
+    runner = container 'Runner, stamping & gates' {
+      description 'Drives the config-defined run loop, writes one stamped result.json per trial, classifies failures, and gates publication'
+      technology 'Python'
+      link ../src/migration_evals/runner.py 'runner.py'
+
+      runLoop = component 'runner — config-driven run loop' {
+        #built
+        description 'Parses the YAML config, iterates repo entries, invokes the funnel per (repo, seed), assembles + stamps the payload, writes result.json'
+        link ../src/migration_evals/runner.py 'runner.py'
+        link ../src/migration_evals/result_payload.py 'result_payload.py'
+      }
+      failureClass = component 'failure_class — 4-way discriminator' {
+        #built
+        #risk
+        description 'Exactly one of agent / harness / oracle / infra_error per failed trial via deterministic signature precedence. RISK: heuristic (~78% precision in premortem Narrative 3)'
+        link ../src/migration_evals/failure_class.py 'failure_class.py'
+        link ../docs/failure_classification.md 'Failure-class design'
+      }
+      preReg = component 'pre_reg — spec-SHA stamping' {
+        #built
+        description 'Stamps oracle_spec_sha + recipe_spec_sha + pre_reg_sha (+ optional prompt_sha) into every result at write time'
+        link ../src/migration_evals/pre_reg.py 'pre_reg.py'
+      }
+      pubGate = component 'publication_gate — CI gate' {
+        #built
+        #risk
+        description 'Refuses to bless a run unless every result carries valid non-stale stamps and no cassette_miss. RISK: procedural — bypassed 3× in the month-10 premortem sim (D2 mechanical enforcement pending)'
+        link ../src/migration_evals/publication_gate.py 'publication_gate.py'
+        link ../docs/publication_gate.md 'Gate contract'
+      }
+      resultStore = datastore 'result.json + summary.json' {
+        #built
+        description 'Per-trial result (funnel core, failure_class, stamps, contamination split) validated against the schema, plus a run-level summary'
+        link ../schemas/mig_result.schema.json 'mig_result.schema.json'
+        link ../examples/runs 'examples/runs/'
+      }
+      ledger = datastore 'ledger — regression history' {
+        #built
+        description 'runs/.../_ledger/<task_id>/<hash>.json content-hash-deduped trial history; `cli regression` diffs success True→False between runs'
+        link ../src/migration_evals/ledger.py 'ledger.py'
+      }
+    }
+
+    // ── Calibration ────────────────────────────────────────────────────────
+    calibration = container 'Calibration' {
+      description 'Measures per-tier false-positive/negative rates and inter-judge agreement so the publication gate can enforce reliability floors'
+      technology 'Python'
+      link ../src/migration_evals/calibration.py 'calibration.py'
+
+      tierCal = component 'calibration — per-tier FPR/FNR' {
+        #evolving
+        description 'Runs known-good / known-bad fixtures through a recipe and reports per-tier FPR/FNR against the thresholds in hypotheses_and_thresholds.md'
+        link ../src/migration_evals/calibration.py 'calibration.py'
+        link ../docs/calibration_starters.md 'Which recipes to calibrate first'
+      }
+      judgeCal = component 'judge_calibration — Cohen κ' {
+        #evolving
+        description 'Pairwise Cohen κ across {Anthropic, OpenAI, human} judges; κ<0.6 (substantial-agreement floor) blocks dual-family publication'
+        link ../src/migration_evals/judge_calibration.py 'judge_calibration.py'
+      }
+    }
+
+    // ── Reporting & real-world anchor ──────────────────────────────────────
+    reporting = container 'Reporting & gold anchor' {
+      description 'Aggregates stamped results into a funnel report + contamination split + merge-survival correlation'
+      technology 'Python'
+      link ../src/migration_evals/report.py 'report.py'
+
+      report = component 'report — funnel markdown report' {
+        #built
+        description 'Per-tier n_entered/passed/failed + cumulative pass-rate with Wilson 95% CI, failure-class breakdown, spec stamps'
+        link ../src/migration_evals/report.py 'report.py'
+      }
+      iteratorReport = component 'iterator_report — per-batch report' {
+        #built
+        description 'Groups trials by iterator_id into completion rate, p50/p95 latency, total cost, failure-class breakdown — the natural unit for fan-out over hundreds of repos'
+        link ../src/migration_evals/iterator_report.py 'iterator_report.py'
+      }
+      stats = component 'stats — Wilson + bootstrap CI' {
+        #built
+        description 'Wilson score interval + percentile bootstrap CI, stdlib-only (no scipy), deterministic given seed'
+        link ../src/migration_evals/stats.py 'stats.py'
+      }
+      contamination = component 'contamination — pre/post-cutoff split' {
+        #built
+        #risk
+        description 'Buckets results by repo_created_at vs model cutoff; gap >5pp auto-flags a contamination_warning. RISK: 5pp on small n is noise, so a two-proportion z p-value is reported alongside'
+        link ../src/migration_evals/contamination.py 'contamination.py'
+      }
+      goldAnchor = component 'gold_anchor — merge-survival correlation' {
+        #evolving
+        #risk
+        description 'Phi correlation of funnel pass vs merged-PR survival with bootstrap 95% CI + eval_broken gate (Phi<0.7 or CI-low<0.5). RISK: load-bearing but fragile — 50-repo set has ±0.15 CI and a model bump can collapse it overnight (premortem Theme A)'
+        link ../src/migration_evals/gold_anchor.py 'gold_anchor.py'
+        link ../docs/gold_anchor.md 'Gold-anchor design'
+      }
+      goldStore = datastore 'gold_anchor.json' {
+        #built
+        description 'Merge-survival labels harvested from public OSS PRs (or agent changeset CSV); empty template until mined'
+        link ../data/gold_anchor_template.json 'gold_anchor_template.json'
+        link ../schemas/gold_anchor_entry.schema.json 'gold_anchor_entry.schema.json'
+      }
+    }
+
+    // ── CLI surface ────────────────────────────────────────────────────────
+    cli = component 'migration-evals CLI' {
+      #built
+      description 'run / report / iterator-report / regression / harness / probe — the operator entry point'
+      link ../src/migration_evals/cli.py 'cli.py'
+      link ../scripts/run_eval.py 'scripts/run_eval.py'
+      link ../docs/usage.md 'CLI quickstart'
+    }
+
+    // ── Should-Have v1.1 / Nice-to-Have v2 (not yet implemented) ───────────
+    telemetry = container 'Process-telemetry classifier (S1)' {
+      #planned
+      description 'Designed: predict trial outcome from process features (file opens, re-reads, tool calls) at ≥75% accuracy. Not implemented (PRD Should-Have v1.1)'
+      link ../docs/PRD.md 'PRD §S1'
+    }
+    irt = container 'IRT difficulty calibration (S2)' {
+      #planned
+      description 'Item-Response-Theory model of task difficulty vs agent ability. Designed, not implemented (PRD S2)'
+      link ../docs/PRD.md 'PRD §S2'
+    }
+    liveRefresh = container 'Live dataset refresh (S3)' {
+      #planned
+      description 'Monthly rotation of post-cutoff repos from GitHub to keep the contamination split honest. Designed, not implemented (PRD S3)'
+      link ../docs/PRD.md 'PRD §S3'
+    }
+    transferability = container 'Held-out transferability / chaos (N2–N5)' {
+      #research
+      description 'Speculative v2: train/test overfitting split, chaos injection for degradation curves, author-in-loop real-PR merge signal'
+      link ../docs/PRD.md 'PRD Nice-to-Have v2'
+    }
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Relationships.
+  // ─────────────────────────────────────────────────────────────────────────
+
+  // Operator entry
+  oncall -> evals.cli 'run / report / regression'
+  agent -> evals.intake.changesets 'stages (repo, base_commit, patch.diff)'
+
+  // CLI fans out to run, harness, probe, reporting
+  evals.cli -> evals.runner.runLoop 'cli run --config'
+  evals.cli -> evals.harness.synth 'cli harness synthesize'
+  evals.cli -> evals.synthetic.probe 'cli probe'
+  evals.cli -> evals.reporting.report 'cli report'
+  evals.cli -> evals.reporting.iteratorReport 'cli iterator-report'
+  evals.cli -> evals.runner.ledger 'cli regression --from --to'
+
+  // Intake → run loop
+  evals.intake.runConfig -> evals.runner.runLoop 'migration_id, repos, stages, stamps'
+  evals.intake.changesets -> evals.runner.runLoop 'Changeset per instance'
+
+  // Run loop drives harness + funnel, then stamps + writes
+  evals.runner.runLoop -> evals.harness.synth 'resolve recipe (cache-first)'
+  evals.runner.runLoop -> evals.funnel 'run_funnel(repo, recipe, adapters, stages)'
+  evals.runner.runLoop -> evals.runner.failureClass 'classify failed trial'
+  evals.runner.runLoop -> evals.runner.preReg 'stamp result'
+  evals.runner.runLoop -> evals.runner.resultStore 'write result.json + summary.json'
+  evals.runner.runLoop -> evals.runner.ledger 'append trial to history'
+  evals.runner.preReg -> evals.intake.oracleSpec 'sha256 → oracle_spec_sha'
+  evals.runner.preReg -> evals.intake.runConfig 'sha256 → recipe_spec_sha'
+
+  // Harness internals
+  evals.harness.synth -> evals.harness.recipeModel 'emits Recipe'
+  evals.harness.synth -> evals.harness.hcache 'lookup / store by content-hash'
+  evals.harness.synth -> evals.adapters.anthropicAdapter 'synthesize {dockerfile, build/test} (cache miss)'
+  evals.harness.drift -> evals.harness.hcache 're-validates cached recipes'
+
+  // Funnel cascade — cheapest-first, short-circuit on first fail
+  evals.funnel.tier0 -> evals.funnel.tier1 'pass → compile'
+  evals.funnel.tier1 -> evals.funnel.tier2 'pass → tests'
+  evals.funnel.tier2 -> evals.funnel.astOracle 'synthetic → AST conformance'
+  evals.funnel.astOracle -> evals.funnel.tier3 'pass → judge'
+  evals.funnel.tier3 -> evals.funnel.tier4 'enabled → daikon (skipped today)' {
+    #planned
+  }
+  evals.funnel.tier2 -> evals.funnel.quality 'batch-change quality oracles run alongside'
+  evals.funnel.tier3 -> evals.funnel.verdict 'aggregate FunnelResult + total cost'
+  evals.funnel.tier4 -> evals.funnel.verdict 'aggregate FunnelResult + total cost'
+
+  // Funnel → adapters → external substrate
+  evals.funnel.tier1 -> evals.adapters.sandboxAdapter 'build_cmd'
+  evals.funnel.tier2 -> evals.adapters.sandboxAdapter 'test_cmd'
+  evals.funnel.tier3 -> evals.adapters.anthropicAdapter 'judge prompt (cached rubric)'
+  evals.funnel.tier3 -> evals.adapters.openaiAdapter 'dual-family second judge'
+  evals.funnel.astOracle -> evals.synthetic.java8Gen 'checks orig/ vs migrated/ subtrees'
+
+  evals.adapters.sandboxAdapter -> docker 'create / exec / destroy container'
+  evals.adapters.egress -> docker 'tinyproxy egress sidecar'
+  evals.adapters.anthropicAdapter -> anthropic 'messages.create'
+  evals.adapters.claudeCodeAdapter -> claudeCode 'claude -p'
+  evals.adapters.openaiAdapter -> openai 'chat.completions'
+
+  // Synthetic feeds intake + AST oracle
+  evals.synthetic.java8Gen -> evals.intake.changesets 'synthetic repos as task input'
+  evals.synthetic.python2Gen -> evals.synthetic.probe 'probe corpus'
+  evals.synthetic.probe -> evals.runner.resultStore 'schema-mismatch findings'
+
+  // Calibration gates
+  evals.calibration.tierCal -> evals.funnel 'measure per-tier FPR/FNR'
+  evals.calibration.judgeCal -> evals.funnel.tier3 'inter-judge κ'
+  evals.runner.pubGate -> evals.runner.resultStore 'verify stamps + no cassette_miss'
+  evals.runner.pubGate -> evals.calibration.tierCal 'optional --require-calibration'
+  evals.runner.pubGate -> evals.calibration.judgeCal 'optional --require-judge-calibration'
+
+  // Reporting reads results, splits, anchors
+  evals.reporting.report -> evals.runner.resultStore 'load all result.json'
+  evals.reporting.report -> evals.reporting.stats 'Wilson per-tier CI'
+  evals.reporting.report -> evals.reporting.contamination 'pre/post-cutoff split'
+  evals.reporting.report -> evals.reporting.goldAnchor 'merge-survival correlation'
+  evals.reporting.iteratorReport -> evals.runner.resultStore 'group by iterator_id'
+  evals.reporting.goldAnchor -> evals.reporting.goldStore 'load gold labels'
+  evals.reporting.goldAnchor -> evals.reporting.stats 'bootstrap CI on Phi'
+  evals.reporting.goldStore -> github 'harvested via gh CLI'
+
+  // Planned / research wiring
+  evals.telemetry -> evals.runner.resultStore 'process features → outcome classifier' {
+    #planned
+  }
+  evals.irt -> evals.runner.resultStore 'difficulty / ability calibration' {
+    #planned
+  }
+  evals.liveRefresh -> github 'monthly post-cutoff repo rotation' {
+    #planned
+  }
+  evals.transferability -> evals.reporting.goldAnchor 'real-PR merge signal' {
+    #research
+  }
+}

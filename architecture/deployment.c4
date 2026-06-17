@@ -1,0 +1,58 @@
+// Deployment model — where each piece runs at review time.
+//
+// migration-evals is a single Python process (the CLI + funnel) on a developer
+// or CI host. Execution and inference are pushed onto separate substrates
+// through adapter Protocols: a Docker daemon for the compile/test sandbox and
+// LLM APIs for the judge. The offline smoke path runs entirely on the dev host
+// — cassette adapters replay both substrates, so no daemon and no API key are
+// needed. This is the "what runs where / what's the process & data boundary"
+// view a design review always asks for.
+
+deployment {
+
+  devHost = host 'Developer / CI host' {
+    description 'Local toolchain — runs the funnel, writes results; smoke path needs nothing else'
+
+    pyProc = proc 'Python runtime — migration-evals CLI + funnel' {
+      instanceOf evals
+    }
+    runsDir = proc 'runs/ — results, ledger, harness cache' {
+      description 'Generated artifacts (gitignored): result.json / summary.json per trial, _ledger/ regression history, _harnesses/ content-hash recipe cache'
+    }
+    dataDir = proc 'data/ — gold anchor + changeset CSV' {
+      description 'gold_anchor.json (mined merge-survival labels) + agent_changesets.csv; committed templates, populated by scripts'
+    }
+  }
+
+  sandboxHost = host 'Docker / OCI host' {
+    description 'Runs the tier-1 compile + tier-2 test sandbox in ephemeral hardened containers (--network none default, tinyproxy egress when network=pull)'
+    instanceOf docker
+  }
+
+  inferenceHost = host 'LLM inference endpoints' {
+    description 'Tier-3 judge + harness synthesis — Anthropic API, Claude Code OAuth, or OpenAI (dual-family)'
+    instanceOf anthropic
+    instanceOf claudeCode
+    instanceOf openai
+  }
+
+  labelHost = host 'GitHub' {
+    description 'Source of the merge-survival gold anchor — read-only to migration-evals, queried via the gh CLI'
+    instanceOf github
+  }
+
+  // Runtime data & control flow between processes/hosts.
+  pyProc -> runsDir 'writes stamped result.json + ledger + harness cache'
+  pyProc -> dataDir 'reads gold anchor + changeset CSV'
+  pyProc -> sandboxHost 'create / exec / destroy compile+test container'
+  pyProc -> inferenceHost 'judge prompt + harness synthesis'
+  pyProc -> labelHost 'harvest merged-PR survival labels'
+}
+
+views {
+
+  deployment view deployment {
+    title 'Deployment — where each piece runs'
+    include *
+  }
+}
