@@ -44,10 +44,13 @@ env/
 # auto-staged.
 .claude/
 
-# Gas City
-.beads/*
-!.beads/config.yaml
-!.beads/metadata.json
+# Internal configuration / workspace folders (not for public repo)
+.beads/
+.codegraph/
+.codex/
+.gc/
+.github/
+.gc-reports/
 
 # Operator-local Claude notes (not shared)
 CLAUDE.local.md
